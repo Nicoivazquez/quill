@@ -174,6 +174,7 @@ function buildBackendEnv(port: number): NodeJS.ProcessEnv {
   const ffmpegPath = resolveBundledToolPath("ffmpeg");
   const ffprobePath = resolveBundledToolPath("ffprobe");
   const ytDlpPath = resolveBundledToolPath("yt-dlp");
+  const bundledLibPath = resolveBundledToolPath("lib");
   const bundledToolPaths = [uvPath, ffmpegPath, ffprobePath, ytDlpPath].filter((toolPath) => fs.existsSync(toolPath));
   const bundledToolDirs = Array.from(new Set(bundledToolPaths.map((toolPath) => path.dirname(toolPath))));
 
@@ -194,6 +195,11 @@ function buildBackendEnv(port: number): NodeJS.ProcessEnv {
     UV_PYTHON: "3.11",
     PATH: buildPathValue([...bundledToolDirs, "/opt/homebrew/bin", "/usr/local/bin"], process.env.PATH),
   };
+
+  if (fs.existsSync(bundledLibPath)) {
+    env.DYLD_LIBRARY_PATH = buildPathValue([bundledLibPath], process.env.DYLD_LIBRARY_PATH);
+    env.DYLD_FALLBACK_LIBRARY_PATH = buildPathValue([bundledLibPath], process.env.DYLD_FALLBACK_LIBRARY_PATH);
+  }
 
   if (fs.existsSync(uvPath)) {
     env.SCRIBERR_UV_BIN = uvPath;
