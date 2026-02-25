@@ -21,6 +21,7 @@ interface TranscriptionProfile {
 interface UserSettings {
 	auto_transcription_enabled: boolean;
 	auto_summary_enabled: boolean;
+	auto_transcription_title_enabled: boolean;
 	auto_chat_title_enabled: boolean;
 	default_profile_id?: string;
 }
@@ -173,6 +174,14 @@ export function ProfileSettings() {
 	};
 
 	// Handle auto-chat-title toggle
+	const handleAutoTranscriptionTitleToggle = async (enabled: boolean) => {
+		await updateUserSettings(
+			{ auto_transcription_title_enabled: enabled },
+			`Auto transcription titling ${enabled ? "enabled" : "disabled"} successfully!`
+		);
+	};
+
+	// Handle auto-chat-title toggle
 	const handleAutoChatTitleToggle = async (enabled: boolean) => {
 		await updateUserSettings(
 			{ auto_chat_title_enabled: enabled },
@@ -320,11 +329,30 @@ export function ProfileSettings() {
 
 						<div className="flex items-center justify-between py-2">
 							<div>
-								<Label htmlFor="auto-chat-title" className="text-[var(--text-primary)] font-medium">
-									Automatic AI Titles
+								<Label htmlFor="auto-transcription-title" className="text-[var(--text-primary)] font-medium">
+									Automatic AI Transcription Titles
 								</Label>
 								<p className="text-sm text-[var(--text-secondary)] mt-1">
-									When enabled, completed transcripts and chat conversations are renamed automatically with AI.
+									When enabled, completed transcriptions are titled automatically with AI.
+								</p>
+							</div>
+							<Switch
+								id="auto-transcription-title"
+								checked={userSettings?.auto_transcription_title_enabled ?? true}
+								onCheckedChange={handleAutoTranscriptionTitleToggle}
+								disabled={settingsLoading}
+							/>
+						</div>
+
+						<div className="h-px bg-[var(--border-subtle)]" />
+
+						<div className="flex items-center justify-between py-2">
+							<div>
+								<Label htmlFor="auto-chat-title" className="text-[var(--text-primary)] font-medium">
+									Automatic AI Chat Titles
+								</Label>
+								<p className="text-sm text-[var(--text-secondary)] mt-1">
+									When enabled, chat conversations are renamed automatically with AI.
 								</p>
 							</div>
 							<Switch

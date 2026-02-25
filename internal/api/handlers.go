@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"scriberr/internal/auth"
 	"scriberr/internal/config"
@@ -1282,7 +1283,7 @@ func (h *Handler) AutoGenerateTranscriptionTitle(c *gin.Context) {
 	}
 
 	// Respect the same user-level toggle used for chat auto titling.
-	if !h.isAutoChatTitleEnabled(c) {
+	if !h.isAutoTranscriptionTitleEnabled(c) {
 		c.JSON(http.StatusOK, gin.H{
 			"id":         job.ID,
 			"title":      job.Title,
@@ -1342,7 +1343,7 @@ func (h *Handler) AutoGenerateTranscriptionTitleForJob(ctx context.Context, jobI
 	if !isLikelyDefaultTranscriptionTitle(job) {
 		return nil
 	}
-	if !h.isAnyAutoTitleEnabled(ctx) {
+	if !h.isAnyAutoTranscriptionTitleEnabled(ctx) {
 		return nil
 	}
 
@@ -1358,7 +1359,7 @@ func (h *Handler) AutoGenerateTranscriptionTitleForJob(ctx context.Context, jobI
 	return nil
 }
 
-func (h *Handler) isAnyAutoTitleEnabled(ctx context.Context) bool {
+func (h *Handler) isAnyAutoTranscriptionTitleEnabled(ctx context.Context) bool {
 	users, _, err := h.userRepo.List(ctx, 0, 1000)
 	if err != nil {
 		// Preserve previous behavior when user settings are unavailable.
@@ -1368,11 +1369,49 @@ func (h *Handler) isAnyAutoTitleEnabled(ctx context.Context) bool {
 		return true
 	}
 	for _, user := range users {
-		if user.AutoChatTitleEnabled {
+		if user.AutoTranscriptionTitleEnabled {
 			return true
 		}
 	}
 	return false
+}
+
+func (h *Handler) isAutoTranscriptionTitleEnabled(c *gin.Context) bool {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		// Non-JWT contexts (e.g., API keys) keep existing behavior.
+		return true
+	}
+
+	var id uint
+	switch v := userID.(type) {
+	case uint:
+		id = v
+	case int:
+		if v < 0 {
+			return true
+		}
+		id = uint(v)
+	case int64:
+		if v < 0 {
+			return true
+		}
+		id = uint(v)
+	case float64:
+		if v < 0 {
+			return true
+		}
+		id = uint(v)
+	default:
+		return true
+	}
+
+	user, err := h.userRepo.FindByID(c.Request.Context(), id)
+	if err != nil {
+		return true
+	}
+
+	return user.AutoTranscriptionTitleEnabled
 }
 
 func (h *Handler) resolveAutoTitleModel(ctx context.Context, svc llm.Service, preferredModel string) (string, error) {
@@ -1501,12 +1540,138 @@ func (h *Handler) generateAndPersistTranscriptionTitle(
 		return "", "", err
 	}
 
+	originalAudioPath := job.AudioPath
+	renamedAudioPath := originalAudioPath
+	if renamedPath, renameErr := maybeRenameAudioPathForGeneratedTitle(job, title); renameErr != nil {
+		logger.Warn("Failed to rename audio file after auto title generation",
+			"job_id", job.ID,
+			"audio_path", job.AudioPath,
+			"error", renameErr)
+	} else if renamedPath != "" {
+		renamedAudioPath = renamedPath
+	}
+
 	job.Title = &title
+	job.AudioPath = renamedAudioPath
 	if err := h.jobRepo.Update(ctx, job); err != nil {
+		if originalAudioPath != renamedAudioPath {
+			_ = os.Rename(renamedAudioPath, originalAudioPath)
+			job.AudioPath = originalAudioPath
+		}
 		return "", "", err
 	}
 
+	if originalAudioPath != renamedAudioPath {
+		logger.Info("Renamed audio file after transcription auto title",
+			"job_id", job.ID,
+			"from", originalAudioPath,
+			"to", renamedAudioPath)
+	}
+
 	return title, selectedModel, nil
+}
+
+func maybeRenameAudioPathForGeneratedTitle(job *models.TranscriptionJob, generatedTitle string) (string, error) {
+	if job == nil {
+		return "", nil
+	}
+	if job.IsMultiTrack {
+		return job.AudioPath, nil
+	}
+
+	currentPath := strings.TrimSpace(job.AudioPath)
+	if currentPath == "" {
+		return currentPath, nil
+	}
+
+	info, err := os.Stat(currentPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return currentPath, nil
+		}
+		return currentPath, err
+	}
+	if info.IsDir() {
+		return currentPath, nil
+	}
+
+	ext := filepath.Ext(currentPath)
+	safeBase := sanitizeTitleForFilename(generatedTitle)
+	if safeBase == "" {
+		return currentPath, nil
+	}
+
+	targetPath := filepath.Join(filepath.Dir(currentPath), safeBase+ext)
+	if strings.EqualFold(currentPath, targetPath) {
+		return currentPath, nil
+	}
+
+	targetPath = nextAvailablePath(targetPath)
+	if strings.EqualFold(currentPath, targetPath) {
+		return currentPath, nil
+	}
+
+	if err := os.Rename(currentPath, targetPath); err != nil {
+		return currentPath, err
+	}
+
+	return targetPath, nil
+}
+
+func sanitizeTitleForFilename(title string) string {
+	trimmed := strings.TrimSpace(title)
+	if trimmed == "" {
+		return ""
+	}
+
+	var b strings.Builder
+	lastSeparator := false
+
+	for _, r := range trimmed {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) {
+			b.WriteRune(unicode.ToLower(r))
+			lastSeparator = false
+			continue
+		}
+
+		if lastSeparator {
+			continue
+		}
+
+		b.WriteRune('-')
+		lastSeparator = true
+	}
+
+	out := strings.Trim(b.String(), "-")
+	if out == "" {
+		return ""
+	}
+
+	const maxLen = 80
+	if len(out) > maxLen {
+		out = strings.Trim(out[:maxLen], "-")
+	}
+
+	return out
+}
+
+func nextAvailablePath(path string) string {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return path
+	}
+
+	dir := filepath.Dir(path)
+	ext := filepath.Ext(path)
+	base := strings.TrimSuffix(filepath.Base(path), ext)
+
+	for i := 2; i <= 9999; i++ {
+		candidate := filepath.Join(dir, fmt.Sprintf("%s-%d%s", base, i, ext))
+		if _, err := os.Stat(candidate); os.IsNotExist(err) {
+			return candidate
+		}
+	}
+
+	return filepath.Join(dir, fmt.Sprintf("%s-%d%s", base, time.Now().UnixNano(), ext))
 }
 
 func isLikelyDefaultTranscriptionTitle(job *models.TranscriptionJob) bool {
@@ -3135,17 +3300,19 @@ func (h *Handler) SetUserDefaultProfile(c *gin.Context) {
 
 // UserSettingsResponse represents the user's settings
 type UserSettingsResponse struct {
-	AutoTranscriptionEnabled bool    `json:"auto_transcription_enabled"`
-	AutoSummaryEnabled       bool    `json:"auto_summary_enabled"`
-	AutoChatTitleEnabled     bool    `json:"auto_chat_title_enabled"`
-	DefaultProfileID         *string `json:"default_profile_id,omitempty"`
+	AutoTranscriptionEnabled      bool    `json:"auto_transcription_enabled"`
+	AutoSummaryEnabled            bool    `json:"auto_summary_enabled"`
+	AutoTranscriptionTitleEnabled bool    `json:"auto_transcription_title_enabled"`
+	AutoChatTitleEnabled          bool    `json:"auto_chat_title_enabled"`
+	DefaultProfileID              *string `json:"default_profile_id,omitempty"`
 }
 
 // UpdateUserSettingsRequest represents the request to update user settings
 type UpdateUserSettingsRequest struct {
-	AutoTranscriptionEnabled *bool `json:"auto_transcription_enabled,omitempty"`
-	AutoSummaryEnabled       *bool `json:"auto_summary_enabled,omitempty"`
-	AutoChatTitleEnabled     *bool `json:"auto_chat_title_enabled,omitempty"`
+	AutoTranscriptionEnabled      *bool `json:"auto_transcription_enabled,omitempty"`
+	AutoSummaryEnabled            *bool `json:"auto_summary_enabled,omitempty"`
+	AutoTranscriptionTitleEnabled *bool `json:"auto_transcription_title_enabled,omitempty"`
+	AutoChatTitleEnabled          *bool `json:"auto_chat_title_enabled,omitempty"`
 }
 
 // @Summary Get user settings
@@ -3171,10 +3338,11 @@ func (h *Handler) GetUserSettings(c *gin.Context) {
 	}
 
 	response := UserSettingsResponse{
-		AutoTranscriptionEnabled: user.AutoTranscriptionEnabled,
-		AutoSummaryEnabled:       user.AutoSummaryEnabled,
-		AutoChatTitleEnabled:     user.AutoChatTitleEnabled,
-		DefaultProfileID:         user.DefaultProfileID,
+		AutoTranscriptionEnabled:      user.AutoTranscriptionEnabled,
+		AutoSummaryEnabled:            user.AutoSummaryEnabled,
+		AutoTranscriptionTitleEnabled: user.AutoTranscriptionTitleEnabled,
+		AutoChatTitleEnabled:          user.AutoChatTitleEnabled,
+		DefaultProfileID:              user.DefaultProfileID,
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -3218,6 +3386,9 @@ func (h *Handler) UpdateUserSettings(c *gin.Context) {
 	if req.AutoSummaryEnabled != nil {
 		user.AutoSummaryEnabled = *req.AutoSummaryEnabled
 	}
+	if req.AutoTranscriptionTitleEnabled != nil {
+		user.AutoTranscriptionTitleEnabled = *req.AutoTranscriptionTitleEnabled
+	}
 	if req.AutoChatTitleEnabled != nil {
 		user.AutoChatTitleEnabled = *req.AutoChatTitleEnabled
 	}
@@ -3229,10 +3400,11 @@ func (h *Handler) UpdateUserSettings(c *gin.Context) {
 	}
 
 	response := UserSettingsResponse{
-		AutoTranscriptionEnabled: user.AutoTranscriptionEnabled,
-		AutoSummaryEnabled:       user.AutoSummaryEnabled,
-		AutoChatTitleEnabled:     user.AutoChatTitleEnabled,
-		DefaultProfileID:         user.DefaultProfileID,
+		AutoTranscriptionEnabled:      user.AutoTranscriptionEnabled,
+		AutoSummaryEnabled:            user.AutoSummaryEnabled,
+		AutoTranscriptionTitleEnabled: user.AutoTranscriptionTitleEnabled,
+		AutoChatTitleEnabled:          user.AutoChatTitleEnabled,
+		DefaultProfileID:              user.DefaultProfileID,
 	}
 
 	c.JSON(http.StatusOK, response)

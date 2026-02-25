@@ -168,7 +168,10 @@ export const AudioDetailView = function AudioDetailView({ audioId: propAudioId }
                     if (typeof settings?.auto_summary_enabled === "boolean") {
                         setAutoSummaryEnabled(settings.auto_summary_enabled);
                     }
-                    if (typeof settings?.auto_chat_title_enabled === "boolean") {
+                    if (typeof settings?.auto_transcription_title_enabled === "boolean") {
+                        setAutoTitleEnabled(settings.auto_transcription_title_enabled);
+                    } else if (typeof settings?.auto_chat_title_enabled === "boolean") {
+                        // Backward compatibility with older backend payloads.
                         setAutoTitleEnabled(settings.auto_chat_title_enabled);
                     }
                 }
