@@ -408,17 +408,19 @@ func (h *Handler) SendChatMessage(c *gin.Context) {
 	// Check if this is the first user message and update session title
 	messages, err := h.chatRepo.GetMessages(c.Request.Context(), sessionID, 0)
 	if err == nil {
-		userMsgCount := 0
-		for _, m := range messages {
-			if m.Role == RoleUser {
-				userMsgCount++
+		if h.isAutoChatTitleEnabled(c) {
+			userMsgCount := 0
+			for _, m := range messages {
+				if m.Role == RoleUser {
+					userMsgCount++
+				}
 			}
-		}
-		if userMsgCount == 1 {
-			// Generate a title based on the first message
-			title := generateChatTitle(req.Content)
-			session.Title = title
-			_ = h.chatRepo.Update(c.Request.Context(), session)
+			if userMsgCount == 1 {
+				// Generate a title based on the first message
+				title := generateChatTitle(req.Content)
+				session.Title = title
+				_ = h.chatRepo.Update(c.Request.Context(), session)
+			}
 		}
 	}
 
@@ -818,6 +820,12 @@ func (h *Handler) AutoGenerateChatTitle(c *gin.Context) {
 		return
 	}
 
+	// Respect per-user preference when available (JWT auth flow).
+	if !h.isAutoChatTitleEnabled(c) {
+		h.respondWithSession(c, session)
+		return
+	}
+
 	if defaultTitle, err := h.isDefaultTitle(c.Request.Context(), session); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check title status"})
 		return
@@ -861,6 +869,44 @@ func (h *Handler) AutoGenerateChatTitle(c *gin.Context) {
 		return
 	}
 	h.respondWithSession(c, updated)
+}
+
+func (h *Handler) isAutoChatTitleEnabled(c *gin.Context) bool {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		// Non-JWT contexts (e.g., API keys) keep existing behavior.
+		return true
+	}
+
+	var id uint
+	switch v := userID.(type) {
+	case uint:
+		id = v
+	case int:
+		if v < 0 {
+			return true
+		}
+		id = uint(v)
+	case int64:
+		if v < 0 {
+			return true
+		}
+		id = uint(v)
+	case float64:
+		if v < 0 {
+			return true
+		}
+		id = uint(v)
+	default:
+		return true
+	}
+
+	user, err := h.userRepo.FindByID(c.Request.Context(), id)
+	if err != nil {
+		return true
+	}
+
+	return user.AutoChatTitleEnabled
 }
 
 func (h *Handler) isDefaultTitle(ctx context.Context, session *models.ChatSession) (bool, error) {

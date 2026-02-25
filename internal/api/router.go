@@ -140,6 +140,7 @@ func SetupRoutes(handler *Handler, authService *auth.AuthService) *gin.Engine {
 			transcription.GET("/:id/merge-status", handler.GetMergeStatus)
 			transcription.GET("/:id/track-progress", handler.GetTrackProgress)
 			transcription.PUT("/:id/title", handler.UpdateTranscriptionTitle)
+			transcription.POST("/:id/title/auto", handler.AutoGenerateTranscriptionTitle)
 			transcription.GET("/:id/summary", handler.GetSummaryForTranscription)
 			transcription.GET("/:id", handler.GetTranscriptionJob)
 			transcription.DELETE("/:id", handler.DeleteTranscriptionJob)
@@ -178,6 +179,16 @@ func SetupRoutes(handler *Handler, authService *auth.AuthService) *gin.Engine {
 			user.POST("/default-profile", handler.SetUserDefaultProfile)
 			user.GET("/settings", handler.GetUserSettings)
 			user.PUT("/settings", handler.UpdateUserSettings)
+		}
+
+		// Desktop auto-import folder watcher routes (require JWT user context)
+		watchFolders := v1.Group("/watch-folders")
+		watchFolders.Use(middleware.JWTOnlyMiddleware(authService))
+		{
+			watchFolders.GET("", handler.ListWatchFolders)
+			watchFolders.POST("", handler.CreateWatchFolder)
+			watchFolders.PUT("/:id", handler.UpdateWatchFolder)
+			watchFolders.DELETE("/:id", handler.DeleteWatchFolder)
 		}
 
 		// Admin routes (require authentication)

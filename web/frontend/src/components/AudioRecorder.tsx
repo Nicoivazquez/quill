@@ -240,10 +240,7 @@ export function AudioRecorder({
 
 		setIsUploading(true);
 		try {
-			await onRecordingComplete(
-				recordedBlob,
-				title || `Recording ${new Date().toISOString()}`,
-			);
+			await onRecordingComplete(recordedBlob, title.trim());
 			// Reset state
 			setRecordedBlob(null);
 			setTitle("");

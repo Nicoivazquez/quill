@@ -16,6 +16,7 @@ import (
 	"scriberr/internal/auth"
 	"scriberr/internal/config"
 	"scriberr/internal/database"
+	"scriberr/internal/folderwatch"
 	"scriberr/internal/processing"
 	"scriberr/internal/queue"
 	"scriberr/internal/repository"
@@ -109,6 +110,7 @@ func main() {
 	noteRepo := repository.NewNoteRepository(database.DB)
 	speakerMappingRepo := repository.NewSpeakerMappingRepository(database.DB)
 	refreshTokenRepo := repository.NewRefreshTokenRepository(database.DB)
+	watchedFolderRepo := repository.NewWatchedFolderRepository(database.DB)
 
 	// Initialize services
 	logger.Startup("service", "Initializing services")
@@ -147,6 +149,13 @@ func main() {
 	taskQueue.Start()
 	defer taskQueue.Stop()
 
+	// Initialize desktop auto-import folder watcher service
+	folderWatchService := folderwatch.NewService(cfg, watchedFolderRepo, jobRepo, userRepo, profileRepo, taskQueue)
+	if err := folderWatchService.Start(context.Background()); err != nil {
+		logger.Warn("Some auto-import folders failed to initialize", "error", err)
+	}
+	defer folderWatchService.Stop()
+
 	// Initialize multi-track processor
 	multiTrackProcessor := processing.NewMultiTrackProcessor(database.DB, jobRepo)
 
@@ -172,6 +181,15 @@ func main() {
 		multiTrackProcessor,
 		broadcaster,
 	)
+	handler.SetFolderWatchService(folderWatchService)
+	taskQueue.SetOnJobCompleted(func(jobID string) {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer cancel()
+
+		if err := handler.AutoGenerateTranscriptionTitleForJob(ctx, jobID); err != nil {
+			logger.Warn("Auto title generation after transcription completion failed", "job_id", jobID, "error", err)
+		}
+	})
 
 	// Set up router
 	router := api.SetupRoutes(handler, authService)

@@ -128,6 +128,7 @@ export const ChatInterface = memo(function ChatInterface({ transcriptionId, acti
   const [selectedModel, setSelectedModel] = useState("gpt-3.5-turbo");
   const [error, setError] = useState<string | null>(null);
   const [contextInfo, setContextInfo] = useState<{ used: number; limit: number; trimmed: number } | null>(null);
+  const [autoChatTitleEnabled, setAutoChatTitleEnabled] = useState(true);
 
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -159,6 +160,30 @@ export const ChatInterface = memo(function ChatInterface({ transcriptionId, acti
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transcriptionId]); // loadChatModels ref loop avoidance
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadUserSettings = async () => {
+      try {
+        const response = await fetch("/api/v1/user/settings", {
+          headers: getAuthHeaders(),
+        });
+
+        if (!response.ok) return;
+        const settings = await response.json();
+        if (!cancelled && typeof settings?.auto_chat_title_enabled === "boolean") {
+          setAutoChatTitleEnabled(settings.auto_chat_title_enabled);
+        }
+      } catch {
+        // Keep default behavior if settings cannot be loaded
+      }
+    };
+
+    loadUserSettings();
+    return () => {
+      cancelled = true;
+    };
+  }, [getAuthHeaders]);
 
   // Memoize load functions to prevent recreating on every render
   const loadChatSession = useCallback(async (sessionId: string) => {
@@ -377,7 +402,7 @@ export const ChatInterface = memo(function ChatInterface({ transcriptionId, acti
       const assistantMessageCount = finalMessages.filter(msg => msg.role === 'assistant').length;
 
       // Only generate title after the 2nd complete exchange
-      if (userMessageCount === 2 && assistantMessageCount === 2) {
+      if (autoChatTitleEnabled && userMessageCount === 2 && assistantMessageCount === 2) {
         // Wait a moment to ensure UI is updated, then generate title
         setTimeout(async () => {
           const sid = activeSession?.id || activeSessionId;

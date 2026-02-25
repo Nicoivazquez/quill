@@ -4,6 +4,17 @@ import { cn } from '@/lib/utils';
 import { useIsDesktop } from '@/hooks/useIsDesktop';
 import type { Note } from '@/types/note';
 
+function speakerIndexToLabel(index: number): string {
+    let n = index + 1;
+    let label = "";
+    while (n > 0) {
+        const rem = (n - 1) % 26;
+        label = String.fromCharCode(65 + rem) + label;
+        n = Math.floor((n - 1) / 26);
+    }
+    return `Speaker ${label}`;
+}
+
 // Helper for cross-browser caret position
 function getCaretOffsetFromPoint(x: number, y: number) {
     if (document.caretRangeFromPoint) {
@@ -65,9 +76,35 @@ export const TranscriptView = forwardRef<HTMLDivElement, TranscriptViewProps>(({
     onSeek,
     className
 }, ref) => {
+    const defaultSpeakerLabels = useMemo(() => {
+        const orderedSpeakers: string[] = [];
+
+        transcript?.segments?.forEach(segment => {
+            if (!segment.speaker) return;
+            if (!orderedSpeakers.includes(segment.speaker)) {
+                orderedSpeakers.push(segment.speaker);
+            }
+        });
+
+        if (orderedSpeakers.length === 0) {
+            transcript?.word_segments?.forEach(word => {
+                if (!word.speaker) return;
+                if (!orderedSpeakers.includes(word.speaker)) {
+                    orderedSpeakers.push(word.speaker);
+                }
+            });
+        }
+
+        const labels: Record<string, string> = {};
+        orderedSpeakers.forEach((speaker, index) => {
+            labels[speaker] = speakerIndexToLabel(index);
+        });
+
+        return labels;
+    }, [transcript?.segments, transcript?.word_segments]);
 
     const getDisplaySpeakerName = (originalSpeaker: string): string => {
-        return speakerMappings[originalSpeaker] || originalSpeaker;
+        return speakerMappings[originalSpeaker] || defaultSpeakerLabels[originalSpeaker] || originalSpeaker;
     };
 
     const containerRef = useRef<HTMLDivElement>(null);

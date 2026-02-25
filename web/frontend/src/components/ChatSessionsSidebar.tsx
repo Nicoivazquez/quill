@@ -214,7 +214,7 @@ export function ChatSessionsSidebar({
                     id="title"
                     value={newSessionTitle}
                     onChange={e => setNewSessionTitle(e.target.value)}
-                    placeholder="Auto-generated after 2 exchanges..."
+                    placeholder="Optional title (auto-title can be toggled in settings)"
                     className="h-11 bg-[var(--bg-main)] border-[var(--border-subtle)] focus-visible:ring-2 focus-visible:ring-[var(--brand-solid)]/20 focus-visible:border-[var(--brand-solid)] transition-all rounded-xl"
                   />
                 </div>

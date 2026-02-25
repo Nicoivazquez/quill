@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
-import { User, Settings as SettingsIcon, Key, Bot, FileText, Plus, Terminal } from "lucide-react";
+import { User, Settings as SettingsIcon, Key, Bot, FileText, Plus, FolderOpen } from "lucide-react";
 import {
   Tabs,
   TabsContent,
@@ -16,7 +16,7 @@ import { APIKeySettings } from "../components/APIKeySettings";
 import { LLMSettings } from "../components/LLMSettings";
 import { SummaryTemplateDialog, type SummaryTemplate } from "../components/SummaryTemplateDialog";
 import { SummaryTemplatesTable } from "../components/SummaryTemplatesTable";
-import { CLISettingsTab } from "../components/CLISettingsTab";
+import { AutoImportSettingsTab } from "../components/AutoImportSettingsTab";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 
 export function Settings() {
@@ -110,12 +110,12 @@ export function Settings() {
               <span className="hidden sm:inline">Summary</span>
             </TabsTrigger>
             <TabsTrigger
-              value="cli"
-              aria-label="CLI Watcher"
+              value="auto-import"
+              aria-label="Auto Import"
               className="flex items-center justify-center gap-2 h-9 py-1.5 data-[state=active]:bg-[var(--bg-card)] data-[state=active]:shadow-sm data-[state=active]:text-[var(--text-primary)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] font-medium rounded-lg text-xs sm:text-sm transition-all"
             >
-              <Terminal className="h-4 w-4" />
-              <span className="hidden sm:inline">CLI Watcher</span>
+              <FolderOpen className="h-4 w-4" />
+              <span className="hidden sm:inline">Auto Import</span>
             </TabsTrigger>
           </TabsList>
 
@@ -190,9 +190,9 @@ export function Settings() {
             />
           </TabsContent>
 
-          {/* CLI Watcher Tab */}
-          <TabsContent value="cli" className="space-y-6">
-            <CLISettingsTab />
+          {/* Auto Import Tab */}
+          <TabsContent value="auto-import" className="space-y-6">
+            <AutoImportSettingsTab />
           </TabsContent>
         </Tabs>
       </div>

@@ -38,6 +38,8 @@ type TaskQueue struct {
 	autoScale      bool
 	lastScaleTime  time.Time
 	jobRepo        repository.JobRepository
+	onJobCompleted func(jobID string)
+	hookMutex      sync.RWMutex
 }
 
 // JobProcessor defines the interface for processing jobs
@@ -150,6 +152,13 @@ func (tq *TaskQueue) Stop() {
 	logger.Debug("Task queue stopped")
 }
 
+// SetOnJobCompleted registers a callback that runs after a job is marked completed.
+func (tq *TaskQueue) SetOnJobCompleted(hook func(jobID string)) {
+	tq.hookMutex.Lock()
+	defer tq.hookMutex.Unlock()
+	tq.onJobCompleted = hook
+}
+
 // EnqueueJob adds a job to the queue
 func (tq *TaskQueue) EnqueueJob(jobID string) error {
 	// Check if queue is already shut down
@@ -242,6 +251,20 @@ func (tq *TaskQueue) worker(id int) {
 				logger.Debug("Job processed successfully", "worker_id", id, "job_id", jobID)
 				if err := tq.updateJobStatus(jobID, models.StatusCompleted); err != nil {
 					logger.Error("Failed to update job status", "job_id", jobID, "error", err)
+				} else {
+					tq.hookMutex.RLock()
+					onCompleted := tq.onJobCompleted
+					tq.hookMutex.RUnlock()
+					if onCompleted != nil {
+						go func(id string, fn func(string)) {
+							defer func() {
+								if recovered := recover(); recovered != nil {
+									logger.Error("onJobCompleted hook panic", "job_id", id, "error", recovered)
+								}
+							}()
+							fn(id)
+						}(jobID, onCompleted)
+					}
 				}
 			}
 

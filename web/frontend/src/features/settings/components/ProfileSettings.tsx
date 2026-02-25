@@ -20,6 +20,8 @@ interface TranscriptionProfile {
 
 interface UserSettings {
 	auto_transcription_enabled: boolean;
+	auto_summary_enabled: boolean;
+	auto_chat_title_enabled: boolean;
 	default_profile_id?: string;
 }
 
@@ -126,8 +128,7 @@ export function ProfileSettings() {
 		loadUserSettings();
 	}, [getAuthHeaders]);
 
-	// Handle auto-transcription toggle
-	const handleAutoTranscriptionToggle = async (enabled: boolean) => {
+	const updateUserSettings = async (payload: Partial<UserSettings>, successMessage: string) => {
 		setError("");
 		setSuccess("");
 
@@ -138,23 +139,45 @@ export function ProfileSettings() {
 					"Content-Type": "application/json",
 					...getAuthHeaders(),
 				},
-				body: JSON.stringify({
-					auto_transcription_enabled: enabled,
-				}),
+				body: JSON.stringify(payload),
 			});
 
 			if (response.ok) {
 				const updatedSettings = await response.json();
 				setUserSettings(updatedSettings);
-				setSuccess(`Auto-transcription ${enabled ? "enabled" : "disabled"} successfully!`);
+				setSuccess(successMessage);
 			} else {
 				const errorData = await response.json();
 				setError(errorData.error || "Failed to update setting");
 			}
 		} catch (error) {
-			console.error("Error updating auto-transcription setting:", error);
+			console.error("Error updating user settings:", error);
 			setError("Network error. Please try again.");
 		}
+	};
+
+	// Handle auto-transcription toggle
+	const handleAutoTranscriptionToggle = async (enabled: boolean) => {
+		await updateUserSettings(
+			{ auto_transcription_enabled: enabled },
+			`Auto-transcription ${enabled ? "enabled" : "disabled"} successfully!`
+		);
+	};
+
+	// Handle auto-summary toggle
+	const handleAutoSummaryToggle = async (enabled: boolean) => {
+		await updateUserSettings(
+			{ auto_summary_enabled: enabled },
+			`Auto-summary ${enabled ? "enabled" : "disabled"} successfully!`
+		);
+	};
+
+	// Handle auto-chat-title toggle
+	const handleAutoChatTitleToggle = async (enabled: boolean) => {
+		await updateUserSettings(
+			{ auto_chat_title_enabled: enabled },
+			`Auto chat titling ${enabled ? "enabled" : "disabled"} successfully!`
+		);
 	};
 
 	const handleCreateProfile = useCallback(() => {
@@ -238,15 +261,15 @@ export function ProfileSettings() {
 				</div>
 			)}
 
-			{/* Auto-Transcription Settings */}
+			{/* Automation Settings */}
 			<div className="bg-[var(--bg-main)]/50 border border-[var(--border-subtle)] rounded-[var(--radius-card)] p-4 sm:p-6 shadow-sm">
 				<div className="mb-4">
 					<div className="flex items-center space-x-2 mb-2">
 						<Settings className="h-5 w-5 text-[var(--brand-solid)]" />
-						<h3 className="text-lg font-medium text-[var(--text-primary)]">Auto-Transcription</h3>
+						<h3 className="text-lg font-medium text-[var(--text-primary)]">Automation</h3>
 					</div>
 					<p className="text-sm text-[var(--text-secondary)]">
-						Configure automatic transcription behavior for uploaded files.
+						Control automatic AI and transcription behavior.
 					</p>
 				</div>
 
@@ -256,21 +279,61 @@ export function ProfileSettings() {
 						<span className="text-sm text-carbon-600 dark:text-carbon-400">Loading settings...</span>
 					</div>
 				) : (
-					<div className="flex items-center justify-between py-2">
-						<div>
-							<Label htmlFor="auto-transcription" className="text-[var(--text-primary)] font-medium">
-								Automatic Transcription on Upload
-							</Label>
-							<p className="text-sm text-[var(--text-secondary)] mt-1">
-								When enabled, uploaded audio files will automatically be queued for transcription using your default profile.
-							</p>
+					<div className="space-y-4">
+						<div className="flex items-center justify-between py-2">
+							<div>
+								<Label htmlFor="auto-transcription" className="text-[var(--text-primary)] font-medium">
+									Automatic Transcription on Upload
+								</Label>
+								<p className="text-sm text-[var(--text-secondary)] mt-1">
+									When enabled, uploaded audio files will automatically be queued for transcription using your default profile.
+								</p>
+							</div>
+							<Switch
+								id="auto-transcription"
+								checked={userSettings?.auto_transcription_enabled || false}
+								onCheckedChange={handleAutoTranscriptionToggle}
+								disabled={settingsLoading}
+							/>
 						</div>
-						<Switch
-							id="auto-transcription"
-							checked={userSettings?.auto_transcription_enabled || false}
-							onCheckedChange={handleAutoTranscriptionToggle}
-							disabled={settingsLoading}
-						/>
+
+						<div className="h-px bg-[var(--border-subtle)]" />
+
+						<div className="flex items-center justify-between py-2">
+							<div>
+								<Label htmlFor="auto-summary" className="text-[var(--text-primary)] font-medium">
+									Automatic AI Summary
+								</Label>
+								<p className="text-sm text-[var(--text-secondary)] mt-1">
+									When enabled, completed transcripts are automatically summarized when opened, using your first summary template.
+								</p>
+							</div>
+							<Switch
+								id="auto-summary"
+								checked={userSettings?.auto_summary_enabled || false}
+								onCheckedChange={handleAutoSummaryToggle}
+								disabled={settingsLoading}
+							/>
+						</div>
+
+						<div className="h-px bg-[var(--border-subtle)]" />
+
+						<div className="flex items-center justify-between py-2">
+							<div>
+								<Label htmlFor="auto-chat-title" className="text-[var(--text-primary)] font-medium">
+									Automatic AI Titles
+								</Label>
+								<p className="text-sm text-[var(--text-secondary)] mt-1">
+									When enabled, completed transcripts and chat conversations are renamed automatically with AI.
+								</p>
+							</div>
+							<Switch
+								id="auto-chat-title"
+								checked={userSettings?.auto_chat_title_enabled ?? true}
+								onCheckedChange={handleAutoChatTitleToggle}
+								disabled={settingsLoading}
+							/>
+						</div>
 					</div>
 				)}
 			</div>

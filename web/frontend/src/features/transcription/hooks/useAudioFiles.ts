@@ -109,13 +109,22 @@ export function useAudioUpload() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: async ({ file, isVideo }: { file: File, isVideo: boolean }) => {
+        mutationFn: async ({ file, isVideo, title }: { file: File, isVideo: boolean, title?: string }) => {
             const formData = new FormData();
             const fieldName = isVideo ? 'video' : 'audio';
             const endpoint = isVideo ? '/api/v1/transcription/upload-video' : '/api/v1/transcription/upload';
 
             formData.append(fieldName, file);
-            formData.append('title', file.name.replace(/\.[^/.]+$/, ''));
+            const trimmedTitle = typeof title === "string" ? title.trim() : undefined;
+
+            // Backward compatibility: when caller does not provide a title,
+            // preserve existing filename-based title behavior.
+            if (trimmedTitle === undefined) {
+                formData.append('title', file.name.replace(/\.[^/.]+$/, ''));
+            } else if (trimmedTitle !== "") {
+                // Explicit title provided by caller.
+                formData.append('title', trimmedTitle);
+            }
 
             const response = await fetch(endpoint, {
                 method: 'POST',

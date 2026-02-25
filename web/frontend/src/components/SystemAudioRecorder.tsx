@@ -443,10 +443,7 @@ export function SystemAudioRecorder({
 
 		setIsUploading(true);
 		try {
-			await onRecordingComplete(
-				recordedBlob,
-				title || `System Recording ${new Date().toISOString()}`,
-			);
+			await onRecordingComplete(recordedBlob, title.trim());
 			// Reset state
 			setRecordedBlob(null);
 			setTitle("");

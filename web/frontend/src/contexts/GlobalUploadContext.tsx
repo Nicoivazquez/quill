@@ -14,6 +14,7 @@ import { MultiTrackUploadDialog } from "@/features/transcription/components/Mult
 interface FileWithType {
     file: File;
     isVideo: boolean;
+    title?: string;
 }
 
 interface UploadProgress {
@@ -106,9 +107,10 @@ export function GlobalUploadProvider({ children }: PropsWithChildren) {
                 const fileItem = processedFiles[i];
                 const file = fileItem.file;
                 const isVideo = fileItem.isVideo;
+                const title = fileItem.title;
 
                 try {
-                    await uploadFile({ file, isVideo });
+                    await uploadFile({ file, isVideo, title });
 
                     if (isOnDashboard) {
                         setUploadProgress((prev) =>
@@ -228,8 +230,15 @@ export function GlobalUploadProvider({ children }: PropsWithChildren) {
 
     const handleRecordingComplete = useCallback(
         async (blob: Blob, title: string) => {
-            const file = new File([blob], `${title}.webm`, { type: blob.type });
-            await handleFileSelect(file);
+            const manualTitle = title.trim();
+            const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+            const file = new File([blob], `recording-${timestamp}.webm`, {
+                type: blob.type || "audio/webm",
+            });
+
+            // Pass explicit title only when user entered one.
+            // Empty title means "allow post-transcription auto-title".
+            await handleFileSelect({ file, isVideo: false, title: manualTitle });
         },
         [handleFileSelect]
     );

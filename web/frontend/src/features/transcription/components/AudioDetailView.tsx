@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { useParams, useNavigate } from "react-router-dom";
 import { MoreVertical, Edit2, Activity, FileText, Bot, Check, Loader2, List, AlignLeft, ArrowDownCircle, StickyNote, MessageCircle, FileImage, FileJson, Clock, AlertCircle, Users } from "lucide-react";
 import { Header } from "@/components/Header";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -23,6 +24,8 @@ import { LogsDialog } from "./audio-detail/LogsDialog";
 import { SummaryDialog } from "./audio-detail/SummaryDialog";
 import { ChatSidePanel } from "./ChatSidePanel";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useAuth } from "@/features/auth/hooks/useAuth";
+import { useSummaryTemplates, useExistingSummary, useSummarizer } from "@/features/transcription/hooks/useTranscriptionSummary";
 
 // Types
 interface AudioDetailViewProps {
@@ -33,6 +36,8 @@ export const AudioDetailView = function AudioDetailView({ audioId: propAudioId }
     const { audioId: paramAudioId } = useParams<{ audioId: string }>();
     const audioId = propAudioId || paramAudioId;
     const navigate = useNavigate();
+    const { getAuthHeaders } = useAuth();
+    const queryClient = useQueryClient();
 
     // Refs
     const audioPlayerRef = useRef<EmberPlayerRef>(null);
@@ -55,6 +60,9 @@ export const AudioDetailView = function AudioDetailView({ audioId: propAudioId }
     const [executionDialogOpen, setExecutionDialogOpen] = useState(false);
     const [logsDialogOpen, setLogsDialogOpen] = useState(false);
     const [summaryDialogOpen, setSummaryDialogOpen] = useState(false);
+    const [llmReady, setLlmReady] = useState<boolean | null>(null);
+    const [autoSummaryEnabled, setAutoSummaryEnabled] = useState(false);
+    const [autoTitleEnabled, setAutoTitleEnabled] = useState(true);
 
     // Data Fetching
     const { data: audioFile, isLoading, error } = useAudioDetail(audioId || "");
@@ -62,6 +70,13 @@ export const AudioDetailView = function AudioDetailView({ audioId: propAudioId }
     // Fetch transcript & speakers here to support menu actions
     const { data: transcript } = useTranscript(audioId || "", true);
     const { data: speakerMappings = {} } = useSpeakerMappings(audioId || "", true);
+    const { data: summaryTemplates = [] } = useSummaryTemplates();
+    const { data: existingSummary, isLoading: existingSummaryLoading } = useExistingSummary(audioId || "");
+    const { generateSummary: generateAutoSummary } = useSummarizer(audioId || "");
+
+    const autoSummaryTriggeredRef = useRef<string | null>(null);
+    const autoTitleTriggeredRef = useRef<string | null>(null);
+    const autoSpeakerViewAppliedRef = useRef<string | null>(null);
 
     // Download Logic
     const { downloadSRT } = useTranscriptDownload();
@@ -113,6 +128,145 @@ export const AudioDetailView = function AudioDetailView({ audioId: propAudioId }
             setNewTitle(audioFile.title || "");
         }
     }, [audioFile]);
+
+    useEffect(() => {
+        let cancelled = false;
+        const loadLLMState = async () => {
+            try {
+                const response = await fetch('/api/v1/llm/config', { headers: { ...getAuthHeaders() } });
+                if (!response.ok) {
+                    if (!cancelled) setLlmReady(false);
+                    return;
+                }
+
+                const cfg = await response.json();
+                if (!cancelled) {
+                    setLlmReady(!!cfg && cfg.is_active);
+                }
+            } catch {
+                if (!cancelled) setLlmReady(false);
+            }
+        };
+
+        loadLLMState();
+        return () => {
+            cancelled = true;
+        };
+    }, [getAuthHeaders]);
+
+    useEffect(() => {
+        let cancelled = false;
+        const loadUserSettings = async () => {
+            try {
+                const response = await fetch('/api/v1/user/settings', {
+                    headers: { ...getAuthHeaders() },
+                });
+
+                if (!response.ok) return;
+                const settings = await response.json();
+                if (!cancelled) {
+                    if (typeof settings?.auto_summary_enabled === "boolean") {
+                        setAutoSummaryEnabled(settings.auto_summary_enabled);
+                    }
+                    if (typeof settings?.auto_chat_title_enabled === "boolean") {
+                        setAutoTitleEnabled(settings.auto_chat_title_enabled);
+                    }
+                }
+            } catch {
+                if (!cancelled) {
+                    setAutoSummaryEnabled(false);
+                    setAutoTitleEnabled(true);
+                }
+            }
+        };
+
+        loadUserSettings();
+        return () => {
+            cancelled = true;
+        };
+    }, [getAuthHeaders]);
+
+    useEffect(() => {
+        autoSummaryTriggeredRef.current = null;
+        autoTitleTriggeredRef.current = null;
+        autoSpeakerViewAppliedRef.current = null;
+        setTranscriptMode("compact");
+    }, [audioId]);
+
+    useEffect(() => {
+        if (!audioId || !transcript?.segments?.some((segment: TranscriptSegment) => !!segment.speaker)) return;
+        if (autoSpeakerViewAppliedRef.current === audioId) return;
+
+        setTranscriptMode("expanded");
+        autoSpeakerViewAppliedRef.current = audioId;
+    }, [audioId, transcript]);
+
+    useEffect(() => {
+        if (!audioId) return;
+        if (!autoSummaryEnabled || llmReady !== true) return;
+        if (audioFile?.status !== "completed") return;
+        if (!transcript?.text?.trim()) return;
+        if (existingSummaryLoading) return;
+        if (existingSummary?.content?.trim()) return;
+        if (autoSummaryTriggeredRef.current === audioId) return;
+
+        const autoTemplate = summaryTemplates.find(template => !!template.id && !!template.model && !!template.prompt);
+        if (!autoTemplate) return;
+
+        autoSummaryTriggeredRef.current = audioId;
+        generateAutoSummary(autoTemplate.id, autoTemplate.model, autoTemplate.prompt, transcript.text);
+    }, [
+        audioId,
+        autoSummaryEnabled,
+        llmReady,
+        audioFile?.status,
+        transcript?.text,
+        existingSummaryLoading,
+        existingSummary?.content,
+        summaryTemplates,
+        generateAutoSummary,
+    ]);
+
+    useEffect(() => {
+        if (!audioId) return;
+        if (!autoTitleEnabled || llmReady !== true) return;
+        if (audioFile?.status !== "completed") return;
+        if (!transcript?.text?.trim()) return;
+        if (autoTitleTriggeredRef.current === audioId) return;
+
+        autoTitleTriggeredRef.current = audioId;
+
+        const autoGenerateTitle = async () => {
+            try {
+                const response = await fetch(`/api/v1/transcription/${audioId}/title/auto`, {
+                    method: "POST",
+                    headers: { ...getAuthHeaders() },
+                });
+
+                if (!response.ok) return;
+
+                const updated = await response.json();
+                const generatedTitle = typeof updated?.title === "string" ? updated.title.trim() : "";
+                if (generatedTitle) {
+                    setNewTitle(generatedTitle);
+                    queryClient.invalidateQueries({ queryKey: ["audio", audioId] });
+                    queryClient.invalidateQueries({ queryKey: ["audioFiles"] });
+                }
+            } catch {
+                // No-op: avoid interrupting playback/transcription experience on title failures.
+            }
+        };
+
+        autoGenerateTitle();
+    }, [
+        audioId,
+        autoTitleEnabled,
+        llmReady,
+        audioFile?.status,
+        transcript?.text,
+        getAuthHeaders,
+        queryClient,
+    ]);
 
     // Handlers
     const handleTimeUpdate = useCallback((time: number) => {
@@ -438,7 +592,7 @@ export const AudioDetailView = function AudioDetailView({ audioId: propAudioId }
                 audioId={audioId}
                 isOpen={summaryDialogOpen}
                 onClose={setSummaryDialogOpen}
-                llmReady={true}
+                llmReady={llmReady}
             />
 
             {/* Mobile / Overlay Chat */}

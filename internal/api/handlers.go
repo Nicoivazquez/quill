@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -11,12 +12,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"scriberr/internal/auth"
 	"scriberr/internal/config"
+	"scriberr/internal/folderwatch"
+	"scriberr/internal/llm"
 	"scriberr/internal/models"
 	"scriberr/internal/processing"
 	"scriberr/internal/queue"
@@ -52,6 +56,7 @@ type Handler struct {
 	unifiedProcessor    *transcription.UnifiedJobProcessor
 	quickTranscription  *transcription.QuickTranscriptionService
 	multiTrackProcessor *processing.MultiTrackProcessor
+	folderWatchService  *folderwatch.Service
 	broadcaster         *sse.Broadcaster
 }
 
@@ -98,6 +103,11 @@ func NewHandler(
 		multiTrackProcessor: multiTrackProcessor,
 		broadcaster:         broadcaster,
 	}
+}
+
+// SetFolderWatchService wires optional desktop auto-import functionality.
+func (h *Handler) SetFolderWatchService(folderWatchService *folderwatch.Service) {
+	h.folderWatchService = folderWatchService
 }
 
 // SubmitJobRequest represents the submit job request
@@ -1232,6 +1242,317 @@ func (h *Handler) UpdateTranscriptionTitle(c *gin.Context) {
 		"created_at": job.CreatedAt,
 		"audio_path": job.AudioPath,
 	})
+}
+
+// AutoGenerateTranscriptionTitle generates a title for a completed transcription using the active LLM provider.
+// @Summary Auto-generate transcription title
+// @Description Generate a concise title for a completed transcription from transcript content.
+// @Tags transcription
+// @Produce json
+// @Param id path string true "Job ID"
+// @Param model query string false "Optional model override"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/v1/transcription/{id}/title/auto [post]
+// @Security ApiKeyAuth
+// @Security BearerAuth
+func (h *Handler) AutoGenerateTranscriptionTitle(c *gin.Context) {
+	jobID := c.Param("id")
+	if jobID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Job ID required"})
+		return
+	}
+
+	job, err := h.jobRepo.FindByID(c.Request.Context(), jobID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Job not found"})
+		return
+	}
+
+	if job.Status != models.StatusCompleted {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Transcription must be completed"})
+		return
+	}
+
+	if job.Transcript == nil || strings.TrimSpace(*job.Transcript) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Transcript content is required"})
+		return
+	}
+
+	// Respect the same user-level toggle used for chat auto titling.
+	if !h.isAutoChatTitleEnabled(c) {
+		c.JSON(http.StatusOK, gin.H{
+			"id":         job.ID,
+			"title":      job.Title,
+			"status":     job.Status,
+			"created_at": job.CreatedAt,
+			"audio_path": job.AudioPath,
+		})
+		return
+	}
+
+	// Do not overwrite likely user-defined titles.
+	if !isLikelyDefaultTranscriptionTitle(job) {
+		c.JSON(http.StatusOK, gin.H{
+			"id":         job.ID,
+			"title":      job.Title,
+			"status":     job.Status,
+			"created_at": job.CreatedAt,
+			"audio_path": job.AudioPath,
+		})
+		return
+	}
+
+	title, selectedModel, err := h.generateAndPersistTranscriptionTitle(
+		c.Request.Context(),
+		job,
+		strings.TrimSpace(c.Query("model")),
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to auto-generate title"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":         job.ID,
+		"title":      title,
+		"status":     job.Status,
+		"created_at": job.CreatedAt,
+		"audio_path": job.AudioPath,
+		"model":      selectedModel,
+	})
+}
+
+// AutoGenerateTranscriptionTitleForJob attempts to auto-title a completed transcription.
+// It is designed for background execution (e.g. queue completion hooks) and is best-effort.
+func (h *Handler) AutoGenerateTranscriptionTitleForJob(ctx context.Context, jobID string) error {
+	job, err := h.jobRepo.FindByID(ctx, jobID)
+	if err != nil {
+		return err
+	}
+
+	if job.Status != models.StatusCompleted {
+		return nil
+	}
+	if job.Transcript == nil || strings.TrimSpace(*job.Transcript) == "" {
+		return nil
+	}
+	if !isLikelyDefaultTranscriptionTitle(job) {
+		return nil
+	}
+	if !h.isAnyAutoTitleEnabled(ctx) {
+		return nil
+	}
+
+	title, modelName, err := h.generateAndPersistTranscriptionTitle(ctx, job, "")
+	if err != nil {
+		// No active LLM is a normal state; skip without surfacing as hard error.
+		if strings.Contains(strings.ToLower(err.Error()), "no active llm configuration") {
+			return nil
+		}
+		return err
+	}
+	logger.Info("Auto-generated transcription title", "job_id", jobID, "model", modelName, "title", title)
+	return nil
+}
+
+func (h *Handler) isAnyAutoTitleEnabled(ctx context.Context) bool {
+	users, _, err := h.userRepo.List(ctx, 0, 1000)
+	if err != nil {
+		// Preserve previous behavior when user settings are unavailable.
+		return true
+	}
+	if len(users) == 0 {
+		return true
+	}
+	for _, user := range users {
+		if user.AutoChatTitleEnabled {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *Handler) resolveAutoTitleModel(ctx context.Context, svc llm.Service, preferredModel string) (string, error) {
+	selectedModel := strings.TrimSpace(preferredModel)
+	if selectedModel != "" {
+		return selectedModel, nil
+	}
+
+	defaultModel := ""
+	settings, settingsErr := h.summaryRepo.GetSettings(ctx)
+	if settingsErr == nil && strings.TrimSpace(settings.DefaultModel) != "" {
+		defaultModel = strings.TrimSpace(settings.DefaultModel)
+	}
+
+	availableModels, modelErr := svc.GetModels(ctx)
+	if modelErr != nil {
+		if defaultModel != "" {
+			return defaultModel, nil
+		}
+		return "", modelErr
+	}
+
+	if defaultModel != "" {
+		for _, modelName := range availableModels {
+			normalized := strings.TrimSpace(modelName)
+			if normalized != "" && strings.EqualFold(normalized, defaultModel) {
+				return normalized, nil
+			}
+		}
+		logger.Warn("Default model not available on active LLM provider, falling back to first available model",
+			"default_model", defaultModel)
+	}
+
+	for _, modelName := range availableModels {
+		if strings.TrimSpace(modelName) != "" {
+			return strings.TrimSpace(modelName), nil
+		}
+	}
+
+	if defaultModel != "" {
+		return defaultModel, nil
+	}
+
+	return "", fmt.Errorf("no available model found for title generation")
+}
+
+func buildLLMServiceFromConfig(cfg models.LLMConfig) (llm.Service, string, bool) {
+	provider := strings.ToLower(strings.TrimSpace(cfg.Provider))
+
+	switch provider {
+	case "openai":
+		if cfg.APIKey == nil || strings.TrimSpace(*cfg.APIKey) == "" {
+			return nil, provider, false
+		}
+		return llm.NewOpenAIService(strings.TrimSpace(*cfg.APIKey), cfg.OpenAIBaseURL), provider, true
+	case "ollama":
+		if cfg.BaseURL == nil || strings.TrimSpace(*cfg.BaseURL) == "" {
+			return nil, provider, false
+		}
+		return llm.NewOllamaService(strings.TrimSpace(*cfg.BaseURL)), provider, true
+	default:
+		return nil, provider, false
+	}
+}
+
+func (h *Handler) getLLMServiceForAutoTitle(ctx context.Context) (llm.Service, string, error) {
+	svc, provider, err := h.getLLMService(ctx)
+	if err == nil {
+		return svc, provider, nil
+	}
+
+	configs, _, listErr := h.llmConfigRepo.List(ctx, 0, 100)
+	if listErr != nil {
+		return nil, "", err
+	}
+	if len(configs) == 0 {
+		return nil, "", err
+	}
+
+	sort.Slice(configs, func(i, j int) bool {
+		return configs[i].UpdatedAt.After(configs[j].UpdatedAt)
+	})
+
+	for _, cfg := range configs {
+		fallbackSvc, fallbackProvider, ok := buildLLMServiceFromConfig(cfg)
+		if !ok {
+			continue
+		}
+		logger.Info("Using fallback LLM configuration for transcription auto-title",
+			"provider", fallbackProvider,
+			"config_id", cfg.ID)
+		return fallbackSvc, fallbackProvider, nil
+	}
+
+	return nil, "", err
+}
+
+func (h *Handler) generateAndPersistTranscriptionTitle(
+	ctx context.Context,
+	job *models.TranscriptionJob,
+	preferredModel string,
+) (string, string, error) {
+	svc, _, err := h.getLLMServiceForAutoTitle(ctx)
+	if err != nil {
+		return "", "", err
+	}
+
+	selectedModel, err := h.resolveAutoTitleModel(ctx, svc, preferredModel)
+	if err != nil {
+		return "", "", err
+	}
+
+	if job.Transcript == nil {
+		return "", "", fmt.Errorf("transcript content is required")
+	}
+
+	msgs := []models.ChatMessage{
+		{
+			Role:    RoleUser,
+			Content: buildTranscriptTitleSource(*job.Transcript),
+		},
+	}
+
+	title, err := h.generateTitleFromLLM(ctx, svc, selectedModel, msgs)
+	if err != nil {
+		return "", "", err
+	}
+
+	job.Title = &title
+	if err := h.jobRepo.Update(ctx, job); err != nil {
+		return "", "", err
+	}
+
+	return title, selectedModel, nil
+}
+
+func isLikelyDefaultTranscriptionTitle(job *models.TranscriptionJob) bool {
+	if job == nil || job.Title == nil {
+		return true
+	}
+
+	title := strings.TrimSpace(*job.Title)
+	if title == "" {
+		return true
+	}
+
+	base := strings.TrimSpace(filepath.Base(job.AudioPath))
+	stem := strings.TrimSuffix(base, filepath.Ext(base))
+
+	if base != "" && strings.EqualFold(title, base) {
+		return true
+	}
+	if stem != "" && strings.EqualFold(title, stem) {
+		return true
+	}
+	if strings.HasPrefix(title, "Multi-track Job ") {
+		return true
+	}
+	if strings.EqualFold(title, "YouTube Audio") {
+		return true
+	}
+
+	return false
+}
+
+func buildTranscriptTitleSource(transcript string) string {
+	trimmed := strings.TrimSpace(transcript)
+	if trimmed == "" {
+		return trimmed
+	}
+
+	// Keep title generation prompt compact for smaller context-window models.
+	const sectionChars = 3000
+	if len(trimmed) <= sectionChars*2 {
+		return trimmed
+	}
+
+	head := strings.TrimSpace(trimmed[:sectionChars])
+	tail := strings.TrimSpace(trimmed[len(trimmed)-sectionChars:])
+	return head + "\n...\n" + tail
 }
 
 // @Summary Delete transcription job
@@ -2815,12 +3136,16 @@ func (h *Handler) SetUserDefaultProfile(c *gin.Context) {
 // UserSettingsResponse represents the user's settings
 type UserSettingsResponse struct {
 	AutoTranscriptionEnabled bool    `json:"auto_transcription_enabled"`
+	AutoSummaryEnabled       bool    `json:"auto_summary_enabled"`
+	AutoChatTitleEnabled     bool    `json:"auto_chat_title_enabled"`
 	DefaultProfileID         *string `json:"default_profile_id,omitempty"`
 }
 
 // UpdateUserSettingsRequest represents the request to update user settings
 type UpdateUserSettingsRequest struct {
 	AutoTranscriptionEnabled *bool `json:"auto_transcription_enabled,omitempty"`
+	AutoSummaryEnabled       *bool `json:"auto_summary_enabled,omitempty"`
+	AutoChatTitleEnabled     *bool `json:"auto_chat_title_enabled,omitempty"`
 }
 
 // @Summary Get user settings
@@ -2847,6 +3172,8 @@ func (h *Handler) GetUserSettings(c *gin.Context) {
 
 	response := UserSettingsResponse{
 		AutoTranscriptionEnabled: user.AutoTranscriptionEnabled,
+		AutoSummaryEnabled:       user.AutoSummaryEnabled,
+		AutoChatTitleEnabled:     user.AutoChatTitleEnabled,
 		DefaultProfileID:         user.DefaultProfileID,
 	}
 
@@ -2888,6 +3215,12 @@ func (h *Handler) UpdateUserSettings(c *gin.Context) {
 	if req.AutoTranscriptionEnabled != nil {
 		user.AutoTranscriptionEnabled = *req.AutoTranscriptionEnabled
 	}
+	if req.AutoSummaryEnabled != nil {
+		user.AutoSummaryEnabled = *req.AutoSummaryEnabled
+	}
+	if req.AutoChatTitleEnabled != nil {
+		user.AutoChatTitleEnabled = *req.AutoChatTitleEnabled
+	}
 
 	// Save updated user
 	if err := h.userRepo.Update(c.Request.Context(), user); err != nil {
@@ -2897,6 +3230,8 @@ func (h *Handler) UpdateUserSettings(c *gin.Context) {
 
 	response := UserSettingsResponse{
 		AutoTranscriptionEnabled: user.AutoTranscriptionEnabled,
+		AutoSummaryEnabled:       user.AutoSummaryEnabled,
+		AutoChatTitleEnabled:     user.AutoChatTitleEnabled,
 		DefaultProfileID:         user.DefaultProfileID,
 	}
 

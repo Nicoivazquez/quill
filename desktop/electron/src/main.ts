@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog } from "electron";
+import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { spawn, type ChildProcessByStdio } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
@@ -480,6 +480,25 @@ function createMainWindow(): BrowserWindow {
   return window;
 }
 
+function registerDesktopIpcHandlers(): void {
+  ipcMain.handle("desktop:select-folder", async () => {
+    const parentWindow = BrowserWindow.getFocusedWindow() ?? mainWindow;
+    const options: Electron.OpenDialogOptions = {
+      title: "Select Folder To Auto-Import",
+      properties: ["openDirectory", "createDirectory", "dontAddToRecent"],
+    };
+    const result = parentWindow
+      ? await dialog.showOpenDialog(parentWindow, options)
+      : await dialog.showOpenDialog(options);
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return null;
+    }
+
+    return result.filePaths[0];
+  });
+}
+
 async function stopBackend(): Promise<void> {
   if (!backendProcess) {
     backendReady = false;
@@ -587,6 +606,7 @@ app.on("activate", async () => {
 void app.whenReady()
   .then(async () => {
     try {
+      registerDesktopIpcHandlers();
       await boot();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
