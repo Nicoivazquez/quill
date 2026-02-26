@@ -23,21 +23,22 @@ import (
 )
 
 const (
-	ModelWhisperX        = "whisperx"
-	ModelPyannote        = "pyannote"
-	ModelParakeet        = "parakeet"
-	ModelCanary          = "canary"
-	ModelSortformer      = "sortformer"
-	ModelOpenAI          = "openai_whisper"
-	ModelVoxtral         = "voxtral"
-	ModelDiarization31   = "pyannote/speaker-diarization-3.1"
-	FamilyNvidiaCanary   = "nvidia_canary"
-	FamilyNvidiaParakeet = "nvidia_parakeet"
-	FamilyWhisper        = "whisper"
-	FamilyOpenAI         = "openai"
-	FamilyMistralVoxtral = "mistral_voxtral"
-	DiarizeSortformer    = "nvidia_sortformer"
-	OutputFormatJSON     = "json"
+	ModelWhisperX              = "whisperx"
+	ModelPyannote              = "pyannote"
+	ModelParakeet              = "parakeet"
+	ModelCanary                = "canary"
+	ModelSortformer            = "sortformer"
+	ModelOpenAI                = "openai_whisper"
+	ModelVoxtral               = "voxtral"
+	ModelDiarization31         = "pyannote/speaker-diarization-3.1"
+	ModelDiarizationCommunity1 = "pyannote/speaker-diarization-community-1"
+	FamilyNvidiaCanary         = "nvidia_canary"
+	FamilyNvidiaParakeet       = "nvidia_parakeet"
+	FamilyWhisper              = "whisper"
+	FamilyOpenAI               = "openai"
+	FamilyMistralVoxtral       = "mistral_voxtral"
+	DiarizeSortformer          = "nvidia_sortformer"
+	OutputFormatJSON           = "json"
 )
 
 // UnifiedTranscriptionService provides a unified interface for all transcription and diarization models
@@ -409,7 +410,7 @@ func (u *UnifiedTranscriptionService) selectModels(params models.WhisperXParams)
 		switch params.DiarizeModel {
 		case DiarizeSortformer:
 			diarizationModelID = ModelSortformer
-		case ModelPyannote, ModelDiarization31:
+		case ModelPyannote, ModelDiarization31, ModelDiarizationCommunity1:
 			diarizationModelID = ModelPyannote
 		default:
 			diarizationModelID = ModelPyannote // Default fallback

@@ -773,13 +773,16 @@ func (h *Handler) SubmitJob(c *gin.Context) {
 	}
 
 	// Parse and validate diarization model
-	diarizeModel := getFormValueWithDefault(c, "diarize_model", "pyannote")
-	if diarizeModel != "pyannote" && diarizeModel != "nvidia_sortformer" {
+	diarizeModel, validDiarizeModel := normalizeDiarizeModel(
+		getFormValueWithDefault(c, "diarize_model", transcription.DiarizeSortformer),
+	)
+	if !validDiarizeModel {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid diarize_model. Must be 'pyannote' or 'nvidia_sortformer'"})
 		_ = h.fileService.RemoveFile(filePath)
 		return
 	}
 	params.DiarizeModel = diarizeModel
+	fallbackDiarizationModelIfTokenMissing(&params, "upload", h.config.HFToken)
 
 	// Create job
 	job := models.TranscriptionJob{
@@ -1086,7 +1089,7 @@ func (h *Handler) getValidatedTranscriptionParams(c *gin.Context, job *models.Tr
 		VadOffset:                      0.363,
 		ChunkSize:                      30,
 		Diarize:                        false,
-		DiarizeModel:                   "pyannote/speaker-diarization-3.1",
+		DiarizeModel:                   transcription.DiarizeSortformer,
 		SpeakerEmbeddings:              false,
 		Temperature:                    0,
 		BestOf:                         5,
@@ -1123,17 +1126,13 @@ func (h *Handler) getValidatedTranscriptionParams(c *gin.Context, job *models.Tr
 		"diarize_model", requestParams.DiarizeModel,
 		"language", requestParams.Language)
 
-	// Validate NVIDIA-specific constraints
-	if requestParams.ModelFamily == "nvidia_parakeet" || requestParams.ModelFamily == "nvidia_canary" {
-		// Both NVIDIA models support multiple European languages
-		// No language restriction needed - models support auto-detection
-
-		// NVIDIA models support diarization via Pyannote integration or NVIDIA Sortformer
-		if requestParams.Diarize && requestParams.DiarizeModel == "pyannote" && (requestParams.HfToken == nil || *requestParams.HfToken == "") {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Hugging Face token (hf_token) is required for Pyannote diarization"})
-			return nil, fmt.Errorf("hf_token required")
-		}
+	normalizedDiarizeModel, validDiarizeModel := normalizeDiarizeModel(requestParams.DiarizeModel)
+	if !validDiarizeModel {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid diarize_model. Must be 'pyannote' or 'nvidia_sortformer'"})
+		return nil, fmt.Errorf("invalid diarize_model")
 	}
+	requestParams.DiarizeModel = normalizedDiarizeModel
+	fallbackDiarizationModelIfTokenMissing(&requestParams, fmt.Sprintf("start_transcription job=%s", jobID), h.config.HFToken)
 
 	// Validate multi-track compatibility
 	if job.IsMultiTrack && !requestParams.IsMultiTrackEnabled {
@@ -2678,6 +2677,49 @@ func (h *Handler) HealthCheck(c *gin.Context) {
 }
 
 // Helper functions
+func normalizeDiarizeModel(rawModel string) (string, bool) {
+	model := strings.ToLower(strings.TrimSpace(rawModel))
+
+	switch model {
+	case "", transcription.DiarizeSortformer:
+		return transcription.DiarizeSortformer, true
+	case transcription.ModelPyannote, transcription.ModelDiarization31, transcription.ModelDiarizationCommunity1:
+		return transcription.ModelPyannote, true
+	default:
+		return "", false
+	}
+}
+
+func hasHFToken(hfToken *string) bool {
+	return hfToken != nil && strings.TrimSpace(*hfToken) != ""
+}
+
+func fallbackDiarizationModelIfTokenMissing(params *models.WhisperXParams, context string, serverHFToken string) {
+	if !params.Diarize || params.DiarizeModel != transcription.ModelPyannote {
+		return
+	}
+
+	if hasHFToken(params.HfToken) {
+		return
+	}
+
+	resolvedServerToken := strings.TrimSpace(serverHFToken)
+	if resolvedServerToken != "" {
+		params.HfToken = &resolvedServerToken
+		logger.Info(
+			"Using server-managed Hugging Face token for Pyannote diarization",
+			"context", context,
+		)
+		return
+	}
+
+	logger.Warn(
+		"Pyannote diarization requested without Hugging Face token; falling back to NVIDIA Sortformer",
+		"context", context,
+	)
+	params.DiarizeModel = transcription.DiarizeSortformer
+}
+
 func getFormValueWithDefault(c *gin.Context, key, defaultValue string) string {
 	if value := c.PostForm(key); value != "" {
 		return value
@@ -2992,7 +3034,7 @@ func (h *Handler) SubmitQuickTranscription(c *gin.Context) {
 
 			// Diarization settings
 			Diarize:           false,
-			DiarizeModel:      "pyannote/speaker-diarization-3.1",
+			DiarizeModel:      transcription.DiarizeSortformer,
 			SpeakerEmbeddings: false,
 
 			// Transcription quality settings
@@ -3015,6 +3057,14 @@ func (h *Handler) SubmitQuickTranscription(c *gin.Context) {
 			PrintProgress:     false,
 		}
 	}
+
+	normalizedDiarizeModel, validDiarizeModel := normalizeDiarizeModel(params.DiarizeModel)
+	if !validDiarizeModel {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid diarize_model. Must be 'pyannote' or 'nvidia_sortformer'"})
+		return
+	}
+	params.DiarizeModel = normalizedDiarizeModel
+	fallbackDiarizationModelIfTokenMissing(&params, "quick_transcription", h.config.HFToken)
 
 	// Submit quick transcription job
 	job, err := h.quickTranscription.SubmitQuickJob(file, header.Filename, params)

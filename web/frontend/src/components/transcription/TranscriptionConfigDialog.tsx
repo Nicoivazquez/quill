@@ -100,6 +100,50 @@ interface TranscriptionConfigDialogProps {
     title?: string;
 }
 
+const DEFAULT_DIARIZE_MODEL = "nvidia_sortformer";
+
+type DiarizationMode = "local_no_token" | "high_accuracy" | "cloud_server_token";
+
+const normalizeDiarizeModel = (model?: string): string => {
+    if (
+        model === "pyannote" ||
+        model === "pyannote/speaker-diarization-3.1" ||
+        model === "pyannote/speaker-diarization-community-1"
+    ) {
+        return "pyannote";
+    }
+    if (model === "nvidia_sortformer") {
+        return "nvidia_sortformer";
+    }
+    return DEFAULT_DIARIZE_MODEL;
+};
+
+const getDiarizationMode = (params: WhisperXParams): DiarizationMode => {
+    const diarizeModel = normalizeDiarizeModel(params.diarize_model);
+    if (diarizeModel === "nvidia_sortformer") {
+        return "local_no_token";
+    }
+    return params.hf_token?.trim() ? "high_accuracy" : "cloud_server_token";
+};
+
+const applyDiarizationMode = (
+    updateParam: <K extends keyof WhisperXParams>(key: K, value: WhisperXParams[K]) => void,
+    mode: DiarizationMode
+) => {
+    if (mode === "local_no_token") {
+        updateParam("diarize_model", "nvidia_sortformer");
+        return;
+    }
+    if (mode === "high_accuracy") {
+        updateParam("diarize_model", "pyannote");
+        return;
+    }
+
+    // cloud_server_token
+    updateParam("diarize_model", "pyannote");
+    updateParam("hf_token", undefined);
+};
+
 const DEFAULT_PARAMS: WhisperXParams = {
     model_family: "whisper",
     model: "small",
@@ -120,7 +164,7 @@ const DEFAULT_PARAMS: WhisperXParams = {
     vad_offset: 0.363,
     chunk_size: 30,
     diarize: false,
-    diarize_model: "pyannote",
+    diarize_model: DEFAULT_DIARIZE_MODEL,
     speaker_embeddings: false,
     temperature: 0,
     best_of: 5,
@@ -250,12 +294,12 @@ const PARAM_DESCRIPTIONS = {
     compute_type: "Float16 (faster), Float32 (accurate), Int8 (fastest).",
     batch_size: "Segments processed at once. Higher = faster but more memory.",
     diarize: "Identify and separate different speakers.",
-    diarize_model: "Pyannote (accurate, needs HF token) or NVIDIA Sortformer (up to 4 speakers).",
+    diarize_model: "Mode: Local no-token (Sortformer), High-accuracy (Pyannote + your token), or Cloud/server token (Pyannote via server HF_TOKEN).",
     temperature: "0 = deterministic, higher = more creative.",
     beam_size: "Search beams. Higher = better quality but slower.",
     vad_method: "Voice detection: Pyannote (accurate) or Silero (fast).",
     initial_prompt: "Context text to guide transcription style.",
-    hf_token: "Required for Pyannote diarization models.",
+    hf_token: "Only used in High-accuracy mode. Leave blank for Cloud/server-token mode.",
     vad_onset: "Voice detection sensitivity. Lower values (0.3-0.4) catch quieter/distant speakers.",
     vad_offset: "Speech ending sensitivity. Lower values detect speech endings more precisely.",
 };
@@ -320,6 +364,7 @@ export const TranscriptionConfigDialog = memo(function TranscriptionConfigDialog
             const baseParams = initialParams || DEFAULT_PARAMS;
             setParams({
                 ...baseParams,
+                diarize_model: normalizeDiarizeModel(baseParams.diarize_model),
                 is_multi_track_enabled: isMultiTrack,
                 diarize: isMultiTrack ? false : baseParams.diarize
             });
@@ -329,13 +374,7 @@ export const TranscriptionConfigDialog = memo(function TranscriptionConfigDialog
     }, [open, initialParams, initialName, initialDescription, isMultiTrack]);
 
     const updateParam = <K extends keyof WhisperXParams>(key: K, value: WhisperXParams[K]) => {
-        setParams(prev => {
-            const newParams = { ...prev, [key]: value };
-            if (key === 'model_family' && value === 'whisper') {
-                newParams.diarize_model = 'pyannote';
-            }
-            return newParams;
-        });
+        setParams(prev => ({ ...prev, [key]: value }));
     };
 
     const validateAPIKey = async () => {
@@ -549,6 +588,8 @@ interface ConfigProps {
 }
 
 function WhisperConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
+    const diarizationMode = getDiarizationMode(params);
+
     return (
         <div className="space-y-6">
             {/* Essential Settings */}
@@ -623,6 +664,22 @@ function WhisperConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
 
                         {params.diarize && (
                             <div className="p-4 bg-[var(--bg-main)] rounded-xl border border-[var(--border-subtle)] space-y-4">
+                                <FormField label="Diarization Mode" description={PARAM_DESCRIPTIONS.diarize_model}>
+                                    <Select
+                                        value={diarizationMode}
+                                        onValueChange={(v) => applyDiarizationMode(updateParam, v as DiarizationMode)}
+                                    >
+                                        <SelectTrigger className={selectTriggerClassName}>
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent className={selectContentClassName}>
+                                            <SelectItem value="local_no_token" className={selectItemClassName}>Local (no token)</SelectItem>
+                                            <SelectItem value="high_accuracy" className={selectItemClassName}>High-accuracy (your token)</SelectItem>
+                                            <SelectItem value="cloud_server_token" className={selectItemClassName}>Cloud (server token)</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </FormField>
+
                                 <div className="grid grid-cols-2 gap-4">
                                     <FormField label="Min Speakers" optional>
                                         <Input
@@ -648,43 +705,63 @@ function WhisperConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
                                     </FormField>
                                 </div>
 
-                                <FormField label="Hugging Face Token" description={PARAM_DESCRIPTIONS.hf_token}>
-                                    <Input
-                                        type="password"
-                                        placeholder="hf_..."
-                                        value={params.hf_token || ""}
-                                        onChange={(e) => updateParam('hf_token', e.target.value || undefined)}
-                                        className={inputClassName}
-                                    />
-                                </FormField>
+                                {diarizationMode === "high_accuracy" && (
+                                    <>
+                                        <FormField label="Hugging Face Token" description={PARAM_DESCRIPTIONS.hf_token}>
+                                            <Input
+                                                type="password"
+                                                placeholder="hf_..."
+                                                value={params.hf_token || ""}
+                                                onChange={(e) => updateParam('hf_token', e.target.value || undefined)}
+                                                className={inputClassName}
+                                            />
+                                        </FormField>
+                                    </>
+                                )}
 
-                                <div className="pt-3 border-t border-[var(--border-subtle)]">
-                                    <p className="text-xs text-[var(--text-tertiary)] mb-3">Voice Detection Tuning (for noisy/distant audio)</p>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <FormField label="VAD Onset" description={PARAM_DESCRIPTIONS.vad_onset}>
-                                            <Input
-                                                type="number"
-                                                min={0.1}
-                                                max={0.9}
-                                                step={0.05}
-                                                value={params.vad_onset}
-                                                onChange={(e) => updateParam('vad_onset', parseFloat(e.target.value) || 0.5)}
-                                                className={inputClassName}
-                                            />
-                                        </FormField>
-                                        <FormField label="VAD Offset" description={PARAM_DESCRIPTIONS.vad_offset}>
-                                            <Input
-                                                type="number"
-                                                min={0.1}
-                                                max={0.9}
-                                                step={0.05}
-                                                value={params.vad_offset}
-                                                onChange={(e) => updateParam('vad_offset', parseFloat(e.target.value) || 0.363)}
-                                                className={inputClassName}
-                                            />
-                                        </FormField>
-                                    </div>
-                                </div>
+                                {(diarizationMode === "high_accuracy" || diarizationMode === "cloud_server_token") && (
+                                    <>
+                                        <div className="pt-3 border-t border-[var(--border-subtle)]">
+                                            <p className="text-xs text-[var(--text-tertiary)] mb-3">Voice Detection Tuning (for noisy/distant audio)</p>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <FormField label="VAD Onset" description={PARAM_DESCRIPTIONS.vad_onset}>
+                                                    <Input
+                                                        type="number"
+                                                        min={0.1}
+                                                        max={0.9}
+                                                        step={0.05}
+                                                        value={params.vad_onset}
+                                                        onChange={(e) => updateParam('vad_onset', parseFloat(e.target.value) || 0.5)}
+                                                        className={inputClassName}
+                                                    />
+                                                </FormField>
+                                                <FormField label="VAD Offset" description={PARAM_DESCRIPTIONS.vad_offset}>
+                                                    <Input
+                                                        type="number"
+                                                        min={0.1}
+                                                        max={0.9}
+                                                        step={0.05}
+                                                        value={params.vad_offset}
+                                                        onChange={(e) => updateParam('vad_offset', parseFloat(e.target.value) || 0.363)}
+                                                        className={inputClassName}
+                                                    />
+                                                </FormField>
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
+
+                                {diarizationMode === "cloud_server_token" && (
+                                    <p className="text-xs text-[var(--text-tertiary)]">
+                                        Uses server `HF_TOKEN` for Pyannote. If server token is missing, the backend falls back to NVIDIA Sortformer.
+                                    </p>
+                                )}
+
+                                {diarizationMode === "local_no_token" && (
+                                    <p className="text-xs text-[var(--text-tertiary)]">
+                                        NVIDIA Sortformer does not require a Hugging Face token.
+                                    </p>
+                                )}
                             </div>
                         )}
                     </div>
@@ -800,6 +877,8 @@ function WhisperConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
 }
 
 function ParakeetConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
+    const diarizationMode = getDiarizationMode(params);
+
     return (
         <div className="space-y-6">
             {/* Long-form Audio Settings */}
@@ -860,14 +939,18 @@ function ParakeetConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
 
                         {params.diarize && (
                             <div className="p-4 bg-[var(--bg-main)] rounded-xl border border-[var(--border-subtle)] space-y-4">
-                                <FormField label="Diarization Model">
-                                    <Select value={params.diarize_model} onValueChange={(v) => updateParam('diarize_model', v)}>
+                                <FormField label="Diarization Mode" description={PARAM_DESCRIPTIONS.diarize_model}>
+                                    <Select
+                                        value={diarizationMode}
+                                        onValueChange={(v) => applyDiarizationMode(updateParam, v as DiarizationMode)}
+                                    >
                                         <SelectTrigger className={selectTriggerClassName}>
                                             <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent className={selectContentClassName}>
-                                            <SelectItem value="pyannote" className={selectItemClassName}>Pyannote</SelectItem>
-                                            <SelectItem value="nvidia_sortformer" className={selectItemClassName}>NVIDIA Sortformer</SelectItem>
+                                            <SelectItem value="local_no_token" className={selectItemClassName}>Local (no token)</SelectItem>
+                                            <SelectItem value="high_accuracy" className={selectItemClassName}>High-accuracy (your token)</SelectItem>
+                                            <SelectItem value="cloud_server_token" className={selectItemClassName}>Cloud (server token)</SelectItem>
                                         </SelectContent>
                                     </Select>
                                 </FormField>
@@ -897,7 +980,7 @@ function ParakeetConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
                                     </FormField>
                                 </div>
 
-                                {params.diarize_model === "pyannote" && (
+                                {diarizationMode === "high_accuracy" && (
                                     <>
                                         <FormField label="Hugging Face Token">
                                             <Input
@@ -908,7 +991,11 @@ function ParakeetConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
                                                 className={inputClassName}
                                             />
                                         </FormField>
+                                    </>
+                                )}
 
+                                {(diarizationMode === "high_accuracy" || diarizationMode === "cloud_server_token") && (
+                                    <>
                                         <div className="pt-3 border-t border-[var(--border-subtle)]">
                                             <p className="text-xs text-[var(--text-tertiary)] mb-3">Voice Detection Tuning (for noisy/distant audio)</p>
                                             <div className="grid grid-cols-2 gap-4">
@@ -938,6 +1025,18 @@ function ParakeetConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
                                         </div>
                                     </>
                                 )}
+
+                                {diarizationMode === "cloud_server_token" && (
+                                    <p className="text-xs text-[var(--text-tertiary)]">
+                                        Uses server `HF_TOKEN` for Pyannote. If server token is missing, the backend falls back to NVIDIA Sortformer.
+                                    </p>
+                                )}
+
+                                {diarizationMode === "local_no_token" && (
+                                    <p className="text-xs text-[var(--text-tertiary)]">
+                                        NVIDIA Sortformer does not require a Hugging Face token.
+                                    </p>
+                                )}
                             </div>
                         )}
                     </div>
@@ -948,6 +1047,8 @@ function ParakeetConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
 }
 
 function CanaryConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
+    const diarizationMode = getDiarizationMode(params);
+
     return (
         <div className="space-y-6">
             <Section title="Language Settings">
@@ -982,14 +1083,18 @@ function CanaryConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
 
                         {params.diarize && (
                             <div className="p-4 bg-[var(--bg-main)] rounded-xl border border-[var(--border-subtle)] space-y-4">
-                                <FormField label="Diarization Model">
-                                    <Select value={params.diarize_model} onValueChange={(v) => updateParam('diarize_model', v)}>
+                                <FormField label="Diarization Mode" description={PARAM_DESCRIPTIONS.diarize_model}>
+                                    <Select
+                                        value={diarizationMode}
+                                        onValueChange={(v) => applyDiarizationMode(updateParam, v as DiarizationMode)}
+                                    >
                                         <SelectTrigger className={selectTriggerClassName}>
                                             <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent className={selectContentClassName}>
-                                            <SelectItem value="pyannote" className={selectItemClassName}>Pyannote</SelectItem>
-                                            <SelectItem value="nvidia_sortformer" className={selectItemClassName}>NVIDIA Sortformer</SelectItem>
+                                            <SelectItem value="local_no_token" className={selectItemClassName}>Local (no token)</SelectItem>
+                                            <SelectItem value="high_accuracy" className={selectItemClassName}>High-accuracy (your token)</SelectItem>
+                                            <SelectItem value="cloud_server_token" className={selectItemClassName}>Cloud (server token)</SelectItem>
                                         </SelectContent>
                                     </Select>
                                 </FormField>
@@ -1019,7 +1124,7 @@ function CanaryConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
                                     </FormField>
                                 </div>
 
-                                {params.diarize_model === "pyannote" && (
+                                {diarizationMode === "high_accuracy" && (
                                     <>
                                         <FormField label="Hugging Face Token">
                                             <Input
@@ -1030,7 +1135,11 @@ function CanaryConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
                                                 className={inputClassName}
                                             />
                                         </FormField>
+                                    </>
+                                )}
 
+                                {(diarizationMode === "high_accuracy" || diarizationMode === "cloud_server_token") && (
+                                    <>
                                         <div className="pt-3 border-t border-[var(--border-subtle)]">
                                             <p className="text-xs text-[var(--text-tertiary)] mb-3">Voice Detection Tuning (for noisy/distant audio)</p>
                                             <div className="grid grid-cols-2 gap-4">
@@ -1059,6 +1168,18 @@ function CanaryConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
                                             </div>
                                         </div>
                                     </>
+                                )}
+
+                                {diarizationMode === "cloud_server_token" && (
+                                    <p className="text-xs text-[var(--text-tertiary)]">
+                                        Uses server `HF_TOKEN` for Pyannote. If server token is missing, the backend falls back to NVIDIA Sortformer.
+                                    </p>
+                                )}
+
+                                {diarizationMode === "local_no_token" && (
+                                    <p className="text-xs text-[var(--text-tertiary)]">
+                                        NVIDIA Sortformer does not require a Hugging Face token.
+                                    </p>
                                 )}
                             </div>
                         )}

@@ -87,7 +87,7 @@ type WhisperXParams struct {
 	Diarize           bool   `json:"diarize" gorm:"type:boolean;default:false"`
 	MinSpeakers       *int   `json:"min_speakers,omitempty" gorm:"type:int"`
 	MaxSpeakers       *int   `json:"max_speakers,omitempty" gorm:"type:int"`
-	DiarizeModel      string `json:"diarize_model" gorm:"type:varchar(50);default:'pyannote'"` // Options: 'pyannote', 'nvidia_sortformer'
+	DiarizeModel      string `json:"diarize_model" gorm:"type:varchar(50);default:'nvidia_sortformer'"` // Options: 'pyannote', 'nvidia_sortformer'
 	SpeakerEmbeddings bool   `json:"speaker_embeddings" gorm:"type:boolean;default:false"`
 
 	// Transcription quality settings

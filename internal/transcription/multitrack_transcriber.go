@@ -256,7 +256,7 @@ func (mt *MultiTrackTranscriber) transcribeIndividualTrack(ctx context.Context, 
 		trackParams.VadMethod = "silero"
 	}
 	if trackParams.DiarizeModel == "" {
-		trackParams.DiarizeModel = "pyannote/speaker-diarization-3.1"
+		trackParams.DiarizeModel = "pyannote/speaker-diarization-community-1"
 	}
 
 	// Create a temporary database job for unified processing
