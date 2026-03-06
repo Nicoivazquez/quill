@@ -1,41 +1,10 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useAuthStore } from '../store/authStore';
 
-const AUTH_PATH_PREFIX = '/api/v1/auth/';
-
-let originalFetchImpl: typeof window.fetch | null = null;
-let fetchInterceptorInstalled = false;
-let getTokenHandler: (() => string | null) | null = null;
-let refreshHandler: (() => Promise<string | null>) | null = null;
-let logoutHandler: (() => void) | null = null;
-
-function getRequestPath(input: RequestInfo | URL): string {
-    if (typeof input === 'string') {
-        return new URL(input, window.location.origin).pathname;
+declare global {
+    interface Window {
+        __scriberr_original_fetch?: typeof window.fetch;
     }
-    if (input instanceof URL) {
-        return input.pathname;
-    }
-    return new URL(input.url, window.location.origin).pathname;
-}
-
-function withAuthorizationHeader(input: RequestInfo | URL, init: RequestInit | undefined, token: string): RequestInit {
-    const headers = new Headers(init?.headers);
-
-    if (input instanceof Request) {
-        input.headers.forEach((value, key) => {
-            if (!headers.has(key)) {
-                headers.set(key, value);
-            }
-        });
-    }
-
-    headers.set('Authorization', `Bearer ${token}`);
-
-    return {
-        ...init,
-        headers,
-    };
 }
 
 export function useAuth() {
@@ -52,7 +21,7 @@ export function useAuth() {
     const isAuthenticated = !!token;
 
     const tokenCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
-    const refreshInFlightRef = useRef<Promise<string | null> | null>(null);
+    const fetchWrapperSetupRef = useRef(false);
 
     const getAuthHeaders = useCallback((): Record<string, string> => {
         if (token) {
@@ -86,8 +55,7 @@ export function useAuth() {
         if (window.location.pathname !== "/") {
             // Force navigation handled by RouterContext or window.location if critical
             window.history.pushState({ route: { path: 'home' } }, "", "/");
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            window.dispatchEvent(new PopStateEvent('popstate', { state: { route: { path: 'home' } } as any }));
+            window.dispatchEvent(new PopStateEvent('popstate', { state: { route: { path: 'home' } } }));
         }
     }, [token, storeLogout]);
 
@@ -99,82 +67,55 @@ export function useAuth() {
 
 
     const tryRefresh = useCallback(async (): Promise<string | null> => {
-        if (refreshInFlightRef.current) {
-            return refreshInFlightRef.current;
-        }
-
-        const refreshPromise = (async (): Promise<string | null> => {
-            try {
-                const res = await fetch('/api/v1/auth/refresh', { method: 'POST' });
-                if (!res.ok) return null;
-
-                const data = await res.json();
-                if (typeof data?.token === 'string' && data.token.length > 0) {
-                    login(data.token);
-                    return data.token;
-                }
-                return null;
-            } catch {
-                return null;
-            }
-        })();
-
-        refreshInFlightRef.current = refreshPromise;
-
         try {
-            return await refreshPromise;
-        } finally {
-            refreshInFlightRef.current = null;
+            const fetchToUse = window.__scriberr_original_fetch || window.fetch;
+            const res = await fetchToUse('/api/v1/auth/refresh', { method: 'POST' })
+            if (!res.ok) return null
+            const data = await res.json()
+            if (data?.token) {
+                login(data.token)
+                return data.token as string
+            }
+            return null
+        } catch {
+            return null
         }
-    }, [login]);
+    }, [login])
 
 
     // Consolidated token management
     useEffect(() => {
-        getTokenHandler = () => useAuthStore.getState().token;
-        refreshHandler = tryRefresh;
-        logoutHandler = logout;
+        if (!fetchWrapperSetupRef.current) {
+            if (!window.__scriberr_original_fetch) {
+                window.__scriberr_original_fetch = window.fetch.bind(window);
+            }
 
-        if (!fetchInterceptorInstalled) {
-            originalFetchImpl = window.fetch.bind(window);
-
+            const originalFetch = window.__scriberr_original_fetch!;
             const wrappedFetch: typeof window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-                const requestPath = getRequestPath(input);
-                const fetchImpl = originalFetchImpl ?? window.fetch.bind(window);
+                const url = typeof input === 'string' ? input : (input instanceof URL ? input.href : input.url);
+                const isAuthEndpoint = url.includes('/api/v1/auth/');
 
-                let res = await fetchImpl(input, init);
-                if (res.status !== 401) {
-                    return res;
+                let res = await originalFetch(input, init);
+                if (res.status === 401 && !isAuthEndpoint) {
+                    const newToken = await tryRefresh()
+                    if (newToken) {
+                        const newInit: RequestInit = init ? { ...init } : {};
+                        const headers = new Headers(newInit.headers);
+                        headers.set('Authorization', `Bearer ${newToken}`);
+                        newInit.headers = headers;
+
+                        res = await originalFetch(input, newInit)
+                        if (res.status !== 401) return res
+                    }
+                    logout()
                 }
-
-                // Prevent refresh recursion and avoid auth endpoint interception.
-                if (requestPath.startsWith(AUTH_PATH_PREFIX)) {
-                    return res;
-                }
-
-                const currentToken = getTokenHandler ? getTokenHandler() : null;
-                if (!currentToken) {
-                    return res;
-                }
-
-                const newToken = refreshHandler ? await refreshHandler() : null;
-                if (!newToken) {
-                    logoutHandler?.();
-                    return res;
-                }
-
-                res = await fetchImpl(input, withAuthorizationHeader(input, init, newToken));
-                if (res.status === 401) {
-                    logoutHandler?.();
-                    return res;
-                }
-
                 return res;
             };
-
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            window.fetch = wrappedFetch as any;
-            fetchInterceptorInstalled = true;
+            window.fetch = wrappedFetch;
+            fetchWrapperSetupRef.current = true;
+            // Note: We don't restore originalFetch on unmount because other components
+            // also use useAuth and expect the wrapped version. This is a bit hacky
+            // but safer than multiple re-wrapping/unwrapping.
         }
 
         if (tokenCheckIntervalRef.current) clearInterval(tokenCheckIntervalRef.current);
