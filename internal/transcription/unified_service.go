@@ -663,6 +663,8 @@ func (u *UnifiedTranscriptionService) convertToCanaryParams(params models.Whispe
 
 // convertToWhisperXParams converts to WhisperX-specific parameters
 func (u *UnifiedTranscriptionService) convertToWhisperXParams(params models.WhisperXParams) map[string]interface{} {
+	useWhisperXDiarization := params.Diarize && params.DiarizeModel != DiarizeSortformer
+
 	// For WhisperX, we use the standard WhisperX parameters (no NVIDIA-specific ones)
 	paramMap := map[string]interface{}{
 		// Core parameters
@@ -677,8 +679,7 @@ func (u *UnifiedTranscriptionService) convertToWhisperXParams(params models.Whis
 		"task": params.Task,
 
 		// Diarization
-		"diarize":       params.Diarize,
-		"diarize_model": params.DiarizeModel,
+		"diarize": useWhisperXDiarization,
 
 		// Quality settings
 		"temperature": params.Temperature,
@@ -690,6 +691,12 @@ func (u *UnifiedTranscriptionService) convertToWhisperXParams(params models.Whis
 		"vad_method": params.VadMethod,
 		"vad_onset":  params.VadOnset,
 		"vad_offset": params.VadOffset,
+	}
+
+	// WhisperX only supports pyannote diarization models. When Sortformer is selected,
+	// diarization is run as a separate adapter step, so we intentionally omit diarize_model.
+	if useWhisperXDiarization {
+		paramMap["diarize_model"] = params.DiarizeModel
 	}
 
 	// Handle pointer fields - only add if not nil

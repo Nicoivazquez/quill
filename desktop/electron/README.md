@@ -49,8 +49,11 @@ This runs:
 
 ## Tool bundling
 
-By default, `scripts/prepare-desktop-tools.sh` resolves tools from your local `PATH` and copies them into the packaged app resources.
-If `yt-dlp` is not found, the script attempts to download the macOS binary automatically.
+`scripts/prepare-desktop-tools.sh` resolves tools from local sources and verifies them against pinned checksums in:
+
+`scripts/desktop-tools.lock.env`
+
+If `yt-dlp` is not found, the script downloads a pinned release (`SCRIBERR_YTDLP_VERSION`) and verifies its SHA-256 before bundling.
 
 You can override source paths when building:
 
@@ -59,5 +62,16 @@ SCRIBERR_UV_SOURCE=/absolute/path/to/uv \
 SCRIBERR_FFMPEG_SOURCE=/absolute/path/to/ffmpeg \
 SCRIBERR_FFPROBE_SOURCE=/absolute/path/to/ffprobe \
 SCRIBERR_YTDLP_SOURCE=/absolute/path/to/yt-dlp \
+npm run dist:mac
+```
+
+You can also override pins/checksums at build time:
+
+```bash
+SCRIBERR_UV_SHA256=<sha256> \
+SCRIBERR_FFMPEG_SHA256=<sha256> \
+SCRIBERR_FFPROBE_SHA256=<sha256> \
+SCRIBERR_YTDLP_VERSION=<release-tag> \
+SCRIBERR_YTDLP_SHA256=<sha256> \
 npm run dist:mac
 ```

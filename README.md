@@ -166,6 +166,8 @@ Scriberr works out of the box. However, for Homebrew or manual installations, yo
 | `UPLOAD_DIR` | Directory for storing uploaded files. | `data/uploads` |
 | `TRANSCRIPTS_DIR` | Directory for storing transcripts. | `data/transcripts` |
 | `WHISPERX_ENV` | Path to the managed Python environment for models. | `data/whisperx-env` |
+| `SCRIBERR_WHISPERX_ZIP_URL` | WhisperX source archive URL/path used to initialize `WHISPERX_ENV`. | `https://github.com/m-bain/WhisperX/archive/refs/tags/v3.8.0.zip` |
+| `SCRIBERR_WHISPERX_ZIP_SHA256` | Optional SHA-256 checksum to verify the WhisperX source archive. | `""` |
 | `OPENAI_API_KEY` | API Key for OpenAI (optional). | `""` |
 | `JWT_SECRET` | Secret for signing JWTs. Auto-generated if not set. | Auto-generated |
 
@@ -359,4 +361,3 @@ This project was developed using AI agents as pair programmer. It was NOT vibe c
 ## Donating
 
 <a href='https://ko-fi.com/H2H41KQZA3' target='_blank'><img height='36' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi6.png?v=6' border='0' alt='Buy Me a Coffee at ko-fi.com' /></a>
-

@@ -3,9 +3,11 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -25,6 +27,7 @@ const (
 type ChatCreateRequest struct {
 	TranscriptionID string `json:"transcription_id" binding:"required"`
 	Model           string `json:"model" binding:"required"`
+	Provider        string `json:"provider,omitempty" binding:"omitempty,oneof=ollama openai"`
 	Title           string `json:"title,omitempty"`
 }
 
@@ -58,7 +61,17 @@ type ChatMessageResponse struct {
 
 // ChatModelsResponse represents the available chat models
 type ChatModelsResponse struct {
-	Models []string `json:"models"`
+	Models    []string             `json:"models"`
+	Provider  string               `json:"provider,omitempty"`
+	Providers []ChatProviderModels `json:"providers,omitempty"`
+}
+
+// ChatProviderModels represents provider-specific model discovery data.
+type ChatProviderModels struct {
+	Provider string   `json:"provider"`
+	Models   []string `json:"models"`
+	IsActive bool     `json:"is_active"`
+	Error    string   `json:"error,omitempty"`
 }
 
 // ChatSessionWithMessages represents a chat session with messages
@@ -78,29 +91,195 @@ type Segment struct {
 	Speaker string  `json:"speaker"`
 }
 
-// getLLMService returns a provider-agnostic LLM service based on active config
-func (h *Handler) getLLMService(ctx context.Context) (llm.Service, string, error) {
-	cfg, err := h.llmConfigRepo.GetActive(ctx)
+type configuredLLMService struct {
+	Provider string
+	IsActive bool
+	Updated  time.Time
+	Service  llm.Service
+}
+
+func (h *Handler) getImplicitLLMServices(requestedProvider string) []configuredLLMService {
+	services := make([]configuredLLMService, 0, 2)
+	requestedProvider = normalizeProvider(requestedProvider)
+
+	if requestedProvider == "" || requestedProvider == "ollama" {
+		services = append(services, configuredLLMService{
+			Provider: "ollama",
+			IsActive: false,
+			Updated:  time.Time{},
+			Service:  llm.NewOllamaService("http://localhost:11434"),
+		})
+	}
+
+	openAIKey := strings.TrimSpace(h.config.OpenAIAPIKey)
+	if openAIKey != "" && (requestedProvider == "" || requestedProvider == "openai") {
+		services = append(services, configuredLLMService{
+			Provider: "openai",
+			IsActive: false,
+			Updated:  time.Time{},
+			Service:  llm.NewOpenAIService(openAIKey, nil),
+		})
+	}
+
+	return services
+}
+
+func normalizeProvider(provider string) string {
+	return strings.ToLower(strings.TrimSpace(provider))
+}
+
+func parseBoolQuery(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func normalizeModelList(models []string) []string {
+	if len(models) == 0 {
+		return []string{}
+	}
+
+	out := make([]string, 0, len(models))
+	seen := make(map[string]struct{}, len(models))
+	for _, model := range models {
+		normalized := strings.TrimSpace(model)
+		if normalized == "" {
+			continue
+		}
+		if _, exists := seen[normalized]; exists {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		out = append(out, normalized)
+	}
+	return out
+}
+
+func invalidLLMConfigReason(cfg models.LLMConfig) string {
+	switch normalizeProvider(cfg.Provider) {
+	case "openai":
+		if cfg.APIKey == nil || strings.TrimSpace(*cfg.APIKey) == "" {
+			return "OpenAI API key not configured"
+		}
+	case "ollama":
+		if cfg.BaseURL == nil || strings.TrimSpace(*cfg.BaseURL) == "" {
+			return "Ollama base URL not configured"
+		}
+	default:
+		return fmt.Sprintf("unsupported LLM provider: %s", cfg.Provider)
+	}
+
+	return "LLM configuration is incomplete"
+}
+
+func (h *Handler) getConfiguredLLMServices(ctx context.Context, requestedProvider string) ([]configuredLLMService, error) {
+	configs, _, err := h.llmConfigRepo.List(ctx, 0, 100)
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
+		return nil, fmt.Errorf("failed to list LLM configurations: %w", err)
+	}
+
+	requestedProvider = normalizeProvider(requestedProvider)
+
+	latestByProvider := make(map[string]models.LLMConfig, 2)
+	for _, cfg := range configs {
+		provider := normalizeProvider(cfg.Provider)
+		if provider == "" {
+			continue
+		}
+		if requestedProvider != "" && provider != requestedProvider {
+			continue
+		}
+
+		existing, exists := latestByProvider[provider]
+		if !exists || cfg.UpdatedAt.After(existing.UpdatedAt) {
+			latestByProvider[provider] = cfg
+		}
+	}
+
+	if len(latestByProvider) == 0 {
+		if requestedProvider == "" {
+			return nil, fmt.Errorf("no configured LLM provider found")
+		}
+		return nil, fmt.Errorf("no %s configuration found", requestedProvider)
+	}
+
+	entries := make([]configuredLLMService, 0, len(latestByProvider))
+	lastInvalidReason := ""
+	for _, cfg := range latestByProvider {
+		svc, provider, ok := buildLLMServiceFromConfig(cfg)
+		if !ok {
+			lastInvalidReason = invalidLLMConfigReason(cfg)
+			continue
+		}
+		entries = append(entries, configuredLLMService{
+			Provider: provider,
+			IsActive: cfg.IsActive,
+			Updated:  cfg.UpdatedAt,
+			Service:  svc,
+		})
+	}
+
+	if len(entries) == 0 {
+		implicit := h.getImplicitLLMServices(requestedProvider)
+		if len(implicit) > 0 {
+			return implicit, nil
+		}
+
+		if lastInvalidReason == "" {
+			if requestedProvider != "" {
+				lastInvalidReason = fmt.Sprintf("no %s configuration found", requestedProvider)
+			} else {
+				lastInvalidReason = "no LLM configuration found"
+			}
+		}
+		return nil, errors.New(lastInvalidReason)
+	}
+
+	// Prefer active provider first; then newest configuration.
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].IsActive != entries[j].IsActive {
+			return entries[i].IsActive
+		}
+		if !entries[i].Updated.Equal(entries[j].Updated) {
+			return entries[i].Updated.After(entries[j].Updated)
+		}
+		return entries[i].Provider < entries[j].Provider
+	})
+
+	return entries, nil
+}
+
+// getLLMService returns a provider-agnostic LLM service, preferring active config and
+// falling back to the most recently updated valid config.
+func (h *Handler) getLLMService(ctx context.Context) (llm.Service, string, error) {
+	services, err := h.getConfiguredLLMServices(ctx, "")
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "no llm configuration") ||
+			strings.Contains(strings.ToLower(err.Error()), "no configured llm provider") {
 			return nil, "", fmt.Errorf("no active LLM configuration found")
 		}
-		return nil, "", fmt.Errorf("failed to get LLM config: %w", err)
+		return nil, "", err
 	}
-	switch strings.ToLower(cfg.Provider) {
-	case "openai":
-		if cfg.APIKey == nil || *cfg.APIKey == "" {
-			return nil, cfg.Provider, fmt.Errorf("OpenAI API key not configured")
-		}
-		return llm.NewOpenAIService(*cfg.APIKey, cfg.OpenAIBaseURL), cfg.Provider, nil
-	case "ollama":
-		if cfg.BaseURL == nil || *cfg.BaseURL == "" {
-			return nil, cfg.Provider, fmt.Errorf("Ollama base URL not configured")
-		}
-		return llm.NewOllamaService(*cfg.BaseURL), cfg.Provider, nil
-	default:
-		return nil, cfg.Provider, fmt.Errorf("unsupported LLM provider: %s", cfg.Provider)
+
+	selected := services[0]
+	return selected.Service, selected.Provider, nil
+}
+
+func (h *Handler) getLLMServiceForProvider(ctx context.Context, provider string) (llm.Service, string, error) {
+	normalizedProvider := normalizeProvider(provider)
+	if normalizedProvider == "" {
+		return h.getLLMService(ctx)
 	}
+
+	services, err := h.getConfiguredLLMServices(ctx, normalizedProvider)
+	if err != nil {
+		return nil, normalizedProvider, err
+	}
+	selected := services[0]
+	return selected.Service, selected.Provider, nil
 }
 
 // @Summary Get available chat models
@@ -114,22 +293,80 @@ func (h *Handler) getLLMService(ctx context.Context) (llm.Service, string, error
 // @Security ApiKeyAuth
 // @Security BearerAuth
 func (h *Handler) GetChatModels(c *gin.Context) {
-	svc, _, err := h.getLLMService(c.Request.Context())
+	provider := normalizeProvider(c.Query("provider"))
+	allProviders := parseBoolQuery(c.Query("all_providers"))
+
+	services, err := h.getConfiguredLLMServices(c.Request.Context(), provider)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	if allProviders {
+		response := ChatModelsResponse{
+			Models:    []string{},
+			Providers: make([]ChatProviderModels, 0, len(services)),
+		}
+		for _, entry := range services {
+			modelCtx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+			models, fetchErr := entry.Service.GetModels(modelCtx)
+			cancel()
 
-	models, err := svc.GetModels(ctx)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch models: " + err.Error()})
+			normalizedModels := normalizeModelList(models)
+			providerData := ChatProviderModels{
+				Provider: entry.Provider,
+				Models:   normalizedModels,
+				IsActive: entry.IsActive,
+			}
+			if fetchErr != nil {
+				providerData.Error = fetchErr.Error()
+			} else if len(normalizedModels) == 0 {
+				providerData.Error = "No models available"
+			}
+			response.Providers = append(response.Providers, providerData)
+
+			if response.Provider == "" && len(normalizedModels) > 0 {
+				response.Provider = entry.Provider
+			}
+			response.Models = append(response.Models, normalizedModels...)
+		}
+		response.Models = normalizeModelList(response.Models)
+		c.JSON(http.StatusOK, response)
 		return
 	}
 
-	c.JSON(http.StatusOK, ChatModelsResponse{Models: models})
+	// Default behavior: return models for the first working provider, preferring active.
+	providerErrors := make([]string, 0, len(services))
+	for _, entry := range services {
+		modelCtx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+		models, fetchErr := entry.Service.GetModels(modelCtx)
+		cancel()
+		if fetchErr != nil {
+			providerErrors = append(providerErrors, fmt.Sprintf("%s: %v", entry.Provider, fetchErr))
+			continue
+		}
+
+		normalizedModels := normalizeModelList(models)
+		if len(normalizedModels) == 0 {
+			providerErrors = append(providerErrors, fmt.Sprintf("%s: no models available", entry.Provider))
+			continue
+		}
+
+		c.JSON(http.StatusOK, ChatModelsResponse{
+			Provider: entry.Provider,
+			Models:   normalizedModels,
+		})
+		return
+	}
+
+	if len(providerErrors) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No chat models available"})
+		return
+	}
+
+	c.JSON(http.StatusBadRequest, gin.H{
+		"error": "Failed to load models from configured providers: " + strings.Join(providerErrors, "; "),
+	})
 }
 
 // @Summary Create a new chat session
@@ -164,8 +401,8 @@ func (h *Handler) CreateChatSession(c *gin.Context) {
 		return
 	}
 
-	// Verify LLM service is available
-	_, _, err = h.getLLMService(c.Request.Context())
+	// Resolve provider-specific LLM service (or active provider if omitted).
+	_, provider, err := h.getLLMServiceForProvider(c.Request.Context(), req.Provider)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -182,8 +419,8 @@ func (h *Handler) CreateChatSession(c *gin.Context) {
 		JobID:           req.TranscriptionID, // Use same ID for JobID as TranscriptionID
 		TranscriptionID: req.TranscriptionID,
 		Title:           title,
-		Model:           req.Model,
-		Provider:        "openai",
+		Model:           strings.TrimSpace(req.Model),
+		Provider:        provider,
 		MessageCount:    0,
 		LastActivityAt:  &now,
 		IsActive:        true,
@@ -385,8 +622,8 @@ func (h *Handler) SendChatMessage(c *gin.Context) {
 		return
 	}
 
-	// Get LLM service
-	svc, _, err := h.getLLMService(c.Request.Context())
+	// Get LLM service for this session's provider.
+	svc, _, err := h.getLLMServiceForProvider(c.Request.Context(), session.Provider)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -844,7 +1081,7 @@ func (h *Handler) AutoGenerateChatTitle(c *gin.Context) {
 		return
 	}
 
-	svc, _, err := h.getLLMService(c.Request.Context())
+	svc, _, err := h.getLLMServiceForProvider(c.Request.Context(), session.Provider)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

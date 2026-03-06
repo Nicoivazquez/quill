@@ -304,6 +304,14 @@ const PARAM_DESCRIPTIONS = {
     vad_offset: "Speech ending sensitivity. Lower values detect speech endings more precisely.",
 };
 
+const PYANNOTE_MODEL_LINKS = [
+    "pyannote/speaker-diarization-3.0",
+    "pyannote/speaker-diarization",
+    "pyannote/speaker-diarization-3.1",
+    "pyannote/segmentation-3.0",
+    "pyannote/speaker-diarization-community-1",
+] as const;
+
 // ============================================================================
 // Styled Input/Select Components 
 // ============================================================================
@@ -330,6 +338,81 @@ const selectItemClassName = `
   text-[var(--text-primary)] rounded-lg mx-1 cursor-pointer
   focus:bg-[var(--brand-light)] focus:text-[var(--brand-solid)]
 `;
+
+function HuggingFaceTokenSetupGuide() {
+    return (
+        <Accordion type="single" collapsible className="w-full rounded-xl border border-[var(--border-subtle)] px-3">
+            <AccordionItem value="hf-token-setup" className="border-b-0">
+                <AccordionTrigger className="py-3 text-xs font-medium text-[var(--text-primary)] hover:no-underline">
+                    How to get a Hugging Face token
+                </AccordionTrigger>
+                <AccordionContent className="pb-3">
+                    <div className="space-y-3 text-xs text-[var(--text-secondary)]">
+                        <p>
+                            <span className="font-medium text-[var(--text-primary)]">Speaker Diarization Setup:</span>{" "}
+                            Scriberr uses pyannote.audio for speaker diarization. You need a Hugging Face access token to use this mode.
+                        </p>
+
+                        <div className="space-y-1">
+                            <p className="font-medium text-[var(--text-primary)]">Step 1: Hugging Face account</p>
+                            <p>
+                                Create an account at{" "}
+                                <a
+                                    href="https://huggingface.co/join"
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-[var(--brand-solid)] underline decoration-[var(--brand-light)] underline-offset-2"
+                                >
+                                    huggingface.co/join
+                                </a>
+                                .
+                            </p>
+                        </div>
+
+                        <div className="space-y-1">
+                            <p className="font-medium text-[var(--text-primary)]">Step 2: Accept required model agreements</p>
+                            <ul className="list-disc space-y-1 pl-4">
+                                {PYANNOTE_MODEL_LINKS.map((model) => (
+                                    <li key={model}>
+                                        <a
+                                            href={`https://huggingface.co/${model}`}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="text-[var(--brand-solid)] underline decoration-[var(--brand-light)] underline-offset-2"
+                                        >
+                                            {model}
+                                        </a>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+
+                        <div className="space-y-1">
+                            <p className="font-medium text-[var(--text-primary)]">Step 3: Create access token</p>
+                            <ul className="list-disc space-y-1 pl-4">
+                                <li>
+                                    Open{" "}
+                                    <a
+                                        href="https://huggingface.co/settings/tokens"
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="text-[var(--brand-solid)] underline decoration-[var(--brand-light)] underline-offset-2"
+                                    >
+                                        Hugging Face token settings
+                                    </a>
+                                    .
+                                </li>
+                                <li>Create a token with at least read access.</li>
+                                <li>Use it via `HF_TOKEN` environment variable (recommended for Docker).</li>
+                                <li>Or paste it into this `Hugging Face Token` field in your profile settings.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </AccordionContent>
+            </AccordionItem>
+        </Accordion>
+    );
+}
 
 // ============================================================================
 // Main Component
@@ -716,6 +799,7 @@ function WhisperConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
                                                 className={inputClassName}
                                             />
                                         </FormField>
+                                        <HuggingFaceTokenSetupGuide />
                                     </>
                                 )}
 
@@ -991,6 +1075,7 @@ function ParakeetConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
                                                 className={inputClassName}
                                             />
                                         </FormField>
+                                        <HuggingFaceTokenSetupGuide />
                                     </>
                                 )}
 
@@ -1135,6 +1220,7 @@ function CanaryConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
                                                 className={inputClassName}
                                             />
                                         </FormField>
+                                        <HuggingFaceTokenSetupGuide />
                                     </>
                                 )}
 

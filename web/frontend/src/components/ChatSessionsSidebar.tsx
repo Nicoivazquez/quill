@@ -23,7 +23,28 @@ interface ChatSession {
   transcription_id: string
   title: string
   model: string
+  provider?: string
   message_count: number
+}
+
+interface ProviderModels {
+  provider: string
+  models: string[]
+  is_active: boolean
+  error?: string
+}
+
+interface ChatModelsPayload {
+  models?: string[]
+  provider?: string
+  providers?: ProviderModels[]
+  error?: string
+}
+
+function providerLabel(provider: string): string {
+  if (provider === 'ollama') return 'Ollama'
+  if (provider === 'openai') return 'OpenAI'
+  return provider
 }
 
 export function ChatSessionsSidebar({
@@ -38,8 +59,11 @@ export function ChatSessionsSidebar({
   const { getAuthHeaders } = useAuth()
   const { subscribeSessionTitleUpdated, subscribeTitleGenerating } = useChatEvents()
   const [sessions, setSessions] = useState<ChatSession[]>([])
+  const [availableProviders, setAvailableProviders] = useState<ProviderModels[]>([])
+  const [selectedProvider, setSelectedProvider] = useState<string>('')
   const [availableModels, setAvailableModels] = useState<string[]>([])
   const [selectedModel, setSelectedModel] = useState<string>('')
+  const [modelsError, setModelsError] = useState<string | null>(null)
   const [showNewSessionDialog, setShowNewSessionDialog] = useState(false)
   const [newSessionTitle, setNewSessionTitle] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -52,6 +76,14 @@ export function ChatSessionsSidebar({
     loadSessions()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transcriptionId])
+
+  useEffect(() => {
+    if (!showNewSessionDialog) {
+      return
+    }
+    loadModels()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showNewSessionDialog])
 
   // Reactively apply title updates emitted elsewhere
   useEffect(() => {
@@ -77,14 +109,76 @@ export function ChatSessionsSidebar({
     return unsubscribe
   }, [subscribeTitleGenerating])
 
+  useEffect(() => {
+    if (!selectedProvider) {
+      return
+    }
+
+    const providerData = availableProviders.find((provider) => provider.provider === selectedProvider)
+    const providerModels = providerData?.models || []
+    setAvailableModels(providerModels)
+
+    if (!providerModels.includes(selectedModel)) {
+      setSelectedModel(providerModels[0] || '')
+    }
+  }, [availableProviders, selectedProvider, selectedModel])
+
   async function loadModels() {
     try {
-      const res = await fetch('/api/v1/chat/models', { headers: getAuthHeaders() })
-      if (!res.ok) return
-      const data = await res.json()
-      setAvailableModels(data.models || [])
-      if (!selectedModel && data.models?.length) setSelectedModel(data.models[0])
-    } catch { /* ignore */ }
+      const res = await fetch('/api/v1/chat/models?all_providers=true', { headers: getAuthHeaders() })
+      const data: ChatModelsPayload = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setAvailableProviders([])
+        setSelectedProvider('')
+        setAvailableModels([])
+        setSelectedModel('')
+        setModelsError(data.error || 'Failed to load models. Check your LLM settings.')
+        return
+      }
+
+      const providers = (data.providers || []).map((provider) => ({
+        ...provider,
+        models: provider.models || [],
+      }))
+      setAvailableProviders(providers)
+
+      const providersWithModels = providers.filter((provider) => provider.models.length > 0)
+      if (providersWithModels.length === 0) {
+        const providerErrors = providers
+          .map((provider) => provider.error ? `${providerLabel(provider.provider)}: ${provider.error}` : '')
+          .filter(Boolean)
+          .join(' | ')
+
+        setSelectedProvider(data.provider || providers[0]?.provider || '')
+        setAvailableModels([])
+        setSelectedModel('')
+        setModelsError(providerErrors || 'No chat models available. For Ollama, run `ollama pull <model>` first.')
+        return
+      }
+
+      const serverSuggestedProvider = data.provider || ''
+      const preferredProvider = providersWithModels.some((provider) => provider.provider === selectedProvider)
+        ? selectedProvider
+        : providersWithModels.some((provider) => provider.provider === serverSuggestedProvider)
+          ? serverSuggestedProvider
+          : providersWithModels[0].provider
+
+      const selectedProviderData = providersWithModels.find((provider) => provider.provider === preferredProvider)
+      const models = selectedProviderData?.models || []
+
+      setSelectedProvider(preferredProvider)
+      setAvailableModels(models)
+      if (!models.includes(selectedModel)) {
+        setSelectedModel(models[0] || '')
+      }
+      setModelsError(null)
+    } catch {
+      setAvailableProviders([])
+      setSelectedProvider('')
+      setAvailableModels([])
+      setSelectedModel('')
+      setModelsError('Failed to load models. Check your LLM settings.')
+    }
   }
 
   async function loadSessions() {
@@ -97,14 +191,23 @@ export function ChatSessionsSidebar({
   }
 
   async function createSession() {
-    if (!selectedModel) return
+    if (!selectedModel || !selectedProvider) return
     try {
       const res = await fetch('/api/v1/chat/sessions', {
         method: 'POST',
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcription_id: transcriptionId, model: selectedModel, title: newSessionTitle || undefined }),
+        body: JSON.stringify({
+          transcription_id: transcriptionId,
+          model: selectedModel,
+          provider: selectedProvider,
+          title: newSessionTitle || undefined,
+        }),
       })
-      if (!res.ok) return
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}))
+        setModelsError(errorData.error || 'Failed to create chat session.')
+        return
+      }
       const created = await res.json()
       setSessions(prev => [created, ...prev])
       onSessionChange(created.id)
@@ -188,10 +291,33 @@ export function ChatSessionsSidebar({
               </DialogHeader>
               <div className="p-5 space-y-5">
                 <div className="space-y-2">
+                  <Label htmlFor="provider" className="text-sm font-medium text-[var(--text-secondary)]">Provider</Label>
+                  <Select value={selectedProvider} onValueChange={setSelectedProvider}>
+                    <SelectTrigger className="w-full h-11 bg-[var(--bg-main)] border-[var(--border-subtle)] text-[var(--text-primary)] focus:ring-2 focus:ring-[var(--brand-solid)]/20 focus:border-[var(--brand-solid)] hover:border-[var(--brand-solid)]/50 transition-all rounded-xl">
+                      <SelectValue placeholder="Select a provider" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[var(--bg-card)] border-[var(--border-subtle)] rounded-xl shadow-lg">
+                      {(availableProviders || []).map(provider => (
+                        <SelectItem
+                          key={provider.provider}
+                          value={provider.provider}
+                          disabled={!provider.models?.length}
+                          className="focus:bg-[var(--brand-light)] focus:text-[var(--brand-solid)] cursor-pointer py-2.5"
+                        >
+                          <span className="truncate">
+                            {providerLabel(provider.provider)}
+                            {provider.error ? ` (${provider.error})` : ''}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
                   <Label htmlFor="model" className="text-sm font-medium text-[var(--text-secondary)]">Model</Label>
                   <Select value={selectedModel} onValueChange={setSelectedModel}>
                     <SelectTrigger className="w-full h-11 bg-[var(--bg-main)] border-[var(--border-subtle)] text-[var(--text-primary)] focus:ring-2 focus:ring-[var(--brand-solid)]/20 focus:border-[var(--brand-solid)] hover:border-[var(--brand-solid)]/50 transition-all rounded-xl">
-                      <SelectValue placeholder="Select a model" />
+                      <SelectValue placeholder={availableModels.length ? "Select a model" : "No models available"} />
                     </SelectTrigger>
                     <SelectContent className="bg-[var(--bg-card)] border-[var(--border-subtle)] rounded-xl shadow-lg">
                       {(availableModels || []).map(m => (
@@ -206,6 +332,11 @@ export function ChatSessionsSidebar({
                     </SelectContent>
                   </Select>
                 </div>
+                {modelsError && (
+                  <p className="text-xs text-[var(--error)] leading-relaxed">
+                    {modelsError}
+                  </p>
+                )}
                 <div className="space-y-2">
                   <Label htmlFor="title" className="text-sm font-medium text-[var(--text-secondary)]">
                     Title <span className="text-[var(--text-tertiary)] font-normal">(optional)</span>
@@ -229,7 +360,7 @@ export function ChatSessionsSidebar({
                 </Button>
                 <Button
                   onClick={createSession}
-                  disabled={!selectedModel}
+                  disabled={!selectedProvider || !selectedModel}
                   className="h-11 px-6 bg-gradient-to-br from-[#FFAB40] to-[#FF3D00] text-white hover:scale-[1.02] active:scale-[0.98] transition-transform shadow-md disabled:opacity-50 disabled:cursor-not-allowed rounded-full w-full sm:w-auto"
                 >
                   <MessageSquare className="h-4 w-4 mr-2" />
@@ -300,6 +431,11 @@ export function ChatSessionsSidebar({
                       </h3>
                     )}
                     <div className="flex items-center gap-2 mt-2">
+                      {session.provider && (
+                        <span className="text-[10px] uppercase tracking-wider text-[var(--brand-solid)] bg-[var(--brand-light)] px-1.5 py-0.5 rounded-md font-medium">
+                          {providerLabel(session.provider)}
+                        </span>
+                      )}
                       <span className="text-[10px] uppercase tracking-wider text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded-md font-medium">
                         {session.model}
                       </span>

@@ -531,6 +531,42 @@ func TestParameterConversion(t *testing.T) {
 	}
 }
 
+func TestConvertToWhisperXParamsWithSortformerDiarization(t *testing.T) {
+	mockRepo := new(MockJobRepository)
+	service := NewUnifiedTranscriptionService(mockRepo, "data/temp", "data/transcripts")
+
+	sortformerParams := models.WhisperXParams{
+		Model:        "small",
+		Device:       "cpu",
+		BatchSize:    8,
+		Task:         "transcribe",
+		Diarize:      true,
+		DiarizeModel: DiarizeSortformer,
+	}
+
+	paramMap := service.convertToWhisperXParams(sortformerParams)
+
+	if diarize, ok := paramMap["diarize"].(bool); !ok || diarize {
+		t.Fatalf("expected diarize=false for sortformer path, got %v", paramMap["diarize"])
+	}
+
+	if _, exists := paramMap["diarize_model"]; exists {
+		t.Fatalf("expected diarize_model to be omitted for sortformer path, got %v", paramMap["diarize_model"])
+	}
+
+	pyannoteParams := sortformerParams
+	pyannoteParams.DiarizeModel = ModelPyannote
+	paramMap = service.convertToWhisperXParams(pyannoteParams)
+
+	if diarize, ok := paramMap["diarize"].(bool); !ok || !diarize {
+		t.Fatalf("expected diarize=true for pyannote path, got %v", paramMap["diarize"])
+	}
+
+	if gotModel, ok := paramMap["diarize_model"].(string); !ok || gotModel != ModelPyannote {
+		t.Fatalf("expected diarize_model=%q for pyannote path, got %v", ModelPyannote, paramMap["diarize_model"])
+	}
+}
+
 // Helper functions
 func stringPtr(s string) *string {
 	return &s

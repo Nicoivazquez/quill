@@ -17,6 +17,15 @@ interface LLMConfig {
 	updated_at?: string;
 }
 
+const normalizeProviderUrl = (value: string): string => {
+	const trimmed = value.trim();
+	if (!trimmed) return "";
+	if (/^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(trimmed)) {
+		return trimmed;
+	}
+	return `http://${trimmed}`;
+};
+
 export function LLMSettings() {
 	const [config, setConfig] = useState<LLMConfig>({
 		provider: "ollama",
@@ -63,10 +72,10 @@ export function LLMSettings() {
 		const payload = {
 			provider: config.provider,
 			is_active: true, // Always set to active when saving
-			...(config.provider === "ollama" && { base_url: baseUrl }),
+			...(config.provider === "ollama" && { base_url: normalizeProviderUrl(baseUrl) }),
 			...(config.provider === "openai" && {
 				api_key: apiKey,
-				openai_base_url: openAIBaseUrl
+				...(openAIBaseUrl.trim() ? { openai_base_url: normalizeProviderUrl(openAIBaseUrl) } : {})
 			}),
 		};
 

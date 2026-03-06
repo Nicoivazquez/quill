@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1465,15 +1466,52 @@ func buildLLMServiceFromConfig(cfg models.LLMConfig) (llm.Service, string, bool)
 		if cfg.APIKey == nil || strings.TrimSpace(*cfg.APIKey) == "" {
 			return nil, provider, false
 		}
-		return llm.NewOpenAIService(strings.TrimSpace(*cfg.APIKey), cfg.OpenAIBaseURL), provider, true
+
+		var normalizedOpenAIBaseURL *string
+		if cfg.OpenAIBaseURL != nil && strings.TrimSpace(*cfg.OpenAIBaseURL) != "" {
+			normalized, err := normalizeLLMBaseURL(*cfg.OpenAIBaseURL)
+			if err != nil {
+				return nil, provider, false
+			}
+			normalizedOpenAIBaseURL = &normalized
+		}
+
+		return llm.NewOpenAIService(strings.TrimSpace(*cfg.APIKey), normalizedOpenAIBaseURL), provider, true
 	case "ollama":
 		if cfg.BaseURL == nil || strings.TrimSpace(*cfg.BaseURL) == "" {
 			return nil, provider, false
 		}
-		return llm.NewOllamaService(strings.TrimSpace(*cfg.BaseURL)), provider, true
+
+		normalizedBaseURL, err := normalizeLLMBaseURL(*cfg.BaseURL)
+		if err != nil {
+			return nil, provider, false
+		}
+		return llm.NewOllamaService(normalizedBaseURL), provider, true
 	default:
 		return nil, provider, false
 	}
+}
+
+func normalizeLLMBaseURL(rawURL string) (string, error) {
+	normalized := strings.TrimSpace(rawURL)
+	if normalized == "" {
+		return "", fmt.Errorf("base URL is required")
+	}
+
+	if !strings.Contains(normalized, "://") {
+		normalized = "http://" + normalized
+	}
+
+	parsed, err := url.Parse(normalized)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", fmt.Errorf("invalid URL format")
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", fmt.Errorf("URL must use http or https")
+	}
+
+	parsed.Path = strings.TrimRight(parsed.Path, "/")
+	return strings.TrimRight(parsed.String(), "/"), nil
 }
 
 func (h *Handler) getLLMServiceForAutoTitle(ctx context.Context) (llm.Service, string, error) {
@@ -2544,6 +2582,28 @@ func (h *Handler) SaveLLMConfig(c *gin.Context) {
 	if req.Provider == "ollama" && (req.BaseURL == nil || *req.BaseURL == "") {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Base URL is required for Ollama provider"})
 		return
+	}
+	if req.Provider == "ollama" && req.BaseURL != nil {
+		normalizedBaseURL, err := normalizeLLMBaseURL(*req.BaseURL)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid Ollama base URL: " + err.Error()})
+			return
+		}
+		req.BaseURL = &normalizedBaseURL
+	}
+
+	if req.OpenAIBaseURL != nil {
+		trimmed := strings.TrimSpace(*req.OpenAIBaseURL)
+		if trimmed == "" {
+			req.OpenAIBaseURL = nil
+		} else {
+			normalizedOpenAIBaseURL, err := normalizeLLMBaseURL(trimmed)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid OpenAI base URL: " + err.Error()})
+				return
+			}
+			req.OpenAIBaseURL = &normalizedOpenAIBaseURL
+		}
 	}
 
 	// Check if there's an existing active configuration

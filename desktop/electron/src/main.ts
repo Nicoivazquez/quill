@@ -8,6 +8,7 @@ import type { Readable } from "node:stream";
 const HEALTH_TIMEOUT_MS = 120_000;
 const HEALTH_POLL_INTERVAL_MS = 500;
 const STARTUP_LOG_UPDATE_MS = 1_000;
+const DEFAULT_WHISPERX_ZIP_URL = "https://github.com/m-bain/WhisperX/archive/refs/tags/v3.8.0.zip";
 
 let mainWindow: BrowserWindow | null = null;
 let backendProcess: ChildProcessByStdio<null, Readable, Readable> | null = null;
@@ -192,6 +193,8 @@ function buildBackendEnv(port: number): NodeJS.ProcessEnv {
     TEMP_DIR: paths.temp,
     WHISPERX_ENV: paths.whisperxEnv,
     SCRIBERR_DEFER_MODEL_INIT: "true",
+    SCRIBERR_WHISPERX_ZIP_URL: process.env.SCRIBERR_WHISPERX_ZIP_URL || DEFAULT_WHISPERX_ZIP_URL,
+    SCRIBERR_WHISPERX_ZIP_SHA256: process.env.SCRIBERR_WHISPERX_ZIP_SHA256,
     UV_PYTHON: "3.11",
     PATH: buildPathValue([...bundledToolDirs, "/opt/homebrew/bin", "/usr/local/bin"], process.env.PATH),
   };

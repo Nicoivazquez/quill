@@ -3,10 +3,13 @@ package adapters
 import (
 	"archive/zip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,6 +27,8 @@ type WhisperXAdapter struct {
 	*BaseAdapter
 	envPath string
 }
+
+const defaultWhisperXZipURL = "https://github.com/m-bain/WhisperX/archive/refs/tags/v3.8.0.zip"
 
 // NewWhisperXAdapter creates a new WhisperX adapter
 func NewWhisperXAdapter(envPath string) *WhisperXAdapter {
@@ -335,10 +340,11 @@ func (w *WhisperXAdapter) PrepareEnvironment(ctx context.Context) error {
 
 // cloneWhisperX clones the WhisperX repository
 func (w *WhisperXAdapter) cloneWhisperX() error {
-	downloadURL := os.Getenv("SCRIBERR_WHISPERX_ZIP_URL")
+	downloadURL := strings.TrimSpace(os.Getenv("SCRIBERR_WHISPERX_ZIP_URL"))
 	if downloadURL == "" {
-		downloadURL = "https://github.com/m-bain/WhisperX/archive/refs/heads/main.zip"
+		downloadURL = defaultWhisperXZipURL
 	}
+	expectedSHA256 := strings.TrimSpace(os.Getenv("SCRIBERR_WHISPERX_ZIP_SHA256"))
 
 	tempZipPath := filepath.Join(w.envPath, "whisperx.zip")
 	targetDir := filepath.Join(w.envPath, "WhisperX")
@@ -351,26 +357,31 @@ func (w *WhisperXAdapter) cloneWhisperX() error {
 		return fmt.Errorf("failed to clean previous whisperx zip: %w", err)
 	}
 
-	resp, err := http.Get(downloadURL) //nolint:gosec // URL can be overridden intentionally for mirrors
+	archiveReader, err := openWhisperXArchive(downloadURL)
 	if err != nil {
 		return fmt.Errorf("failed to download whisperx source: %w", err)
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("failed to download whisperx source: status %d", resp.StatusCode)
-	}
+	defer archiveReader.Close()
 
 	zipFile, err := os.Create(tempZipPath)
 	if err != nil {
 		return fmt.Errorf("failed to create temporary whisperx zip: %w", err)
 	}
-	if _, err := io.Copy(zipFile, resp.Body); err != nil {
+	if _, err := io.Copy(zipFile, archiveReader); err != nil {
 		_ = zipFile.Close()
 		return fmt.Errorf("failed to save whisperx zip: %w", err)
 	}
 	if err := zipFile.Close(); err != nil {
 		return fmt.Errorf("failed to finalize whisperx zip: %w", err)
+	}
+	if expectedSHA256 != "" {
+		actualSHA256, hashErr := computeSHA256(tempZipPath)
+		if hashErr != nil {
+			return fmt.Errorf("failed to verify whisperx source checksum: %w", hashErr)
+		}
+		if !strings.EqualFold(actualSHA256, expectedSHA256) {
+			return fmt.Errorf("whisperx source checksum mismatch: expected %s got %s", expectedSHA256, actualSHA256)
+		}
 	}
 
 	reader, err := zip.OpenReader(tempZipPath)
@@ -456,6 +467,53 @@ func (w *WhisperXAdapter) cloneWhisperX() error {
 	_ = os.Remove(tempZipPath)
 	_ = os.RemoveAll(tempExtractDir)
 	return nil
+}
+
+func openWhisperXArchive(source string) (io.ReadCloser, error) {
+	lowered := strings.ToLower(source)
+	if strings.HasPrefix(lowered, "http://") || strings.HasPrefix(lowered, "https://") {
+		resp, err := http.Get(source) //nolint:gosec // URL can be overridden intentionally for mirrors
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			_ = resp.Body.Close()
+			return nil, fmt.Errorf("status %d", resp.StatusCode)
+		}
+		return resp.Body, nil
+	}
+
+	if strings.HasPrefix(lowered, "file://") {
+		parsed, err := url.Parse(source)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse file URL: %w", err)
+		}
+		path := parsed.Path
+		if path == "" {
+			path = parsed.Opaque
+		}
+		if unescapedPath, err := url.PathUnescape(path); err == nil {
+			path = unescapedPath
+		}
+		return os.Open(path)
+	}
+
+	return os.Open(source)
+}
+
+func computeSHA256(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, file); err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(hasher.Sum(nil)), nil
 }
 
 // updateWhisperXDependencies modifies WhisperX pyproject.toml

@@ -4,9 +4,58 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_DIR="$ROOT_DIR/dist/desktop-tools"
+LOCK_FILE="$ROOT_DIR/scripts/desktop-tools.lock.env"
+DEFAULT_YTDLP_VERSION="2026.02.21"
+DEFAULT_YTDLP_SHA256="13dc66e13e87c187e16bf0def71b35f118bc06145907739d5549d213a9e3b9e5"
+
+if [[ -f "$LOCK_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$LOCK_FILE"
+fi
+
+: "${SCRIBERR_YTDLP_VERSION:=$DEFAULT_YTDLP_VERSION}"
+: "${SCRIBERR_YTDLP_SHA256:=$DEFAULT_YTDLP_SHA256}"
 
 mkdir -p "$OUT_DIR"
 rm -rf "$OUT_DIR"/*
+
+sha256_file() {
+  local target="$1"
+
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$target" | awk '{print $1}'
+    return
+  fi
+
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$target" | awk '{print $1}'
+    return
+  fi
+
+  echo "Unable to compute SHA-256 for $target (missing shasum/sha256sum)." >&2
+  exit 1
+}
+
+verify_checksum() {
+  local tool_name="$1"
+  local target="$2"
+  local expected="$3"
+
+  if [[ -z "$expected" ]]; then
+    return
+  fi
+
+  local actual
+  actual="$(sha256_file "$target")"
+
+  if [[ "$actual" != "$expected" ]]; then
+    echo "Checksum mismatch for $tool_name." >&2
+    echo "Expected: $expected" >&2
+    echo "Actual:   $actual" >&2
+    echo "Source:   $target" >&2
+    exit 1
+  fi
+}
 
 resolve_tool_path() {
   local tool_name="$1"
@@ -19,7 +68,7 @@ resolve_tool_path() {
 
   if [[ -z "$source_path" ]]; then
     if [[ "$tool_name" == "yt-dlp" ]]; then
-      local yt_dlp_url="${SCRIBERR_YTDLP_DOWNLOAD_URL:-https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos}"
+      local yt_dlp_url="${SCRIBERR_YTDLP_DOWNLOAD_URL:-https://github.com/yt-dlp/yt-dlp/releases/download/${SCRIBERR_YTDLP_VERSION}/yt-dlp_macos}"
       if command -v curl >/dev/null 2>&1; then
         echo "yt-dlp not found in PATH; downloading from $yt_dlp_url" >&2
         if ! curl -fsSL "$yt_dlp_url" -o "$OUT_DIR/yt-dlp"; then
@@ -27,6 +76,7 @@ resolve_tool_path() {
           exit 1
         fi
         chmod +x "$OUT_DIR/yt-dlp"
+        verify_checksum "yt-dlp" "$OUT_DIR/yt-dlp" "${SCRIBERR_YTDLP_SHA256:-}"
         echo "Bundled yt-dlp from $yt_dlp_url" >&2
         echo "$OUT_DIR/yt-dlp"
         return
@@ -268,6 +318,11 @@ uv_source="$(resolve_tool_path "uv" "SCRIBERR_UV_SOURCE")"
 ffmpeg_source="$(resolve_tool_path "ffmpeg" "SCRIBERR_FFMPEG_SOURCE")"
 ffprobe_source="$(resolve_tool_path "ffprobe" "SCRIBERR_FFPROBE_SOURCE")"
 ytdlp_source="$(resolve_tool_path "yt-dlp" "SCRIBERR_YTDLP_SOURCE")"
+
+verify_checksum "uv" "$uv_source" "${SCRIBERR_UV_SHA256:-}"
+verify_checksum "ffmpeg" "$ffmpeg_source" "${SCRIBERR_FFMPEG_SHA256:-}"
+verify_checksum "ffprobe" "$ffprobe_source" "${SCRIBERR_FFPROBE_SHA256:-}"
+verify_checksum "yt-dlp" "$ytdlp_source" "${SCRIBERR_YTDLP_SHA256:-}"
 
 bundle_tool "uv" "$uv_source"
 bundle_tool "ffmpeg" "$ffmpeg_source"

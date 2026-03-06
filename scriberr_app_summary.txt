@@ -1,0 +1,30 @@
+Scriberr - One-Page App Summary
+
+What it is
+Scriberr is an open-source, offline audio/video transcription app that runs locally and keeps recordings on your own machine.
+It combines local transcription/diarization models with a web UI and optional LLM-based chat/summarization.
+
+Who it's for
+Primary persona: self-hosters and privacy-conscious users who need high-quality transcription without sending media to third-party cloud services.
+
+What it does
+- Runs local transcription models (WhisperX, NVIDIA Parakeet, Canary; plus OpenAI Whisper option).
+- Supports speaker diarization (PyAnnote or NVIDIA Sortformer).
+- Handles multiple input paths: file upload, video upload, YouTube import, audio recorder, and Audacity multi-track (.aup).
+- Provides transcript playback UX (word-level timing, click-to-seek, timeline/compact views).
+- Enables notes, speaker-label editing, and export to JSON/SRT/TXT.
+- Adds AI summary and chat on top of transcripts via Ollama or OpenAI-compatible APIs.
+- Exposes REST API, webhooks, and a CLI folder watcher for automation workflows.
+
+How it works (repo-evidence architecture)
+- Frontend: React + Vite app (web/frontend) served as embedded static assets from Go (internal/web/static.go).
+- API layer: Gin server (cmd/server/main.go, internal/api/router.go) with /api/v1/* routes for auth, transcription, profiles, chat, summaries, notes, and CLI.
+- Persistence: SQLite via GORM (internal/database/database.go) stores jobs, users, profiles, API keys, chat, summaries, notes, etc.
+- Processing flow: upload/create job -> queue (internal/queue/queue.go) -> unified transcription service (internal/transcription/unified_service.go) -> model adapters + Python envs (internal/transcription/adapters/*) -> transcript/status written to DB/files.
+- Realtime/status flow: backend broadcaster pushes job updates over SSE (internal/sse/broadcaster.go, /api/v1/events), frontend consumes and refreshes UI.
+- LLM flow (optional): summarize/chat endpoints call provider-agnostic LLM services (internal/llm/*) for Ollama/OpenAI.
+
+How to run (minimal)
+1. From repo root, start containerized app: docker compose up -d
+2. Open http://localhost:8080
+3. On first startup, wait for model/env initialization; ready log includes: msg="Scriberr is ready"
