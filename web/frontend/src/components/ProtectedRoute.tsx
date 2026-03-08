@@ -2,13 +2,14 @@ import type { ReactNode } from "react";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { Login } from "@/features/auth/components/Login";
 import { Register } from "@/features/auth/components/Register";
+import { SetupWizard } from "@/features/setup/components/SetupWizard";
 
 interface ProtectedRouteProps {
 	children: ReactNode;
 }
 
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
-	const { isAuthenticated, requiresRegistration, isInitialized, login } = useAuth();
+	const { isAuthenticated, isLocalMode, isSetupCompleted, requiresRegistration, isInitialized, login, refreshSetupState } = useAuth();
 
 	// Show loading while initializing
 	if (!isInitialized) {
@@ -22,13 +23,24 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
 		);
 	}
 
+	if (!isSetupCompleted) {
+		return (
+			<SetupWizard
+				onComplete={async () => {
+					await refreshSetupState();
+					window.location.reload();
+				}}
+			/>
+		);
+	}
+
 	// Show registration form if no users exist
-	if (requiresRegistration) {
+	if (!isLocalMode && requiresRegistration) {
 		return <Register onRegister={login} />;
 	}
 
 	// Show login form if not authenticated
-	if (!isAuthenticated) {
+	if (!isLocalMode && !isAuthenticated) {
 		return <Login onLogin={login} />;
 	}
 

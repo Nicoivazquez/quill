@@ -14,12 +14,13 @@ interface JobUpdateEvent {
 }
 
 export const useTranscriptionEvents = (jobId: string | null) => {
-    const { token } = useAuth();
+    const { token, isLocalMode, getAuthHeaders } = useAuth();
     const queryClient = useQueryClient();
     const abortControllerRef = useRef<AbortController | null>(null);
 
     useEffect(() => {
-        if (!token || !jobId) return;
+        if (!jobId) return;
+        if (!isLocalMode && !token) return;
 
         // Cleanup previous connection if any
         if (abortControllerRef.current) {
@@ -32,9 +33,7 @@ export const useTranscriptionEvents = (jobId: string | null) => {
         const connect = async () => {
             try {
                 const response = await fetch(`/api/v1/events?job_id=${jobId}`, {
-                    headers: {
-                        Authorization: `Bearer ${token}`,
-                    },
+                    headers: getAuthHeaders(),
                     signal: abortController.signal,
                 });
 
@@ -150,5 +149,5 @@ export const useTranscriptionEvents = (jobId: string | null) => {
         return () => {
             abortController.abort();
         };
-    }, [token, queryClient, jobId]);
+    }, [token, isLocalMode, getAuthHeaders, queryClient, jobId]);
 };

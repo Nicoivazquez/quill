@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -12,9 +13,25 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func isLocalAuthMode() bool {
+	return strings.EqualFold(os.Getenv("AUTH_MODE"), "local")
+}
+
+func setLocalAuthContext(c *gin.Context) {
+	c.Set("auth_type", "local")
+	c.Set("user_id", uint(1))
+	c.Set("username", "local")
+}
+
 // AuthMiddleware handles both API key and JWT authentication
 func AuthMiddleware(authService *auth.AuthService) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if isLocalAuthMode() {
+			setLocalAuthContext(c)
+			c.Next()
+			return
+		}
+
 		// Check for API key first
 		apiKey := c.GetHeader("X-API-Key")
 		if apiKey != "" {
@@ -83,6 +100,12 @@ func validateAPIKey(key string) bool {
 // APIKeyOnlyMiddleware only allows API key authentication
 func APIKeyOnlyMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if isLocalAuthMode() {
+			setLocalAuthContext(c)
+			c.Next()
+			return
+		}
+
 		apiKey := c.GetHeader("X-API-Key")
 		if apiKey == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "API key required"})
@@ -105,6 +128,12 @@ func APIKeyOnlyMiddleware() gin.HandlerFunc {
 // JWTOnlyMiddleware only allows JWT authentication
 func JWTOnlyMiddleware(authService *auth.AuthService) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if isLocalAuthMode() {
+			setLocalAuthContext(c)
+			c.Next()
+			return
+		}
+
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header required"})

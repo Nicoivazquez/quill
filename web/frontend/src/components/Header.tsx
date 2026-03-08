@@ -31,7 +31,7 @@ interface HeaderProps {
 
 export function Header({ onFileSelect, onMultiTrackClick, onDownloadComplete }: HeaderProps) {
 	const navigate = useNavigate();
-	const { logout } = useAuth();
+	const { logout, isLocalMode } = useAuth();
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	const videoFileInputRef = useRef<HTMLInputElement>(null);
 	const [isRecorderOpen, setIsRecorderOpen] = useState(false);
@@ -281,10 +281,12 @@ export function Header({ onFileSelect, onMultiTrackClick, onDownloadComplete }: 
 								<Settings className="h-4 w-4 mr-2" />
 								Settings
 							</DropdownMenuItem>
-							<DropdownMenuItem onClick={handleLogout} className="cursor-pointer rounded-[var(--radius-btn)] focus:bg-[var(--error)]/10 text-[var(--error)] py-2.5">
-								<LogOut className="h-4 w-4 mr-2" />
-								Logout
-							</DropdownMenuItem>
+							{!isLocalMode && (
+								<DropdownMenuItem onClick={handleLogout} className="cursor-pointer rounded-[var(--radius-btn)] focus:bg-[var(--error)]/10 text-[var(--error)] py-2.5">
+									<LogOut className="h-4 w-4 mr-2" />
+									Logout
+								</DropdownMenuItem>
+							)}
 						</DropdownMenuContent>
 					</DropdownMenu>
 

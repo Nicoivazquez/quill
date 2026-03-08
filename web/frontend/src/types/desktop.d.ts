@@ -1,5 +1,8 @@
 export type ScriberrDesktopBridge = {
-  selectFolder: () => Promise<string | null>;
+  selectFolder: (options?: {
+    title?: string;
+    defaultPath?: string;
+  }) => Promise<string | null>;
 };
 
 declare global {

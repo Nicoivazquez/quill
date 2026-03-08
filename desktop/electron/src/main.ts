@@ -490,10 +490,11 @@ function createMainWindow(): BrowserWindow {
 }
 
 function registerDesktopIpcHandlers(): void {
-  ipcMain.handle("desktop:select-folder", async () => {
+  ipcMain.handle("desktop:select-folder", async (_event, payload?: { title?: string; defaultPath?: string } | null) => {
     const parentWindow = BrowserWindow.getFocusedWindow() ?? mainWindow;
     const options: Electron.OpenDialogOptions = {
-      title: "Select Folder To Auto-Import",
+      title: payload?.title?.trim() || "Select Folder",
+      defaultPath: payload?.defaultPath?.trim() || undefined,
       properties: ["openDirectory", "createDirectory", "dontAddToRecent"],
     };
     const result = parentWindow

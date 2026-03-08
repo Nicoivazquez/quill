@@ -72,6 +72,13 @@ func SetupRoutes(handler *Handler, authService *auth.AuthService) *gin.Engine {
 	// API v1 routes
 	v1 := router.Group("/api/v1")
 	{
+		// Setup routes (public for first-run bootstrap)
+		setup := v1.Group("/setup")
+		{
+			setup.GET("/state", handler.GetSetupState)
+			setup.POST("/complete", handler.CompleteSetup)
+		}
+
 		// Authentication routes (no auth required)
 		auth := v1.Group("/auth")
 		{
@@ -142,6 +149,7 @@ func SetupRoutes(handler *Handler, authService *auth.AuthService) *gin.Engine {
 			transcription.PUT("/:id/title", handler.UpdateTranscriptionTitle)
 			transcription.POST("/:id/title/auto", handler.AutoGenerateTranscriptionTitle)
 			transcription.GET("/:id/summary", handler.GetSummaryForTranscription)
+			transcription.POST("/:id/materialize", handler.MaterializeTranscriptArtifacts)
 			transcription.GET("/:id", handler.GetTranscriptionJob)
 			transcription.DELETE("/:id", handler.DeleteTranscriptionJob)
 			transcription.GET("/list", handler.ListTranscriptionJobs)
@@ -189,6 +197,52 @@ func SetupRoutes(handler *Handler, authService *auth.AuthService) *gin.Engine {
 			watchFolders.POST("", handler.CreateWatchFolder)
 			watchFolders.PUT("/:id", handler.UpdateWatchFolder)
 			watchFolders.DELETE("/:id", handler.DeleteWatchFolder)
+		}
+
+		// Vault management routes
+		vaults := v1.Group("/vaults")
+		vaults.Use(middleware.AuthMiddleware(authService))
+		{
+			vaults.GET("", handler.ListVaults)
+			vaults.POST("", handler.CreateVault)
+			vaults.PUT("/:id", handler.UpdateVault)
+			vaults.DELETE("/:id", handler.DeleteVault)
+			vaults.POST("/:id/activate", handler.ActivateVault)
+		}
+
+		// Obsidian bridge routes
+		obsidian := v1.Group("/obsidian")
+		obsidian.Use(middleware.AuthMiddleware(authService))
+		{
+			obsidian.GET("/config", handler.GetObsidianConfig)
+			obsidian.POST("/config", handler.SaveObsidianConfig)
+			obsidian.POST("/sync/:id", handler.SyncTranscriptToObsidian)
+		}
+
+		// OpenClaw interoperability routes
+		openclaw := v1.Group("/openclaw")
+		openclaw.Use(middleware.AuthMiddleware(authService))
+		{
+			openclaw.GET("/config", handler.GetOpenClawConfig)
+			openclaw.POST("/config", handler.SaveOpenClawConfig)
+			openclaw.POST("/ingest", handler.OpenClawIngest)
+			openclaw.POST("/ingest-drop", handler.IngestOpenClawDropFolder)
+			openclaw.GET("/jobs", handler.ListOpenClawReadyJobs)
+			openclaw.GET("/jobs/:id", handler.GetOpenClawJob)
+			openclaw.GET("/jobs/:id/transcript.json", handler.GetOpenClawJobTranscriptJSON)
+			openclaw.GET("/jobs/:id/transcript.md", handler.GetOpenClawJobTranscriptMarkdown)
+		}
+
+		// Contacts + voice signature scaffold routes
+		contacts := v1.Group("/contacts")
+		contacts.Use(middleware.AuthMiddleware(authService))
+		{
+			contacts.GET("", handler.ListContacts)
+			contacts.POST("", handler.CreateContact)
+			contacts.GET("/:id", handler.GetContact)
+			contacts.PUT("/:id", handler.UpdateContact)
+			contacts.DELETE("/:id", handler.DeleteContact)
+			contacts.POST("/:id/snippet", handler.UploadContactSnippet)
 		}
 
 		// Admin routes (require authentication)

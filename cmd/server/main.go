@@ -17,6 +17,7 @@ import (
 	"scriberr/internal/config"
 	"scriberr/internal/database"
 	"scriberr/internal/folderwatch"
+	"scriberr/internal/models"
 	"scriberr/internal/processing"
 	"scriberr/internal/queue"
 	"scriberr/internal/repository"
@@ -78,6 +79,7 @@ func main() {
 	// Load configuration
 	logger.Startup("config", "Loading configuration")
 	cfg := config.Load()
+	_ = os.Setenv("AUTH_MODE", cfg.AuthMode)
 
 	// Register adapters with config-based paths
 	registerAdapters(cfg)
@@ -116,6 +118,13 @@ func main() {
 	logger.Startup("service", "Initializing services")
 	userService := service.NewUserService(userRepo, authService)
 	fileService := service.NewFileService()
+
+	if cfg.IsLocalAuth() {
+		if err := ensureLocalUser(userRepo); err != nil {
+			logger.Error("Failed to ensure local user", "error", err)
+			os.Exit(1)
+		}
+	}
 
 	// Initialize unified transcription processor
 	logger.Startup("transcription", "Initializing transcription service")
@@ -238,6 +247,38 @@ func main() {
 	}
 
 	logger.Info("Server stopped")
+}
+
+func ensureLocalUser(userRepo repository.UserRepository) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	user, err := userRepo.FindByID(ctx, uint(1))
+	if err == nil && user != nil {
+		return nil
+	}
+	userByName, nameErr := userRepo.FindByUsername(ctx, "local")
+	if nameErr == nil && userByName != nil {
+		return nil
+	}
+
+	defaultPassword := "local-mode-password"
+	hashedPassword, hashErr := auth.HashPassword(defaultPassword)
+	if hashErr != nil {
+		return hashErr
+	}
+
+	localUser := models.User{
+		ID:                            1,
+		Username:                      "local",
+		Password:                      hashedPassword,
+		AutoTranscriptionEnabled:      false,
+		AutoSummaryEnabled:            false,
+		AutoTranscriptionTitleEnabled: true,
+		AutoChatTitleEnabled:          true,
+	}
+
+	return userRepo.Create(ctx, &localUser)
 }
 
 // registerAdapters registers all transcription and diarization adapters with config-based paths

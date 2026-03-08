@@ -26,6 +26,7 @@ import { ChatSidePanel } from "./ChatSidePanel";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { useSummaryTemplates, useExistingSummary, useSummarizer } from "@/features/transcription/hooks/useTranscriptionSummary";
+import { VaultSidebar } from "@/features/vault/components/VaultSidebar";
 
 // Types
 interface AudioDetailViewProps {
@@ -335,6 +336,9 @@ export const AudioDetailView = function AudioDetailView({ audioId: propAudioId }
         <div className="h-screen flex flex-col bg-[var(--bg-main)] relative selection:bg-[var(--brand-light)] overflow-hidden">
             {/* Split Container */}
             <div ref={splitContainerRef} className="flex-1 flex overflow-hidden relative">
+                <aside className="hidden xl:block w-[280px] shrink-0 overflow-y-auto border-r border-[var(--border-subtle)] p-4">
+                    <VaultSidebar compact />
+                </aside>
                 {/* LEFT PANE (Main) */}
                 <main className="flex-1 min-w-0 flex flex-col h-full relative z-0">
 

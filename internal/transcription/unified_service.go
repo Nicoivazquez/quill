@@ -10,7 +10,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
+	"scriberr/internal/database"
 	"scriberr/internal/models"
 	"scriberr/internal/repository"
 	"scriberr/internal/sse"
@@ -913,6 +915,10 @@ func (u *UnifiedTranscriptionService) saveTranscriptionResults(jobID string, res
 		return fmt.Errorf("failed to update job transcript: %w", err)
 	}
 
+	if err := u.materializeTranscriptArtifacts(context.Background(), jobID, resultJSON); err != nil {
+		logger.Warn("Failed to materialize transcript artifacts", "job_id", jobID, "error", err)
+	}
+
 	logger.Info("Saved transcription results", "job_id", jobID, "text_length", len(result.Text))
 	return nil
 }
@@ -956,4 +962,156 @@ func min(a, b float64) float64 {
 		return a
 	}
 	return b
+}
+
+type markdownTranscriptSegment struct {
+	Start   float64 `json:"start"`
+	End     float64 `json:"end"`
+	Text    string  `json:"text"`
+	Speaker *string `json:"speaker,omitempty"`
+}
+
+type markdownTranscriptPayload struct {
+	Text     string                      `json:"text"`
+	Segments []markdownTranscriptSegment `json:"segments,omitempty"`
+}
+
+func shortID(value string) string {
+	if len(value) <= 8 {
+		return value
+	}
+	return value[:8]
+}
+
+func sanitizeSlug(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "transcript"
+	}
+	var b strings.Builder
+	lastDash := false
+	for _, r := range strings.ToLower(trimmed) {
+		switch {
+		case unicode.IsLetter(r) || unicode.IsDigit(r):
+			b.WriteRune(r)
+			lastDash = false
+		case unicode.IsSpace(r) || r == '-' || r == '_' || r == '.':
+			if !lastDash {
+				b.WriteRune('-')
+				lastDash = true
+			}
+		}
+	}
+	result := strings.Trim(b.String(), "-")
+	if result == "" {
+		return "transcript"
+	}
+	return result
+}
+
+func formatMMSS(seconds float64) string {
+	if seconds < 0 {
+		seconds = 0
+	}
+	total := int(seconds)
+	minutes := total / 60
+	secs := total % 60
+	return fmt.Sprintf("%d:%02d", minutes, secs)
+}
+
+func renderMarkdownTranscript(job *models.TranscriptionJob, payload *markdownTranscriptPayload) string {
+	title := "Untitled"
+	if job.Title != nil && strings.TrimSpace(*job.Title) != "" {
+		title = strings.TrimSpace(*job.Title)
+	}
+	var b strings.Builder
+	b.WriteString("---\n")
+	b.WriteString(fmt.Sprintf("id: %s\n", job.ID))
+	b.WriteString(fmt.Sprintf("title: %q\n", title))
+	b.WriteString(fmt.Sprintf("status: %s\n", job.Status))
+	b.WriteString(fmt.Sprintf("created_at: %s\n", job.CreatedAt.Format(time.RFC3339)))
+	b.WriteString(fmt.Sprintf("updated_at: %s\n", job.UpdatedAt.Format(time.RFC3339)))
+	b.WriteString("format: transcript-markdown-v1\n")
+	b.WriteString("---\n\n")
+	b.WriteString(fmt.Sprintf("# %s\n\n", title))
+
+	if len(payload.Segments) == 0 {
+		b.WriteString(strings.TrimSpace(payload.Text))
+		b.WriteString("\n")
+		return b.String()
+	}
+
+	for _, segment := range payload.Segments {
+		prefix := fmt.Sprintf("[%s - %s]", formatMMSS(segment.Start), formatMMSS(segment.End))
+		if segment.Speaker != nil && strings.TrimSpace(*segment.Speaker) != "" {
+			prefix += " " + strings.TrimSpace(*segment.Speaker) + ":"
+		}
+		b.WriteString(prefix)
+		b.WriteString(" ")
+		b.WriteString(strings.TrimSpace(segment.Text))
+		b.WriteString("\n\n")
+	}
+	return b.String()
+}
+
+func (u *UnifiedTranscriptionService) materializeTranscriptArtifacts(ctx context.Context, jobID string, transcriptJSON string) error {
+	job, err := u.jobRepo.FindByID(ctx, jobID)
+	if err != nil {
+		return err
+	}
+
+	var activeVault models.Vault
+	vaultErr := database.DB.WithContext(ctx).Where("is_active = ?", true).First(&activeVault).Error
+
+	var targetDir string
+	if vaultErr == nil {
+		title := "transcript"
+		if job.Title != nil && strings.TrimSpace(*job.Title) != "" {
+			title = *job.Title
+		}
+		targetDir = filepath.Join(
+			activeVault.Path,
+			"Transcripts",
+			job.CreatedAt.Format("2006"),
+			job.CreatedAt.Format("01"),
+			fmt.Sprintf("%s-%s", sanitizeSlug(title), shortID(job.ID)),
+		)
+		job.VaultID = &activeVault.ID
+	} else {
+		targetDir = filepath.Join(u.outputDirectory, job.ID)
+	}
+
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		return err
+	}
+
+	jsonPath := filepath.Join(targetDir, "transcript.json")
+	mdPath := filepath.Join(targetDir, "transcript.md")
+
+	var pretty interface{}
+	if err := json.Unmarshal([]byte(transcriptJSON), &pretty); err == nil {
+		if payload, marshalErr := json.MarshalIndent(pretty, "", "  "); marshalErr == nil {
+			if err := os.WriteFile(jsonPath, payload, 0644); err != nil {
+				return err
+			}
+		}
+	} else {
+		if err := os.WriteFile(jsonPath, []byte(transcriptJSON), 0644); err != nil {
+			return err
+		}
+	}
+
+	var markdownPayload markdownTranscriptPayload
+	if err := json.Unmarshal([]byte(transcriptJSON), &markdownPayload); err != nil {
+		return err
+	}
+	markdown := renderMarkdownTranscript(job, &markdownPayload)
+	if err := os.WriteFile(mdPath, []byte(markdown), 0644); err != nil {
+		return err
+	}
+
+	job.ArtifactDir = &targetDir
+	job.TranscriptJSONPath = &jsonPath
+	job.TranscriptMarkdownPath = &mdPath
+	return u.jobRepo.Update(ctx, job)
 }

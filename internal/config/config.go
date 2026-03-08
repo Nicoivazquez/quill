@@ -36,6 +36,7 @@ type Config struct {
 	Environment    string
 	AllowedOrigins []string
 	SecureCookies  bool // Explicit control over Secure flag (for HTTPS deployments)
+	AuthMode       string
 	// OpenAI configuration
 	OpenAIAPIKey string
 
@@ -68,6 +69,7 @@ func Load() *Config {
 		TempDir:        getEnv("TEMP_DIR", "data/temp"),
 		WhisperXEnv:    getEnv("WHISPERX_ENV", "data/whisperx-env"),
 		SecureCookies:  getEnv("SECURE_COOKIES", defaultSecure) == "true",
+		AuthMode:       strings.ToLower(getEnv("AUTH_MODE", "local")),
 		OpenAIAPIKey:   getEnv("OPENAI_API_KEY", ""),
 		HFToken:        getEnv("HF_TOKEN", ""),
 	}
@@ -76,6 +78,11 @@ func Load() *Config {
 // IsProduction returns true if the environment is production
 func (c *Config) IsProduction() bool {
 	return strings.ToLower(c.Environment) == "production"
+}
+
+// IsLocalAuth returns true when authentication is handled as local single-user mode.
+func (c *Config) IsLocalAuth() bool {
+	return strings.EqualFold(c.AuthMode, "local")
 }
 
 // getEnv gets an environment variable with a default value

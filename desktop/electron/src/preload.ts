@@ -1,12 +1,15 @@
 import { contextBridge, ipcRenderer } from "electron";
 
 type DesktopBridge = {
-  selectFolder: () => Promise<string | null>;
+  selectFolder: (options?: {
+    title?: string;
+    defaultPath?: string;
+  }) => Promise<string | null>;
 };
 
 const bridge: DesktopBridge = {
-  async selectFolder() {
-    const selectedPath = await ipcRenderer.invoke("desktop:select-folder");
+  async selectFolder(options) {
+    const selectedPath = await ipcRenderer.invoke("desktop:select-folder", options ?? null);
     return typeof selectedPath === "string" && selectedPath.length > 0 ? selectedPath : null;
   },
 };

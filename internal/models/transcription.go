@@ -9,24 +9,28 @@ import (
 
 // TranscriptionJob represents a transcription job record
 type TranscriptionJob struct {
-	ID                    string         `json:"id" gorm:"primaryKey;type:varchar(36)"`
-	Title                 *string        `json:"title,omitempty" gorm:"type:text"`
-	Status                JobStatus      `json:"status" gorm:"type:varchar(20);not null;default:'pending'"`
-	AudioPath             string         `json:"audio_path" gorm:"type:text;not null"`
-	Transcript            *string        `json:"transcript,omitempty" gorm:"type:text"`
-	Diarization           bool           `json:"diarization" gorm:"type:boolean;default:false"`
-	Summary               *string        `json:"summary,omitempty" gorm:"type:text"`
-	ErrorMessage          *string        `json:"error_message,omitempty" gorm:"type:text"`
-	IsMultiTrack          bool           `json:"is_multi_track" gorm:"type:boolean;default:false"`
-	AupFilePath           *string        `json:"aup_file_path,omitempty" gorm:"type:text"`
-	MultiTrackFolder      *string        `json:"multi_track_folder,omitempty" gorm:"type:text"`
-	MergedAudioPath       *string        `json:"merged_audio_path,omitempty" gorm:"type:text"`
-	MergeStatus           string         `json:"merge_status" gorm:"type:varchar(20);default:'none'"` // none, pending, processing, completed, failed
-	MergeError            *string        `json:"merge_error,omitempty" gorm:"type:text"`
-	IndividualTranscripts *string        `json:"individual_transcripts,omitempty" gorm:"type:text"` // JSON-serialized map[string]*string
-	CreatedAt             time.Time      `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt             time.Time      `json:"updated_at" gorm:"autoUpdateTime"`
-	DeletedAt             gorm.DeletedAt `json:"deleted_at,omitempty" gorm:"index" swaggertype:"string"`
+	ID                     string         `json:"id" gorm:"primaryKey;type:varchar(36)"`
+	Title                  *string        `json:"title,omitempty" gorm:"type:text"`
+	Status                 JobStatus      `json:"status" gorm:"type:varchar(20);not null;default:'pending'"`
+	AudioPath              string         `json:"audio_path" gorm:"type:text;not null"`
+	VaultID                *uint          `json:"vault_id,omitempty" gorm:"index"`
+	ArtifactDir            *string        `json:"artifact_dir,omitempty" gorm:"type:text"`
+	TranscriptJSONPath     *string        `json:"transcript_json_path,omitempty" gorm:"type:text"`
+	TranscriptMarkdownPath *string        `json:"transcript_markdown_path,omitempty" gorm:"type:text"`
+	Transcript             *string        `json:"transcript,omitempty" gorm:"type:text"`
+	Diarization            bool           `json:"diarization" gorm:"type:boolean;default:false"`
+	Summary                *string        `json:"summary,omitempty" gorm:"type:text"`
+	ErrorMessage           *string        `json:"error_message,omitempty" gorm:"type:text"`
+	IsMultiTrack           bool           `json:"is_multi_track" gorm:"type:boolean;default:false"`
+	AupFilePath            *string        `json:"aup_file_path,omitempty" gorm:"type:text"`
+	MultiTrackFolder       *string        `json:"multi_track_folder,omitempty" gorm:"type:text"`
+	MergedAudioPath        *string        `json:"merged_audio_path,omitempty" gorm:"type:text"`
+	MergeStatus            string         `json:"merge_status" gorm:"type:varchar(20);default:'none'"` // none, pending, processing, completed, failed
+	MergeError             *string        `json:"merge_error,omitempty" gorm:"type:text"`
+	IndividualTranscripts  *string        `json:"individual_transcripts,omitempty" gorm:"type:text"` // JSON-serialized map[string]*string
+	CreatedAt              time.Time      `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt              time.Time      `json:"updated_at" gorm:"autoUpdateTime"`
+	DeletedAt              gorm.DeletedAt `json:"deleted_at,omitempty" gorm:"index" swaggertype:"string"`
 
 	// WhisperX parameters
 	Parameters WhisperXParams `json:"parameters" gorm:"embedded"`

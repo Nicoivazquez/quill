@@ -258,6 +258,14 @@ func transformAPIKeyForList(apiKey models.APIKey) APIKeyListResponse {
 	}
 }
 
+func resolveInboundUploadBase(defaultDir string) (string, *uint) {
+	vault, err := getActiveVault()
+	if err == nil && vault != nil && strings.TrimSpace(vault.Path) != "" {
+		return filepath.Join(vault.Path, "Inbox"), &vault.ID
+	}
+	return defaultDir, nil
+}
+
 // @Summary Upload audio file
 // @Description Upload an audio file without starting transcription
 // @Tags transcription
@@ -283,7 +291,8 @@ func (h *Handler) UploadAudio(c *gin.Context) {
 	}
 
 	// Save file using FileService
-	uploadDir := h.config.UploadDir
+	uploadBase, vaultID := resolveInboundUploadBase(h.config.UploadDir)
+	uploadDir := filepath.Join(uploadBase, "Media")
 	filePath, err := h.fileService.SaveUpload(header, uploadDir)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save file"})
@@ -324,6 +333,7 @@ func (h *Handler) UploadAudio(c *gin.Context) {
 	job := models.TranscriptionJob{
 		ID:        jobID,
 		AudioPath: filePath,
+		VaultID:   vaultID,
 		Status:    models.StatusUploaded,
 	}
 
@@ -407,7 +417,8 @@ func (h *Handler) UploadVideo(c *gin.Context) {
 	}
 
 	// Save file using FileService
-	uploadDir := h.config.UploadDir
+	uploadBase, vaultID := resolveInboundUploadBase(h.config.UploadDir)
+	uploadDir := filepath.Join(uploadBase, "Media")
 	videoPath, err := h.fileService.SaveUpload(header, uploadDir)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save file"})
@@ -431,6 +442,7 @@ func (h *Handler) UploadVideo(c *gin.Context) {
 	job := models.TranscriptionJob{
 		ID:        jobID,
 		AudioPath: audioPath, // Use the extracted audio path
+		VaultID:   vaultID,
 		Status:    models.StatusUploaded,
 	}
 
@@ -514,10 +526,10 @@ func (h *Handler) UploadMultiTrack(c *gin.Context) {
 
 	// Create a unique job ID
 	jobID := uuid.New().String()
-	uploadDir := h.config.UploadDir
+	uploadBase, vaultID := resolveInboundUploadBase(h.config.UploadDir)
 
 	// Create job directory
-	jobDir := filepath.Join(uploadDir, jobID)
+	jobDir := filepath.Join(uploadBase, "MultiTrack", jobID)
 	if err := h.fileService.CreateDirectory(jobDir); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create job directory"})
 		return
@@ -550,6 +562,7 @@ func (h *Handler) UploadMultiTrack(c *gin.Context) {
 		ID:              jobID,
 		Status:          models.StatusUploaded,
 		IsMultiTrack:    true,
+		VaultID:         vaultID,
 		MultiTrackFiles: trackFiles,
 	}
 
