@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go build:*)",
+      "Bash(command -v:*)",
+      "Bash(golangci-lint run:*)",
+      "Bash(go test:*)",
+      "Bash(python3:*)"
+    ]
+  }
+}
