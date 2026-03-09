@@ -29,10 +29,10 @@ export function Home() {
                     transition={{ duration: 0.8, ease: "easeOut" }}
                     className="space-y-6 max-w-4xl mx-auto"
                 >
-                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-orange-50 border border-orange-100 text-orange-600 text-sm font-medium">
+                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[var(--brand-light)] border border-[var(--brand-solid)]/20 text-[var(--brand-solid)] text-sm font-medium">
                         <span className="relative flex h-2 w-2">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--brand-solid)]/70 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-[var(--brand-solid)]"></span>
                         </span>
                         v1.2.0 Now Available
                     </div>
@@ -67,7 +67,7 @@ export function Home() {
                     <div className="glass-panel rounded-2xl overflow-hidden p-2">
                         <img
                             src="/screenshots/transcript-light-2.png"
-                            alt="Scriberr Interface"
+                            alt="Quill Interface"
                             className="w-full h-auto rounded-xl shadow-inner bg-white"
                         />
                     </div>
@@ -94,7 +94,7 @@ export function Home() {
                 >
                     <span className="text-xs font-semibold text-gray-400 uppercase tracking-[0.2em]">Sponsors</span>
                     <a
-                        href="https://www.recall.ai/?utm_source=github&utm_medium=sponsorship&utm_campaign=rishikanthc-scriberr"
+                        href="https://www.recall.ai/?utm_source=github&utm_medium=sponsorship&utm_campaign=rishikanthc-quill"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="group transition-all duration-300 hover:-translate-y-0.5"
@@ -126,7 +126,7 @@ export function Home() {
                 >
                     {features.map((feature, index) => (
                         <Card key={index} className="h-full group">
-                            <div className="w-12 h-12 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
+                            <div className="w-12 h-12 rounded-xl bg-[var(--brand-light)] text-[var(--brand-solid)] flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
                                 {feature.icon}
                             </div>
                             <Heading level={4} className="mb-3">{feature.title}</Heading>

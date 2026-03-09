@@ -128,7 +128,7 @@ def transcribe_buffered(
         f"Transcription complete: {len(final_text)} characters total", file=sys.stderr
     )
 
-    # Prepare output in Scriberr format
+    # Prepare output in Quill format
     # Note: Voxtral doesn't provide word-level timestamps
     result = {
         "text": final_text,

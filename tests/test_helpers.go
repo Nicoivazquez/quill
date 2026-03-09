@@ -5,10 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	"scriberr/internal/auth"
-	"scriberr/internal/config"
-	"scriberr/internal/database"
-	"scriberr/internal/models"
+	"quill/internal/auth"
+	"quill/internal/config"
+	"quill/internal/database"
+	"quill/internal/models"
 
 	"context"
 	"encoding/json"
@@ -16,7 +16,7 @@ import (
 	"net/http/httptest"
 	"time"
 
-	"scriberr/internal/llm"
+	"quill/internal/llm"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -331,8 +331,8 @@ func (m *MockJobRepository) DeleteMultiTrackFilesByJobID(ctx context.Context, jo
 	return args.Error(0)
 }
 
-func (m *MockJobRepository) ListWithParams(ctx context.Context, offset, limit int, sortBy, sortOrder, searchQuery string, updatedAfter *time.Time) ([]models.TranscriptionJob, int64, error) {
-	args := m.Called(ctx, offset, limit, sortBy, sortOrder, searchQuery, updatedAfter)
+func (m *MockJobRepository) ListWithParams(ctx context.Context, offset, limit int, sortBy, sortOrder, searchQuery string, updatedAfter *time.Time, vaultID *uint) ([]models.TranscriptionJob, int64, error) {
+	args := m.Called(ctx, offset, limit, sortBy, sortOrder, searchQuery, updatedAfter, vaultID)
 	return args.Get(0).([]models.TranscriptionJob), args.Get(1).(int64), args.Error(2)
 }
 

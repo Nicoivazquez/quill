@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"scriberr/internal/transcription/interfaces"
-	"scriberr/pkg/binaries"
-	"scriberr/pkg/downloader"
-	"scriberr/pkg/logger"
+	"quill/internal/transcription/interfaces"
+	"quill/pkg/binaries"
+	"quill/pkg/downloader"
+	"quill/pkg/logger"
 )
 
 // ParakeetAdapter implements the TranscriptionAdapter interface for NVIDIA Parakeet

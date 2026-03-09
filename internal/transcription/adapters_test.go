@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"scriberr/internal/models"
-	"scriberr/internal/transcription/adapters"
-	"scriberr/internal/transcription/interfaces"
-	"scriberr/internal/transcription/registry"
+	"quill/internal/models"
+	"quill/internal/transcription/adapters"
+	"quill/internal/transcription/interfaces"
+	"quill/internal/transcription/registry"
 
 	"github.com/stretchr/testify/mock"
 )
@@ -84,8 +84,8 @@ func (m *MockJobRepository) DeleteMultiTrackFilesByJobID(ctx context.Context, jo
 	return args.Error(0)
 }
 
-func (m *MockJobRepository) ListWithParams(ctx context.Context, offset, limit int, sortBy, sortOrder, searchQuery string, updatedAfter *time.Time) ([]models.TranscriptionJob, int64, error) {
-	args := m.Called(ctx, offset, limit, sortBy, sortOrder, searchQuery, updatedAfter)
+func (m *MockJobRepository) ListWithParams(ctx context.Context, offset, limit int, sortBy, sortOrder, searchQuery string, updatedAfter *time.Time, vaultID *uint) ([]models.TranscriptionJob, int64, error) {
+	args := m.Called(ctx, offset, limit, sortBy, sortOrder, searchQuery, updatedAfter, vaultID)
 	return args.Get(0).([]models.TranscriptionJob), args.Get(1).(int64), args.Error(2)
 }
 

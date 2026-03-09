@@ -26,7 +26,7 @@ export function CLISettings() {
                 // Let's use the POST /api/auth/cli/authorize endpoint to generate a token?
                 // That endpoint expects a callback_url.
 
-                // Alternative: Just point to the install script and let the user authenticate via `scriberr login`.
+                // Alternative: Just point to the install script and let the user authenticate via `quill login`.
                 // But the user asked for "handle auth as well".
                 // So we need to inject a token.
 
@@ -45,11 +45,11 @@ export function CLISettings() {
                 // Actually, I can use the `POST / api / auth / cli / authorize` but it's designed for the redirect flow.
 
                 // For now, let's just use the install script URL.
-                // If I can't easily get a long-lived token, I'll fall back to `scriberr login`.
+                // If I can't easily get a long-lived token, I'll fall back to `quill login`.
                 // But let's try to make it perfect.
 
                 // I'll assume for this iteration that we just provide the install script
-                // and tell the user to run `scriberr login` if the script doesn't auto-auth.
+                // and tell the user to run `quill login` if the script doesn't auto-auth.
                 // BUT, the script DOES support auto-auth if `token` param is present.
 
                 // Let's just use the current window location to construct the URL.
@@ -77,26 +77,26 @@ export function CLISettings() {
     return (
         <Layout>
             <div className="max-w-3xl mx-auto">
-                <h1 className="text-3xl font-bold text-carbon-900 dark:text-white mb-8">
+                <h1 className="text-3xl font-bold text-[var(--text-primary)] mb-6">
                     Watcher CLI
                 </h1>
 
-                <div className="bg-white dark:bg-carbon-800 rounded-xl shadow-sm border border-carbon-200 dark:border-carbon-700 overflow-hidden mb-8">
+                <div className="obsidian-pane overflow-hidden mb-8">
                     <div className="p-6">
-                        <h2 className="text-xl font-bold text-carbon-900 dark:text-white mb-4">
+                        <h2 className="text-xl font-bold text-[var(--text-primary)] mb-4">
                             Installation
                         </h2>
-                        <p className="text-carbon-600 dark:text-carbon-300 mb-6">
-                            Run this command in your terminal to install the Scriberr CLI. This script will automatically detect your OS and architecture.
+                        <p className="text-[var(--text-secondary)] mb-6">
+                            Run this command in your terminal to install the Quill CLI. This script will automatically detect your OS and architecture.
                         </p>
 
                         <div className="relative">
-                            <div className="bg-carbon-900 rounded-lg p-4 pr-24 font-mono text-sm text-carbon-300 overflow-x-auto">
+                            <div className="bg-[var(--bg-muted-pane)] rounded-[var(--radius-btn)] p-4 pr-24 font-mono text-sm text-[var(--text-secondary)] overflow-x-auto border border-[var(--border-subtle)]">
                                 {loading ? 'Generating command...' : installCmd}
                             </div>
                             <button
                                 onClick={copyToClipboard}
-                                className="absolute right-2 top-2 px-3 py-1.5 bg-carbon-700 hover:bg-carbon-600 text-white text-xs rounded-md transition-colors flex items-center gap-2"
+                                className="absolute right-2 top-2 px-3 py-1.5 bg-[var(--bg-card)] hover:bg-[var(--bg-main)] text-[var(--text-primary)] text-xs rounded-[var(--radius-btn)] border border-[var(--border-subtle)] transition-colors flex items-center gap-2"
                             >
                                 {copied ? (
                                     <>
@@ -119,40 +119,40 @@ export function CLISettings() {
                 </div>
 
                 <div className="grid gap-6 md:grid-cols-2">
-                    <div className="bg-white dark:bg-carbon-800 rounded-xl shadow-sm border border-carbon-200 dark:border-carbon-700 p-6">
-                        <h3 className="text-lg font-bold text-carbon-900 dark:text-white mb-3">
+                    <div className="obsidian-pane p-6">
+                        <h3 className="text-lg font-bold text-[var(--text-primary)] mb-3">
                             1. Authenticate
                         </h3>
-                        <p className="text-carbon-600 dark:text-carbon-300 text-sm mb-4">
+                        <p className="text-[var(--text-secondary)] text-sm mb-4">
                             Link the CLI to your account. This will open your browser for approval.
                         </p>
-                        <div className="bg-carbon-100 dark:bg-carbon-900 rounded p-3 font-mono text-sm text-carbon-800 dark:text-carbon-200">
-                            scriberr login
+                        <div className="bg-[var(--bg-muted-pane)] rounded-[var(--radius-btn)] p-3 font-mono text-sm text-[var(--text-primary)] border border-[var(--border-subtle)]">
+                            quill login
                         </div>
                     </div>
 
-                    <div className="bg-white dark:bg-carbon-800 rounded-xl shadow-sm border border-carbon-200 dark:border-carbon-700 p-6">
-                        <h3 className="text-lg font-bold text-carbon-900 dark:text-white mb-3">
+                    <div className="obsidian-pane p-6">
+                        <h3 className="text-lg font-bold text-[var(--text-primary)] mb-3">
                             2. Watch a Folder
                         </h3>
-                        <p className="text-carbon-600 dark:text-carbon-300 text-sm mb-4">
+                        <p className="text-[var(--text-secondary)] text-sm mb-4">
                             Start watching a directory for new audio files.
                         </p>
-                        <div className="bg-carbon-100 dark:bg-carbon-900 rounded p-3 font-mono text-sm text-carbon-800 dark:text-carbon-200">
-                            scriberr watch ~/Recordings
+                        <div className="bg-[var(--bg-muted-pane)] rounded-[var(--radius-btn)] p-3 font-mono text-sm text-[var(--text-primary)] border border-[var(--border-subtle)]">
+                            quill watch ~/Recordings
                         </div>
                     </div>
 
-                    <div className="bg-white dark:bg-carbon-800 rounded-xl shadow-sm border border-carbon-200 dark:border-carbon-700 p-6">
-                        <h3 className="text-lg font-bold text-carbon-900 dark:text-white mb-3">
+                    <div className="obsidian-pane p-6">
+                        <h3 className="text-lg font-bold text-[var(--text-primary)] mb-3">
                             3. Run as Service
                         </h3>
-                        <p className="text-carbon-600 dark:text-carbon-300 text-sm mb-4">
+                        <p className="text-[var(--text-secondary)] text-sm mb-4">
                             Install as a background service to keep watching after restart.
                         </p>
-                        <div className="bg-carbon-100 dark:bg-carbon-900 rounded p-3 font-mono text-sm text-carbon-800 dark:text-carbon-200">
-                            sudo scriberr install ~/Recordings<br />
-                            sudo scriberr start
+                        <div className="bg-[var(--bg-muted-pane)] rounded-[var(--radius-btn)] p-3 font-mono text-sm text-[var(--text-primary)] border border-[var(--border-subtle)]">
+                            sudo quill install ~/Recordings<br />
+                            sudo quill start
                         </div>
                     </div>
                 </div>
@@ -160,4 +160,3 @@ export function CLISettings() {
         </Layout>
     )
 }
-

@@ -2,8 +2,10 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,9 +15,9 @@ import (
 	"time"
 	"unicode"
 
-	"scriberr/internal/database"
-	"scriberr/internal/models"
-	"scriberr/pkg/logger"
+	"quill/internal/database"
+	"quill/internal/models"
+	"quill/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -34,14 +36,17 @@ type SetupStateResponse struct {
 type CompleteSetupRequest struct {
 	VaultPath        string  `json:"vault_path" binding:"required"`
 	VaultName        *string `json:"vault_name,omitempty"`
+	VaultMode        *string `json:"vault_mode,omitempty"`
 	AuthMode         *string `json:"auth_mode,omitempty"`
 	ObsidianVaultDir *string `json:"obsidian_vault_dir,omitempty"`
 	OpenClawDropDir  *string `json:"openclaw_drop_dir,omitempty"`
 }
 
 type VaultRequest struct {
-	Name string `json:"name" binding:"required"`
-	Path string `json:"path" binding:"required"`
+	Name     string `json:"name"`
+	Path     string `json:"path" binding:"required"`
+	Mode     string `json:"mode,omitempty"`
+	Activate *bool  `json:"activate,omitempty"`
 }
 
 type VaultUpdateRequest struct {
@@ -81,6 +86,14 @@ type transcriptPayload struct {
 	Segments []transcriptSegment `json:"segments,omitempty"`
 }
 
+type transcriptFrontmatter struct {
+	ID        string
+	Title     string
+	Status    string
+	CreatedAt string
+	UpdatedAt string
+}
+
 func normalizeAuthMode(input *string) string {
 	if input == nil || strings.TrimSpace(*input) == "" {
 		return "local"
@@ -92,13 +105,54 @@ func normalizeAuthMode(input *string) string {
 	return value
 }
 
+func normalizeVaultMode(input *string) string {
+	if input == nil || strings.TrimSpace(*input) == "" {
+		return ""
+	}
+	value := strings.ToLower(strings.TrimSpace(*input))
+	if value == "existing" || value == "create" {
+		return value
+	}
+	return ""
+}
+
+func deriveVaultNameFromPath(vaultPath string) string {
+	base := strings.TrimSpace(filepath.Base(vaultPath))
+	if base != "" && base != "." && base != string(filepath.Separator) {
+		return base
+	}
+	return "Vault"
+}
+
+func detectExistingVault(vaultPath string) (bool, error) {
+	markers := []string{
+		filepath.Join(vaultPath, ".quill"),
+		filepath.Join(vaultPath, ".scriber"), // Legacy marker for older installs
+		filepath.Join(vaultPath, "Inbox"),
+		filepath.Join(vaultPath, "Media"),
+		filepath.Join(vaultPath, "Transcripts"),
+	}
+
+	for _, marker := range markers {
+		_, err := os.Stat(marker)
+		if err == nil {
+			return true, nil
+		}
+		if err != nil && !os.IsNotExist(err) {
+			return false, err
+		}
+	}
+
+	return false, nil
+}
+
 func ensureVaultStructure(vaultPath string) error {
 	dirs := []string{
 		filepath.Join(vaultPath, "Inbox"),
 		filepath.Join(vaultPath, "Media"),
 		filepath.Join(vaultPath, "Transcripts"),
 		filepath.Join(vaultPath, "Contacts", "Snippets"),
-		filepath.Join(vaultPath, ".scriber"),
+		filepath.Join(vaultPath, ".quill"),
 	}
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -150,6 +204,315 @@ func parseTranscriptJSON(raw string) (*transcriptPayload, error) {
 		return nil, err
 	}
 	return &payload, nil
+}
+
+func parseFrontmatterValue(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+
+	if len(trimmed) >= 2 && trimmed[0] == '"' && trimmed[len(trimmed)-1] == '"' {
+		if unquoted, err := strconv.Unquote(trimmed); err == nil {
+			return strings.TrimSpace(unquoted)
+		}
+	}
+
+	if len(trimmed) >= 2 && trimmed[0] == '\'' && trimmed[len(trimmed)-1] == '\'' {
+		return strings.TrimSpace(trimmed[1 : len(trimmed)-1])
+	}
+
+	return trimmed
+}
+
+func parseTranscriptFrontmatter(markdown string) (*transcriptFrontmatter, bool) {
+	normalized := strings.ReplaceAll(markdown, "\r\n", "\n")
+	if !strings.HasPrefix(normalized, "---\n") {
+		return nil, false
+	}
+
+	rest := normalized[len("---\n"):]
+	endIdx := strings.Index(rest, "\n---\n")
+	if endIdx < 0 {
+		return nil, false
+	}
+
+	rawFrontmatter := rest[:endIdx]
+	meta := &transcriptFrontmatter{}
+
+	for _, line := range strings.Split(rawFrontmatter, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+
+		parts := strings.SplitN(trimmed, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		key := strings.TrimSpace(parts[0])
+		value := parseFrontmatterValue(parts[1])
+
+		switch key {
+		case "id":
+			meta.ID = value
+		case "title":
+			meta.Title = value
+		case "status":
+			meta.Status = value
+		case "created_at":
+			meta.CreatedAt = value
+		case "updated_at":
+			meta.UpdatedAt = value
+		}
+	}
+
+	if strings.TrimSpace(meta.ID) == "" {
+		return nil, false
+	}
+
+	return meta, true
+}
+
+func normalizeRecoveredJobStatus(value string) models.JobStatus {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case string(models.StatusUploaded):
+		return models.StatusUploaded
+	case string(models.StatusPending):
+		return models.StatusPending
+	case string(models.StatusProcessing):
+		return models.StatusProcessing
+	case string(models.StatusFailed):
+		return models.StatusFailed
+	default:
+		return models.StatusCompleted
+	}
+}
+
+func parseFrontmatterTimestamp(value string) (time.Time, bool) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return time.Time{}, false
+	}
+	parsed, err := time.Parse(time.RFC3339, trimmed)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return parsed, true
+}
+
+func locateAudioPathForRecoveredJob(vaultPath, jobID string) string {
+	trimmedID := strings.TrimSpace(jobID)
+	if trimmedID == "" {
+		return ""
+	}
+
+	candidateGlobs := []string{
+		filepath.Join(vaultPath, "Inbox", "Media", trimmedID+".*"),
+		filepath.Join(vaultPath, "Media", trimmedID+".*"),
+		filepath.Join(vaultPath, "Inbox", "OpenClaw", trimmedID+".*"),
+	}
+
+	for _, pattern := range candidateGlobs {
+		matches, err := filepath.Glob(pattern)
+		if err != nil || len(matches) == 0 {
+			continue
+		}
+		sort.Strings(matches)
+		return matches[0]
+	}
+
+	var discovered string
+	_ = filepath.WalkDir(vaultPath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || discovered != "" || d == nil || d.IsDir() {
+			return nil
+		}
+		fileName := d.Name()
+		ext := strings.ToLower(filepath.Ext(fileName))
+		if !isSupportedIngestExtension(ext) {
+			return nil
+		}
+		baseName := strings.TrimSuffix(fileName, ext)
+		if baseName == trimmedID {
+			discovered = path
+		}
+		return nil
+	})
+
+	return discovered
+}
+
+func collectVaultTranscriptMarkdownFiles(vaultPath string) ([]string, error) {
+	transcriptsDir := filepath.Join(vaultPath, "Transcripts")
+	if _, err := os.Stat(transcriptsDir); err != nil {
+		if os.IsNotExist(err) {
+			return []string{}, nil
+		}
+		return nil, err
+	}
+
+	paths := make([]string, 0, 64)
+	err := filepath.WalkDir(transcriptsDir, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return nil
+		}
+		if d == nil || d.IsDir() {
+			return nil
+		}
+		if strings.EqualFold(d.Name(), "transcript.md") {
+			paths = append(paths, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(paths)
+	return paths, nil
+}
+
+func recoverJobsFromVaultArtifacts(vault models.Vault) (int, error) {
+	markdownFiles, err := collectVaultTranscriptMarkdownFiles(vault.Path)
+	if err != nil {
+		return 0, err
+	}
+
+	recoveredCount := 0
+	for _, markdownPath := range markdownFiles {
+		markdownBytes, readErr := os.ReadFile(markdownPath)
+		if readErr != nil {
+			continue
+		}
+
+		meta, ok := parseTranscriptFrontmatter(string(markdownBytes))
+		if !ok {
+			continue
+		}
+
+		jobID := strings.TrimSpace(meta.ID)
+		if jobID == "" {
+			continue
+		}
+
+		title := strings.TrimSpace(meta.Title)
+		if title == "" {
+			title = strings.TrimSpace(filepath.Base(filepath.Dir(markdownPath)))
+		}
+		var titlePtr *string
+		if title != "" {
+			titlePtr = &title
+		}
+
+		createdAt, createdParsed := parseFrontmatterTimestamp(meta.CreatedAt)
+		updatedAt, updatedParsed := parseFrontmatterTimestamp(meta.UpdatedAt)
+		if !createdParsed || !updatedParsed {
+			stat, statErr := os.Stat(markdownPath)
+			if statErr == nil {
+				if !createdParsed {
+					createdAt = stat.ModTime()
+				}
+				if !updatedParsed {
+					updatedAt = stat.ModTime()
+				}
+			}
+		}
+		if createdAt.IsZero() {
+			createdAt = time.Now()
+		}
+		if updatedAt.IsZero() {
+			updatedAt = createdAt
+		}
+
+		artifactDir := filepath.Dir(markdownPath)
+		artifactDirPtr := &artifactDir
+		markdownPathValue := markdownPath
+		markdownPathPtr := &markdownPathValue
+
+		jsonPath := filepath.Join(artifactDir, "transcript.json")
+		var jsonPathPtr *string
+		var transcriptPtr *string
+		if _, statErr := os.Stat(jsonPath); statErr == nil {
+			jsonPathPtr = &jsonPath
+			if transcriptBytes, transcriptErr := os.ReadFile(jsonPath); transcriptErr == nil {
+				trimmedTranscript := strings.TrimSpace(string(transcriptBytes))
+				if trimmedTranscript != "" {
+					transcriptPtr = &trimmedTranscript
+				}
+			}
+		}
+
+		audioPath := locateAudioPathForRecoveredJob(vault.Path, jobID)
+
+		var existing models.TranscriptionJob
+		lookupErr := database.DB.Where("id = ?", jobID).First(&existing).Error
+		if lookupErr == nil {
+			updates := map[string]interface{}{}
+			if existing.VaultID == nil || *existing.VaultID != vault.ID {
+				updates["vault_id"] = vault.ID
+			}
+			if (existing.Title == nil || strings.TrimSpace(*existing.Title) == "") && titlePtr != nil {
+				updates["title"] = *titlePtr
+			}
+			if strings.TrimSpace(existing.AudioPath) == "" && strings.TrimSpace(audioPath) != "" {
+				updates["audio_path"] = audioPath
+			}
+			if existing.ArtifactDir == nil || strings.TrimSpace(*existing.ArtifactDir) == "" {
+				updates["artifact_dir"] = *artifactDirPtr
+			}
+			if existing.TranscriptMarkdownPath == nil || strings.TrimSpace(*existing.TranscriptMarkdownPath) == "" {
+				updates["transcript_markdown_path"] = *markdownPathPtr
+			}
+			if jsonPathPtr != nil && (existing.TranscriptJSONPath == nil || strings.TrimSpace(*existing.TranscriptJSONPath) == "") {
+				updates["transcript_json_path"] = *jsonPathPtr
+			}
+			if transcriptPtr != nil && (existing.Transcript == nil || strings.TrimSpace(*existing.Transcript) == "") {
+				updates["transcript"] = *transcriptPtr
+			}
+			if existing.CreatedAt.IsZero() {
+				updates["created_at"] = createdAt
+			}
+			if updatedAt.After(existing.UpdatedAt) {
+				updates["updated_at"] = updatedAt
+			}
+
+			if len(updates) > 0 {
+				if updateErr := database.DB.Model(&models.TranscriptionJob{}).Where("id = ?", existing.ID).Updates(updates).Error; updateErr != nil {
+					return recoveredCount, updateErr
+				}
+			}
+
+			recoveredCount++
+			continue
+		}
+		if !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
+			return recoveredCount, lookupErr
+		}
+
+		job := models.TranscriptionJob{
+			ID:                     jobID,
+			Title:                  titlePtr,
+			Status:                 normalizeRecoveredJobStatus(meta.Status),
+			AudioPath:              audioPath,
+			VaultID:                &vault.ID,
+			ArtifactDir:            artifactDirPtr,
+			TranscriptJSONPath:     jsonPathPtr,
+			TranscriptMarkdownPath: markdownPathPtr,
+			Transcript:             transcriptPtr,
+			CreatedAt:              createdAt,
+			UpdatedAt:              updatedAt,
+		}
+		if job.AudioPath == "" {
+			job.AudioPath = filepath.Join(vault.Path, "Inbox", "Media", job.ID)
+		}
+
+		if createErr := database.DB.Create(&job).Error; createErr != nil {
+			return recoveredCount, createErr
+		}
+		recoveredCount++
+	}
+
+	return recoveredCount, nil
 }
 
 func shortID(value string) string {
@@ -324,16 +687,57 @@ func (h *Handler) CompleteSetup(c *gin.Context) {
 		return
 	}
 
-	vaultPath, err := filepath.Abs(strings.TrimSpace(req.VaultPath))
+	trimmedVaultPath := strings.TrimSpace(req.VaultPath)
+	if trimmedVaultPath == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Vault path is required"})
+		return
+	}
+
+	vaultPath, err := filepath.Abs(trimmedVaultPath)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid vault path"})
 		return
 	}
 
-	if err := os.MkdirAll(vaultPath, 0755); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create vault path"})
+	vaultMode := normalizeVaultMode(req.VaultMode)
+	if vaultMode == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Vault mode is required (create or existing)"})
 		return
 	}
+	logger.Info("Completing setup", "vault_mode", vaultMode, "vault_path", vaultPath)
+	if vaultMode == "existing" {
+		info, statErr := os.Stat(vaultPath)
+		if statErr != nil {
+			if os.IsNotExist(statErr) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Existing vault path does not exist"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to inspect existing vault path"})
+			return
+		}
+		if !info.IsDir() {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Existing vault path must be a directory"})
+			return
+		}
+
+		existingVault, detectErr := detectExistingVault(vaultPath)
+		if detectErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to inspect existing vault structure"})
+			return
+		}
+		if !existingVault {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "Selected path does not look like an existing Quill vault. Choose 'Create new vault' for new folders.",
+			})
+			return
+		}
+	} else {
+		if err := os.MkdirAll(vaultPath, 0755); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create vault path"})
+			return
+		}
+	}
+
 	if err := ensureVaultStructure(vaultPath); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to initialize vault directories"})
 		return
@@ -342,15 +746,32 @@ func (h *Handler) CompleteSetup(c *gin.Context) {
 	authMode := normalizeAuthMode(req.AuthMode)
 	_ = os.Setenv("AUTH_MODE", authMode)
 
-	vaultName := "Main Vault"
-	if req.VaultName != nil && strings.TrimSpace(*req.VaultName) != "" {
-		vaultName = strings.TrimSpace(*req.VaultName)
+	requestedVaultName := ""
+	if req.VaultName != nil {
+		requestedVaultName = strings.TrimSpace(*req.VaultName)
+	}
+
+	defaultVaultName := "Main Vault"
+	if vaultMode == "existing" {
+		defaultVaultName = deriveVaultNameFromPath(vaultPath)
+	}
+
+	vaultName := defaultVaultName
+	if requestedVaultName != "" {
+		vaultName = requestedVaultName
 	}
 
 	var vault models.Vault
 	err = database.DB.Where("path = ?", vaultPath).First(&vault).Error
 	if err == nil {
-		vault.Name = vaultName
+		if requestedVaultName != "" || vaultMode == "create" {
+			vault.Name = vaultName
+		} else if strings.TrimSpace(vault.Name) == "" {
+			vault.Name = defaultVaultName
+		}
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load vault"})
+		return
 	} else {
 		vault = models.Vault{Name: vaultName, Path: vaultPath, IsActive: true}
 	}
@@ -387,7 +808,26 @@ func (h *Handler) CompleteSetup(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Setup completed", "auth_mode": authMode, "vault": vault})
+	recoveredJobs := 0
+	if vaultMode == "existing" {
+		count, recoverErr := recoverJobsFromVaultArtifacts(vault)
+		if recoverErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to recover existing vault data"})
+			return
+		}
+		recoveredJobs = count
+	}
+
+	resp := gin.H{
+		"message":   "Setup completed",
+		"auth_mode": authMode,
+		"vault":     vault,
+	}
+	if vaultMode == "existing" {
+		resp["recovered_jobs"] = recoveredJobs
+	}
+
+	c.JSON(http.StatusOK, resp)
 }
 
 func (h *Handler) ListVaults(c *gin.Context) {
@@ -406,16 +846,56 @@ func (h *Handler) CreateVault(c *gin.Context) {
 		return
 	}
 
-	vaultPath, err := filepath.Abs(strings.TrimSpace(req.Path))
+	trimmedPath := strings.TrimSpace(req.Path)
+	if trimmedPath == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Vault path is required"})
+		return
+	}
+
+	vaultPath, err := filepath.Abs(trimmedPath)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid vault path"})
 		return
 	}
 
-	if err := os.MkdirAll(vaultPath, 0755); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create vault path"})
-		return
+	modeInput := req.Mode
+	mode := normalizeVaultMode(&modeInput)
+	if mode == "" {
+		mode = "create"
 	}
+
+	if mode == "existing" {
+		info, statErr := os.Stat(vaultPath)
+		if statErr != nil {
+			if os.IsNotExist(statErr) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Existing vault path does not exist"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to inspect existing vault path"})
+			return
+		}
+		if !info.IsDir() {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Existing vault path must be a directory"})
+			return
+		}
+		existingVault, detectErr := detectExistingVault(vaultPath)
+		if detectErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to inspect existing vault structure"})
+			return
+		}
+		if !existingVault {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "Selected path does not look like an existing Quill vault. Use setup create mode for new folders.",
+			})
+			return
+		}
+	} else {
+		if err := os.MkdirAll(vaultPath, 0755); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create vault path"})
+			return
+		}
+	}
+
 	if err := ensureVaultStructure(vaultPath); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to initialize vault"})
 		return
@@ -426,12 +906,60 @@ func (h *Handler) CreateVault(c *gin.Context) {
 		Path: vaultPath,
 	}
 	if vault.Name == "" {
-		vault.Name = "Vault"
+		if mode == "existing" {
+			vault.Name = deriveVaultNameFromPath(vaultPath)
+		} else {
+			vault.Name = "Vault"
+		}
 	}
 
 	if err := database.DB.Create(&vault).Error; err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "Vault path already exists"})
 		return
+	}
+
+	if req.Activate != nil && *req.Activate {
+		if txErr := database.DB.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Model(&models.Vault{}).Where("1 = 1").Update("is_active", false).Error; err != nil {
+				return err
+			}
+			vault.IsActive = true
+			if err := tx.Save(&vault).Error; err != nil {
+				return err
+			}
+
+			var setup models.AppSetup
+			setupErr := tx.First(&setup, 1).Error
+			if setupErr != nil {
+				if !errors.Is(setupErr, gorm.ErrRecordNotFound) {
+					return setupErr
+				}
+				setup = models.AppSetup{
+					ID:        1,
+					Completed: true,
+					AuthMode:  "local",
+				}
+			}
+			setup.ActiveVaultID = &vault.ID
+			setup.Completed = true
+			if strings.TrimSpace(setup.AuthMode) == "" {
+				setup.AuthMode = "local"
+			}
+			if err := tx.Save(&setup).Error; err != nil {
+				return err
+			}
+			return nil
+		}); txErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to activate vault"})
+			return
+		}
+	}
+
+	if mode == "existing" {
+		if _, recoverErr := recoverJobsFromVaultArtifacts(vault); recoverErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to recover existing vault data"})
+			return
+		}
 	}
 
 	c.JSON(http.StatusCreated, vault)
@@ -545,6 +1073,31 @@ func (h *Handler) ActivateVault(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, vault)
+}
+
+func (h *Handler) RehydrateVault(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid vault ID"})
+		return
+	}
+
+	var vault models.Vault
+	if err := database.DB.First(&vault, uint(id)).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Vault not found"})
+		return
+	}
+
+	recoveredJobs, recoverErr := recoverJobsFromVaultArtifacts(vault)
+	if recoverErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to recover vault data"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"vault_id":       vault.ID,
+		"recovered_jobs": recoveredJobs,
+	})
 }
 
 func (h *Handler) GetObsidianConfig(c *gin.Context) {
@@ -691,7 +1244,7 @@ func (h *Handler) SyncTranscriptToObsidian(c *gin.Context) {
 		title = strings.TrimSpace(*job.Title)
 	}
 	filename := fmt.Sprintf("%s-%s.md", sanitizeSlug(title), job.ID)
-	targetDir := filepath.Join(*setup.ObsidianVaultDir, "Scriber")
+	targetDir := filepath.Join(*setup.ObsidianVaultDir, "Quill")
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create Obsidian target directory"})
 		return
@@ -1186,7 +1739,12 @@ func (h *Handler) MaterializeTranscriptArtifacts(c *gin.Context) {
 }
 
 func (h *Handler) ListOpenClawReadyJobs(c *gin.Context) {
-	jobs, _, err := h.jobRepo.ListWithParams(c.Request.Context(), 0, 200, "updated_at", "desc", "", nil)
+	var activeVaultID *uint
+	if activeVault, vaultErr := getActiveVault(); vaultErr == nil {
+		activeVaultID = &activeVault.ID
+	}
+
+	jobs, _, err := h.jobRepo.ListWithParams(c.Request.Context(), 0, 200, "updated_at", "desc", "", nil, activeVaultID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list jobs"})
 		return

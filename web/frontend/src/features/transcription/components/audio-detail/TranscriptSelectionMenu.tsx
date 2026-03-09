@@ -31,13 +31,13 @@ export function TranscriptSelectionMenu({
             >
                 {/* The Pill - only this is interactive */}
                 <div
-                    className="glass shadow-2xl rounded-full px-5 py-3 flex items-center gap-3 border border-white/20 dark:border-white/10 animate-in fade-in slide-in-from-bottom-4 duration-300"
+                    className="obsidian-pane shadow-[var(--shadow-float)] rounded-[var(--radius-card)] px-5 py-3 flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300"
                     style={{ pointerEvents: 'auto' }}
                     onTouchStart={(e) => e.stopPropagation()}
                 >
                     <button
                         type="button"
-                        className="flex items-center gap-2 text-carbon-900 dark:text-carbon-100 hover:text-brand-500 dark:hover:text-brand-400 transition-colors font-medium text-sm px-2 py-1 active:scale-95"
+                        className="flex items-center gap-2 text-[var(--text-primary)] hover:text-[var(--brand-solid)] transition-colors font-medium text-sm px-2 py-1 active:scale-95"
                         onClick={(e) => {
                             e.stopPropagation();
                             onAddNote();
@@ -45,10 +45,10 @@ export function TranscriptSelectionMenu({
                     >
                         <Plus className="h-5 w-5" /> <span>Add Note</span>
                     </button>
-                    <div className="w-px h-5 bg-carbon-200 dark:bg-carbon-700" />
+                    <div className="w-px h-5 bg-[var(--border-subtle)]" />
                     <button
                         type="button"
-                        className="flex items-center gap-2 text-carbon-900 dark:text-carbon-100 hover:text-brand-500 dark:hover:text-brand-400 transition-colors font-medium text-sm px-2 py-1 active:scale-95"
+                        className="flex items-center gap-2 text-[var(--text-primary)] hover:text-[var(--brand-solid)] transition-colors font-medium text-sm px-2 py-1 active:scale-95"
                         onClick={(e) => {
                             e.stopPropagation();
                             onListenFromHere();
@@ -75,10 +75,10 @@ export function TranscriptSelectionMenu({
             onMouseDown={(e) => e.stopPropagation()}
         >
             {/* Menu Bubble */}
-            <div className="glass shadow-2xl rounded-full px-4 py-2 flex items-center gap-2 pointer-events-auto transform hover:scale-105 duration-200 border border-white/20 dark:border-white/10">
+            <div className="obsidian-pane shadow-[var(--shadow-float)] rounded-[var(--radius-card)] px-4 py-2 flex items-center gap-2 pointer-events-auto transform hover:scale-105 duration-200">
                 <button
                     type="button"
-                    className="flex items-center gap-1.5 text-carbon-900 dark:text-carbon-100 hover:text-brand-500 dark:hover:text-brand-400 transition-colors font-medium text-sm px-1 py-0.5 active:scale-95"
+                    className="flex items-center gap-1.5 text-[var(--text-primary)] hover:text-[var(--brand-solid)] transition-colors font-medium text-sm px-1 py-0.5 active:scale-95"
                     onClick={(e) => {
                         e.stopPropagation();
                         onAddNote();
@@ -86,10 +86,10 @@ export function TranscriptSelectionMenu({
                 >
                     <Plus className="h-4 w-4" /> <span>Note</span>
                 </button>
-                <div className="w-px h-4 bg-carbon-200 dark:bg-carbon-700" />
+                <div className="w-px h-4 bg-[var(--border-subtle)]" />
                 <button
                     type="button"
-                    className="flex items-center gap-1.5 text-carbon-900 dark:text-carbon-100 hover:text-brand-500 dark:hover:text-brand-400 transition-colors font-medium text-sm px-1 py-0.5 active:scale-95"
+                    className="flex items-center gap-1.5 text-[var(--text-primary)] hover:text-[var(--brand-solid)] transition-colors font-medium text-sm px-1 py-0.5 active:scale-95"
                     onClick={(e) => {
                         e.stopPropagation();
                         onListenFromHere();
@@ -101,10 +101,9 @@ export function TranscriptSelectionMenu({
 
             {/* Arrow pointing DOWN to the selection */}
             <div
-                className="w-3 h-3 bg-white/80 dark:bg-carbon-800/90 rotate-45 mx-auto -mt-1.5 shadow-sm border-r border-b border-white/20 dark:border-white/10"
+                className="w-3 h-3 bg-[var(--bg-card)] rotate-45 mx-auto -mt-1.5 shadow-sm border-r border-b border-[var(--border-subtle)]"
             />
         </div>
     );
 }
-
 

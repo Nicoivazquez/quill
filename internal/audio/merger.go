@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"scriberr/pkg/binaries"
+	"quill/pkg/binaries"
 )
 
 // TrackInfo represents information needed for merging a track

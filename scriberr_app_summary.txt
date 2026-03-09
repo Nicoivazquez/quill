@@ -1,7 +1,7 @@
-Scriberr - One-Page App Summary
+Quill - One-Page App Summary
 
 What it is
-Scriberr is an open-source, offline audio/video transcription app that runs locally and keeps recordings on your own machine.
+Quill is an open-source, offline audio/video transcription app that runs locally and keeps recordings on your own machine.
 It combines local transcription/diarization models with a web UI and optional LLM-based chat/summarization.
 
 Who it's for
@@ -27,4 +27,4 @@ How it works (repo-evidence architecture)
 How to run (minimal)
 1. From repo root, start containerized app: docker compose up -d
 2. Open http://localhost:8080
-3. On first startup, wait for model/env initialization; ready log includes: msg="Scriberr is ready"
+3. On first startup, wait for model/env initialization; ready log includes: msg="Quill is ready"

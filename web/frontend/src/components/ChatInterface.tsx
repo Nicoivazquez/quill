@@ -54,10 +54,10 @@ function ThinkingBlock({ content, isStreaming = false }: { content: string; isSt
   }, [isStreaming]);
 
   return (
-    <div className="mb-3 border border-purple-500/20 rounded-xl bg-purple-500/5 dark:bg-purple-500/10 overflow-hidden">
+    <div className="mb-3 border border-[var(--brand-solid)]/20 rounded-[var(--radius-btn)] bg-[var(--brand-light)] overflow-hidden">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-purple-600 dark:text-purple-400 hover:bg-purple-500/5 transition-colors"
+        className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-[var(--brand-solid)] hover:bg-[var(--brand-light)] transition-colors"
       >
         <Brain className={cn("h-4 w-4", isStreaming && "animate-pulse")} />
         <span className="font-medium">
@@ -65,17 +65,17 @@ function ThinkingBlock({ content, isStreaming = false }: { content: string; isSt
         </span>
         {isStreaming && (
           <span className="flex gap-1 ml-2">
-            <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-            <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-            <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+            <span className="w-1.5 h-1.5 bg-[var(--brand-solid)] rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+            <span className="w-1.5 h-1.5 bg-[var(--brand-solid)] rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+            <span className="w-1.5 h-1.5 bg-[var(--brand-solid)] rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
           </span>
         )}
         <ChevronDown className={cn("h-4 w-4 ml-auto transition-transform duration-200", expanded && "rotate-180")} />
       </button>
       {expanded && (
-        <div className="px-4 pb-3 text-sm text-muted-foreground italic border-t border-purple-500/10 pt-3 whitespace-pre-wrap">
+        <div className="px-4 pb-3 text-sm text-muted-foreground italic border-t border-[var(--brand-solid)]/20 pt-3 whitespace-pre-wrap">
           {content}
-          {isStreaming && <span className="inline-block w-2 h-4 bg-purple-500 ml-0.5 animate-pulse" />}
+          {isStreaming && <span className="inline-block w-2 h-4 bg-[var(--brand-solid)] ml-0.5 animate-pulse" />}
         </div>
       )}
     </div>
@@ -531,20 +531,19 @@ export const ChatInterface = memo(function ChatInterface({ transcriptionId, acti
               {(messages || []).map(message => (
                 <div key={message.id} className="group w-full">
                   {message.role === "user" ? (
-                    /* User Message - Scriberr Design System */
+                    /* User Message - Quill Design System */
                     <div className="flex justify-end">
                       <div className="flex w-full px-2 mx-auto">
                         <div className="w-full flex justify-end">
                           <div className="flex gap-3 max-w-3xl">
                             <div className="flex-1 overflow-hidden">
-                              {/* User card with brand gradient accent */}
-                              <div className="relative bg-gradient-to-br from-[#FFAB40]/8 to-[#FF6D20]/5 dark:from-[#FFAB40]/10 dark:to-[#FF6D20]/5 text-[var(--text-primary)] rounded-2xl rounded-tr-sm px-4 py-3 border border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)] shadow-[0_2px_4px_rgba(0,0,0,0.04),0_8px_16px_rgba(0,0,0,0.04)] dark:shadow-[0_2px_4px_rgba(0,0,0,0.2),0_8px_16px_rgba(0,0,0,0.1)] hover:shadow-[0_4px_8px_rgba(0,0,0,0.06),0_12px_24px_rgba(0,0,0,0.06)] hover:-translate-y-0.5 transition-all duration-200">
+                              <div className="relative bg-[var(--bg-elevated)] text-[var(--text-primary)] rounded-[var(--radius-card)] rounded-tr-[6px] px-4 py-3 border border-[var(--border-subtle)] shadow-[var(--shadow-card)] transition-all duration-200">
                                 {/* Copy button */}
                                 <Button
                                   variant="ghost"
                                   size="icon"
                                   onClick={async () => { try { await navigator.clipboard.writeText(message.content || ''); } catch { /* ignore */ } }}
-                                  className="absolute right-2 top-2 h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-[var(--brand-solid)] hover:bg-[var(--brand-solid)]/10 rounded-full"
+                                  className="absolute right-2 top-2 h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-[var(--brand-solid)] hover:bg-[var(--brand-light)] rounded-[var(--radius-btn)]"
                                   title="Copy message"
                                 >
                                   <Copy className="h-3.5 w-3.5" />
@@ -555,7 +554,7 @@ export const ChatInterface = memo(function ChatInterface({ transcriptionId, acti
                               </div>
                             </div>
                             {/* User avatar with brand accent */}
-                            <div className="h-9 w-9 rounded-full bg-gradient-to-br from-[#FFAB40] to-[#FF6D20] flex items-center justify-center flex-shrink-0 shadow-md">
+                            <div className="h-9 w-9 rounded-[var(--radius-btn)] bg-gradient-to-br from-[var(--brand-start)] to-[var(--brand-solid)] flex items-center justify-center flex-shrink-0 shadow-sm">
                               <User className="h-4 w-4 text-white" />
                             </div>
                           </div>
@@ -563,18 +562,16 @@ export const ChatInterface = memo(function ChatInterface({ transcriptionId, acti
                       </div>
                     </div>
                   ) : (
-                    /* Assistant Message - Scriberr Design System */
+                    /* Assistant Message - Quill Design System */
                     <div className="flex justify-start">
                       <div className="flex w-full px-2 mx-auto">
                         <div className="w-full flex justify-start">
                           <div className="flex gap-3 max-w-5xl w-full">
-                            {/* AI avatar with subtle glow */}
-                            <div className="h-9 w-9 rounded-full bg-[var(--bg-card)] dark:bg-[#1F1F1F] flex items-center justify-center flex-shrink-0 border border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)] shadow-[0_2px_8px_rgba(0,0,0,0.06)]">
+                            <div className="h-9 w-9 rounded-[var(--radius-btn)] bg-[var(--bg-card)] flex items-center justify-center flex-shrink-0 border border-[var(--border-subtle)] shadow-[var(--shadow-card)]">
                               <Sparkles className="h-4 w-4 text-[var(--brand-solid)]" />
                             </div>
                             <div className="flex-1 space-y-2 overflow-hidden">
-                              {/* Assistant card with floating design */}
-                              <div className="relative bg-[var(--bg-card)] dark:bg-[#141414] border border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)] rounded-2xl rounded-tl-sm px-4 py-4 shadow-[0_2px_4px_rgba(0,0,0,0.04),0_10px_20px_rgba(0,0,0,0.04)] dark:shadow-[0_2px_4px_rgba(0,0,0,0.3),0_10px_20px_rgba(0,0,0,0.15)] hover:shadow-[0_4px_8px_rgba(0,0,0,0.06),0_14px_28px_rgba(0,0,0,0.06)] hover:-translate-y-0.5 transition-all duration-200">
+                              <div className="relative bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-[var(--radius-card)] rounded-tl-[6px] px-4 py-4 shadow-[var(--shadow-card)] transition-all duration-200">
                                 {/* Copy button for assistant message */}
                                 <Button
                                   variant="ghost"
@@ -657,8 +654,8 @@ export const ChatInterface = memo(function ChatInterface({ transcriptionId, acti
                     <div className="flex w-full max-w-5xl px-2 mx-auto">
                       <div className="w-full flex justify-start">
                         <div className="flex space-x-3 max-w-5xl w-full">
-                          <div className="h-8 w-8 rounded-full bg-indigo-500/10 dark:bg-indigo-500/20 flex items-center justify-center flex-shrink-0 border border-indigo-500/20 animate-pulse">
-                            <Sparkles className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                          <div className="h-8 w-8 rounded-[var(--radius-btn)] bg-[var(--brand-light)] flex items-center justify-center flex-shrink-0 border border-[var(--brand-solid)]/20 animate-pulse">
+                            <Sparkles className="h-4 w-4 text-[var(--brand-solid)]" />
                           </div>
                           <div className="flex-1 space-y-2 overflow-hidden">
                             <div className="flex items-center space-x-2 text-muted-foreground">
@@ -685,7 +682,7 @@ export const ChatInterface = memo(function ChatInterface({ transcriptionId, acti
           <div className="pb-4 pt-2 bg-gradient-to-t from-background via-background to-transparent sticky bottom-0 z-20 pb-[env(safe-area-inset-bottom)]">
             <div className="flex w-full px-3 mx-auto">
               <div className="w-full">
-                <div className="flex items-center gap-2 bg-[#F9FAFB] dark:bg-zinc-900 rounded-full p-2 mx-auto shadow-sm border border-transparent focus-within:border-[#FF6D20] focus-within:ring-1 focus-within:ring-[#FF6D20]/20 transition-all duration-300">
+                <div className="flex items-center gap-2 bg-[var(--bg-muted-pane)] rounded-[var(--radius-card)] p-2 mx-auto shadow-sm border border-[var(--border-subtle)] focus-within:border-[var(--brand-solid)] focus-within:ring-1 focus-within:ring-[var(--brand-solid)]/20 transition-all duration-300">
                   <Input
                     ref={inputRef}
                     value={inputMessage}
@@ -700,10 +697,10 @@ export const ChatInterface = memo(function ChatInterface({ transcriptionId, acti
                     disabled={isLoading || !inputMessage.trim()}
                     size="icon"
                     className={cn(
-                      "h-9 w-9 p-0 rounded-full shadow-sm transition-all duration-300 hover:scale-105 active:scale-95",
+                      "h-9 w-9 p-0 rounded-[var(--radius-btn)] shadow-sm transition-all duration-300 hover:brightness-110 active:translate-y-px",
                       !inputMessage.trim() || isLoading
-                        ? "bg-gray-200 text-gray-400 dark:bg-zinc-800 dark:text-zinc-600"
-                        : "bg-gradient-to-br from-[#FFAB40] to-[#FF3D00] text-white shadow-orange-500/20"
+                        ? "bg-[var(--bg-card)] text-[var(--text-tertiary)] border border-[var(--border-subtle)]"
+                        : "bg-gradient-to-br from-[var(--brand-start)] to-[var(--brand-end)] text-white shadow-black/20"
                     )}
                   >
                     <Send className="h-4 w-4" />
@@ -716,13 +713,13 @@ export const ChatInterface = memo(function ChatInterface({ transcriptionId, acti
                       <span className={cn(
                         "px-2 py-0.5 rounded-full font-medium",
                         contextInfo.used / contextInfo.limit > 0.8
-                          ? "bg-orange-500/10 text-orange-600 dark:text-orange-400"
+                          ? "bg-[var(--brand-light)] text-[var(--brand-solid)] dark:text-[var(--brand-300)]"
                           : "bg-muted text-muted-foreground"
                       )}>
                         {Math.round((contextInfo.used / contextInfo.limit) * 100)}% context
                       </span>
                       {contextInfo.trimmed > 0 && (
-                        <span className="text-amber-600 dark:text-amber-400" title={`${contextInfo.trimmed} older messages removed to fit context window`}>
+                        <span className="text-[var(--brand-solid)] dark:text-[var(--brand-300)]" title={`${contextInfo.trimmed} older messages removed to fit context window`}>
                           ({contextInfo.trimmed} trimmed)
                         </span>
                       )}

@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"scriberr/internal/models"
+	"quill/internal/models"
 
 	"gorm.io/gorm"
 )

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
-import { User, Settings as SettingsIcon, Key, Bot, FileText, Plus, FolderOpen } from "lucide-react";
+import { User, Settings as SettingsIcon, Key, Bot, FileText, Plus, FolderOpen, HardDrive } from "lucide-react";
 import {
   Tabs,
   TabsContent,
@@ -17,6 +17,7 @@ import { LLMSettings } from "../components/LLMSettings";
 import { SummaryTemplateDialog, type SummaryTemplate } from "../components/SummaryTemplateDialog";
 import { SummaryTemplatesTable } from "../components/SummaryTemplatesTable";
 import { AutoImportSettingsTab } from "../components/AutoImportSettingsTab";
+import { VaultSettingsTab } from "../components/VaultSettingsTab";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 
 export function Settings() {
@@ -51,8 +52,7 @@ export function Settings() {
     <MainLayout
       header={<Header />}
     >
-      {/* Main Content Container with same styling as Homepage */}
-      <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] shadow-[var(--shadow-card)] rounded-[var(--radius-card)] p-2 sm:p-6 mt-8">
+      <div className="obsidian-pane p-2 sm:p-5 mt-3">
         <div className="mb-4 sm:mb-8">
           <h1 className="text-2xl font-display font-bold text-[var(--text-primary)] mb-2">
             Settings
@@ -68,11 +68,11 @@ export function Settings() {
           onValueChange={setActiveTab}
           className="space-y-4 sm:space-y-6"
         >
-          <TabsList className="grid w-full grid-cols-6 items-center h-auto bg-[var(--bg-main)]/50 border border-[var(--border-subtle)] p-1 rounded-xl">
+          <TabsList className="grid w-full grid-cols-7 items-center h-auto bg-[var(--bg-muted-pane)] border border-[var(--border-subtle)] p-1 rounded-[var(--radius-btn)]">
             <TabsTrigger
               value="transcription"
               aria-label="Transcription"
-              className="flex items-center justify-center gap-2 h-9 py-1.5 data-[state=active]:bg-[var(--bg-card)] data-[state=active]:shadow-sm data-[state=active]:text-[var(--text-primary)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] font-medium rounded-lg text-xs sm:text-sm transition-all"
+              className="flex items-center justify-center gap-2 h-9 py-1.5 data-[state=active]:bg-[var(--bg-card)] data-[state=active]:border data-[state=active]:border-[var(--border-subtle)] data-[state=active]:text-[var(--text-primary)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] font-medium rounded-[calc(var(--radius-btn)-2px)] text-xs sm:text-sm transition-all"
             >
               <SettingsIcon className="h-4 w-4" />
               <span className="hidden sm:inline">Transcription</span>
@@ -80,7 +80,7 @@ export function Settings() {
             <TabsTrigger
               value="account"
               aria-label="Account"
-              className="flex items-center justify-center gap-2 h-9 py-1.5 data-[state=active]:bg-[var(--bg-card)] data-[state=active]:shadow-sm data-[state=active]:text-[var(--text-primary)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] font-medium rounded-lg text-xs sm:text-sm transition-all"
+              className="flex items-center justify-center gap-2 h-9 py-1.5 data-[state=active]:bg-[var(--bg-card)] data-[state=active]:border data-[state=active]:border-[var(--border-subtle)] data-[state=active]:text-[var(--text-primary)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] font-medium rounded-[calc(var(--radius-btn)-2px)] text-xs sm:text-sm transition-all"
             >
               <User className="h-4 w-4" />
               <span className="hidden sm:inline">Account</span>
@@ -88,7 +88,7 @@ export function Settings() {
             <TabsTrigger
               value="apikeys"
               aria-label="API Keys"
-              className="flex items-center justify-center gap-2 h-9 py-1.5 data-[state=active]:bg-[var(--bg-card)] data-[state=active]:shadow-sm data-[state=active]:text-[var(--text-primary)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] font-medium rounded-lg text-xs sm:text-sm transition-all"
+              className="flex items-center justify-center gap-2 h-9 py-1.5 data-[state=active]:bg-[var(--bg-card)] data-[state=active]:border data-[state=active]:border-[var(--border-subtle)] data-[state=active]:text-[var(--text-primary)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] font-medium rounded-[calc(var(--radius-btn)-2px)] text-xs sm:text-sm transition-all"
             >
               <Key className="h-4 w-4" />
               <span className="hidden sm:inline">API Keys</span>
@@ -96,7 +96,7 @@ export function Settings() {
             <TabsTrigger
               value="llms"
               aria-label="LLMs"
-              className="flex items-center justify-center gap-2 h-9 py-1.5 data-[state=active]:bg-[var(--bg-card)] data-[state=active]:shadow-sm data-[state=active]:text-[var(--text-primary)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] font-medium rounded-lg text-xs sm:text-sm transition-all"
+              className="flex items-center justify-center gap-2 h-9 py-1.5 data-[state=active]:bg-[var(--bg-card)] data-[state=active]:border data-[state=active]:border-[var(--border-subtle)] data-[state=active]:text-[var(--text-primary)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] font-medium rounded-[calc(var(--radius-btn)-2px)] text-xs sm:text-sm transition-all"
             >
               <Bot className="h-4 w-4" />
               <span className="hidden sm:inline">LLMs</span>
@@ -104,7 +104,7 @@ export function Settings() {
             <TabsTrigger
               value="summary"
               aria-label="Summary"
-              className="flex items-center justify-center gap-2 h-9 py-1.5 data-[state=active]:bg-[var(--bg-card)] data-[state=active]:shadow-sm data-[state=active]:text-[var(--text-primary)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] font-medium rounded-lg text-xs sm:text-sm transition-all"
+              className="flex items-center justify-center gap-2 h-9 py-1.5 data-[state=active]:bg-[var(--bg-card)] data-[state=active]:border data-[state=active]:border-[var(--border-subtle)] data-[state=active]:text-[var(--text-primary)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] font-medium rounded-[calc(var(--radius-btn)-2px)] text-xs sm:text-sm transition-all"
             >
               <FileText className="h-4 w-4" />
               <span className="hidden sm:inline">Summary</span>
@@ -112,10 +112,18 @@ export function Settings() {
             <TabsTrigger
               value="auto-import"
               aria-label="Auto Import"
-              className="flex items-center justify-center gap-2 h-9 py-1.5 data-[state=active]:bg-[var(--bg-card)] data-[state=active]:shadow-sm data-[state=active]:text-[var(--text-primary)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] font-medium rounded-lg text-xs sm:text-sm transition-all"
+              className="flex items-center justify-center gap-2 h-9 py-1.5 data-[state=active]:bg-[var(--bg-card)] data-[state=active]:border data-[state=active]:border-[var(--border-subtle)] data-[state=active]:text-[var(--text-primary)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] font-medium rounded-[calc(var(--radius-btn)-2px)] text-xs sm:text-sm transition-all"
             >
               <FolderOpen className="h-4 w-4" />
               <span className="hidden sm:inline">Auto Import</span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="vaults"
+              aria-label="Vaults"
+              className="flex items-center justify-center gap-2 h-9 py-1.5 data-[state=active]:bg-[var(--bg-card)] data-[state=active]:border data-[state=active]:border-[var(--border-subtle)] data-[state=active]:text-[var(--text-primary)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] font-medium rounded-[calc(var(--radius-btn)-2px)] text-xs sm:text-sm transition-all"
+            >
+              <HardDrive className="h-4 w-4" />
+              <span className="hidden sm:inline">Vaults</span>
             </TabsTrigger>
           </TabsList>
 
@@ -193,6 +201,11 @@ export function Settings() {
           {/* Auto Import Tab */}
           <TabsContent value="auto-import" className="space-y-6">
             <AutoImportSettingsTab />
+          </TabsContent>
+
+          {/* Vaults Tab */}
+          <TabsContent value="vaults" className="space-y-6">
+            <VaultSettingsTab />
           </TabsContent>
         </Tabs>
       </div>

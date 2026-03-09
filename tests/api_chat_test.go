@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 
-	"scriberr/internal/api"
-	"scriberr/internal/models"
+	"quill/internal/api"
+	"quill/internal/models"
 
 	"github.com/stretchr/testify/assert"
 )

@@ -16,7 +16,7 @@ import (
 
 var loginCmd = &cobra.Command{
 	Use:   "login",
-	Short: "Authenticate with the Scriberr server",
+	Short: "Authenticate with the Quill server",
 	Run:   runLogin,
 }
 
@@ -24,7 +24,7 @@ var serverURL string
 
 func init() {
 	rootCmd.AddCommand(loginCmd)
-	loginCmd.Flags().StringVarP(&serverURL, "server", "s", "http://localhost:8080", "Scriberr server URL")
+	loginCmd.Flags().StringVarP(&serverURL, "server", "s", "http://localhost:8080", "Quill server URL")
 }
 
 func runLogin(cmd *cobra.Command, args []string) {
@@ -71,7 +71,7 @@ func runLogin(cmd *cobra.Command, args []string) {
 	authURL := fmt.Sprintf("%s/auth/cli/authorize?callback_url=%s&device_name=%s",
 		serverURL,
 		url.QueryEscape(callbackURL),
-		url.QueryEscape("Scriberr CLI"),
+		url.QueryEscape("Quill CLI"),
 	)
 
 	fmt.Printf("Opening browser to authorize: %s\n", authURL)

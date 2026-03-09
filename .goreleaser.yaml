@@ -17,9 +17,9 @@ before:
 
 # Build configuration
 builds:
-  - id: scriberr
+  - id: quill
     main: ./cmd/server/main.go
-    binary: scriberr
+    binary: quill
     env:
       - CGO_ENABLED=0
     goos:
@@ -91,21 +91,21 @@ changelog:
 release:
   github:
     owner: rishikanthc
-    name: Scriberr
+    name: Quill
   draft: false
   prerelease: auto
   mode: replace
   header: |
-    ## Scriberr {{ .Tag }}
+    ## Quill {{ .Tag }}
     
-    Welcome to this new release of Scriberr!
+    Welcome to this new release of Quill!
     
     ### Installation
     
     #### Homebrew (macOS/Linux)
     ```bash
-    brew tap rishikanthc/scriberr
-    brew install scriberr
+    brew tap rishikanthc/quill
+    brew install quill
     ```
     
     #### Manual Installation
@@ -113,15 +113,15 @@ release:
 
 # Homebrew Tap configuration
 brews:
-  - name: scriberr
+  - name: quill
     repository:
       owner: rishikanthc
-      name: homebrew-scriberr
+      name: homebrew-quill
       branch: main
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     # Ensure the formula is placed under the conventional Formula/ directory
     directory: Formula
-    homepage: https://github.com/rishikanthc/Scriberr
+    homepage: https://github.com/rishikanthc/Quill
     description: "Audio transcription service using WhisperX with speaker diarization"
     license: MIT
     dependencies:
@@ -129,15 +129,15 @@ brews:
       - name: ffmpeg
       - name: deno
     install: |
-      bin.install "scriberr"
+      bin.install "quill"
     test: |
-      system "#{bin}/scriberr", "--version"
+      system "#{bin}/quill", "--version"
     caveats: |
-      Scriberr requires Python 3.11+ for transcription features.
+      Quill requires Python 3.11+ for transcription features.
       Install with: brew install python@3.11
       
       To get started:
-      1. Run: scriberr
+      1. Run: quill
       2. Open: http://localhost:8080
       
       The app will auto-configure itself on first run.

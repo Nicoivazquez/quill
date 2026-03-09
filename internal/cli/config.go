@@ -17,31 +17,40 @@ type Config struct {
 
 // InitConfig initializes the configuration
 func InitConfig() {
+	var home string
+
 	if cfgFile != "" {
 		// Use config file from the flag.
 		viper.SetConfigFile(cfgFile)
 	} else {
 		// Find home directory.
-		home, err := os.UserHomeDir()
+		var err error
+		home, err = os.UserHomeDir()
 		if err != nil {
 			fmt.Println(err)
 			// Don't exit, just don't load config from home
 		} else {
-			// Search config in home directory with name ".scriberr" (without extension).
+			// Search config in home directory with name ".quill" (without extension).
 			viper.AddConfigPath(home)
 			viper.SetConfigType("yaml")
-			viper.SetConfigName(".scriberr")
+			viper.SetConfigName(".quill")
 		}
 	}
 
-	viper.SetEnvPrefix("SCRIBERR")
+	viper.SetEnvPrefix("QUILL")
 	viper.AutomaticEnv()
+	_ = viper.BindEnv("server_url", "QUILL_SERVER_URL")
+	_ = viper.BindEnv("token", "QUILL_TOKEN")
+	_ = viper.BindEnv("watch_folder", "QUILL_WATCH_FOLDER")
 
-	// Try to read config, ignore error if not found
-	_ = viper.ReadInConfig()
+	// Try to read config from primary location.
+	if err := viper.ReadInConfig(); err == nil {
+		return
+	}
+
 }
 
-// SaveConfig saves the configuration to ~/.scriberr.yaml and returns the path
+// SaveConfig saves the configuration to ~/.quill.yaml and returns the path
 func SaveConfig(serverURL, token, watchFolder string) (string, error) {
 	if serverURL != "" {
 		viper.Set("server_url", serverURL)
@@ -57,7 +66,7 @@ func SaveConfig(serverURL, token, watchFolder string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	configPath := filepath.Join(home, ".scriberr.yaml")
+	configPath := filepath.Join(home, ".quill.yaml")
 	return configPath, viper.WriteConfigAs(configPath)
 }
 

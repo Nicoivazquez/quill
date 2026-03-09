@@ -1,8 +1,8 @@
 package interfaces
 
 import (
-	"scriberr/internal/auth"
-	"scriberr/internal/models"
+	"quill/internal/auth"
+	"quill/internal/models"
 )
 
 // AuthServiceInterface defines the contract for authentication services.

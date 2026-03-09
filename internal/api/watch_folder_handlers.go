@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"scriberr/internal/folderwatch"
+	"quill/internal/folderwatch"
 
 	"github.com/gin-gonic/gin"
 )

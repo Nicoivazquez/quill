@@ -2,7 +2,7 @@ package repository
 
 import (
 	"context"
-	"scriberr/internal/models"
+	"quill/internal/models"
 	"time"
 
 	"gorm.io/gorm"
@@ -53,7 +53,7 @@ type JobRepository interface {
 	FindWithAssociations(ctx context.Context, id string) (*models.TranscriptionJob, error)
 	FindActiveTrackJobs(ctx context.Context, parentJobID string) ([]models.TranscriptionJob, error)
 	FindLatestCompletedExecution(ctx context.Context, jobID string) (*models.TranscriptionJobExecution, error)
-	ListWithParams(ctx context.Context, offset, limit int, sortBy, sortOrder, searchQuery string, updatedAfter *time.Time) ([]models.TranscriptionJob, int64, error)
+	ListWithParams(ctx context.Context, offset, limit int, sortBy, sortOrder, searchQuery string, updatedAfter *time.Time, vaultID *uint) ([]models.TranscriptionJob, int64, error)
 	ListByUser(ctx context.Context, userID uint, offset, limit int) ([]models.TranscriptionJob, int64, error)
 	UpdateTranscript(ctx context.Context, jobID string, transcript string) error
 	CreateExecution(ctx context.Context, execution *models.TranscriptionJobExecution) error
@@ -89,7 +89,7 @@ func (r *jobRepository) FindWithAssociations(ctx context.Context, id string) (*m
 	return &job, nil
 }
 
-func (r *jobRepository) ListWithParams(ctx context.Context, offset, limit int, sortBy, sortOrder, searchQuery string, updatedAfter *time.Time) ([]models.TranscriptionJob, int64, error) {
+func (r *jobRepository) ListWithParams(ctx context.Context, offset, limit int, sortBy, sortOrder, searchQuery string, updatedAfter *time.Time, vaultID *uint) ([]models.TranscriptionJob, int64, error) {
 	var jobs []models.TranscriptionJob
 	var count int64
 
@@ -98,6 +98,10 @@ func (r *jobRepository) ListWithParams(ctx context.Context, offset, limit int, s
 	// Handle delta sync if updatedAfter provided
 	if updatedAfter != nil {
 		db = db.Unscoped().Where("updated_at > ?", *updatedAfter)
+	}
+
+	if vaultID != nil {
+		db = db.Where("vault_id = ?", *vaultID)
 	}
 
 	// Apply search filter

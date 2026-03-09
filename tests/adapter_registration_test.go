@@ -4,9 +4,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"scriberr/internal/config"
-	"scriberr/internal/transcription/adapters"
-	"scriberr/internal/transcription/registry"
+	"quill/internal/config"
+	"quill/internal/transcription/adapters"
+	"quill/internal/transcription/registry"
 )
 
 // NOTE: These tests verify the dependency injection pattern where adapters accept envPath parameters.

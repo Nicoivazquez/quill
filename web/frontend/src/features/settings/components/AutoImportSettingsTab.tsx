@@ -19,6 +19,13 @@ type WatchedFoldersResponse = {
   folders: WatchedFolder[];
 };
 
+function getDesktopBridge() {
+  if (typeof window === "undefined") {
+    return undefined;
+  }
+  return window.quillDesktop;
+}
+
 async function parseAPIError(response: Response): Promise<string> {
   try {
     const data = (await response.json()) as { error?: string };
@@ -51,7 +58,7 @@ export function AutoImportSettingsTab() {
   const [busyFolderID, setBusyFolderID] = useState<number | null>(null);
 
   const isDesktopApp = useMemo(() => {
-    return typeof window !== "undefined" && typeof window.scriberrDesktop?.selectFolder === "function";
+    return typeof getDesktopBridge()?.selectFolder === "function";
   }, []);
 
   const loadFolders = useCallback(async () => {
@@ -78,14 +85,15 @@ export function AutoImportSettingsTab() {
   }, [loadFolders]);
 
   const addFolder = async () => {
-    if (!window.scriberrDesktop?.selectFolder) {
+    const desktopBridge = getDesktopBridge();
+    if (!desktopBridge?.selectFolder) {
       return;
     }
 
     setError(null);
     setCreating(true);
     try {
-      const selectedPath = await window.scriberrDesktop.selectFolder();
+      const selectedPath = await desktopBridge.selectFolder();
       if (!selectedPath) {
         return;
       }
@@ -174,7 +182,7 @@ export function AutoImportSettingsTab() {
           <div>
             <h2 className="text-xl font-bold text-[var(--text-primary)]">Auto Import Folders</h2>
             <p className="text-[var(--text-secondary)] mt-1">
-              Choose folders in the desktop app and Scriberr will automatically import new audio files.
+              Choose folders in the desktop app and Quill will automatically import new audio files.
             </p>
           </div>
 

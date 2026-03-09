@@ -10,8 +10,8 @@ interface MainLayoutProps {
 export const MainLayout = ({ children, header, className = "" }: MainLayoutProps) => {
     return (
         <div className={`min-h-screen bg-[var(--bg-main)] ${className}`}>
-            <div className="mx-auto w-full max-w-[960px] px-4 sm:px-6 py-6">
-                <div className="mb-8 pb-6">
+            <div className="mx-auto w-full max-w-[1360px] px-3 sm:px-5 lg:px-8 py-4 sm:py-6">
+                <div className="mb-5 sm:mb-6">
                     {header}
                 </div>
                 <main className="w-full">

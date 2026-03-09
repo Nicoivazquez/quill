@@ -20,7 +20,7 @@ whisperx-env
 env-data
 
 # Build Artifacts and Binaries
-scriberr
+quill
 server
 main
 *.exe
@@ -34,8 +34,8 @@ build
 # Data and Logs
 data
 data_bak
-scriberr-data
-scriberr_data
+quill-data
+quill_data
 .dockerdata
 *.log
 *.zip

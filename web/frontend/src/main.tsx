@@ -16,6 +16,30 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 const queryClient = new QueryClient()
 
+const isElectronRuntime =
+  typeof navigator !== 'undefined' &&
+  (navigator.userAgent.includes('Electron') || navigator.userAgent.includes('QuillDesktop'))
+
+if (isElectronRuntime && 'serviceWorker' in navigator) {
+  void (async () => {
+    try {
+      const registrations = await navigator.serviceWorker.getRegistrations()
+      await Promise.all(registrations.map((registration) => registration.unregister()))
+    } catch {
+      // Best-effort cleanup for desktop runtime.
+    }
+
+    if ('caches' in window) {
+      try {
+        const cacheKeys = await caches.keys()
+        await Promise.all(cacheKeys.map((key) => caches.delete(key)))
+      } catch {
+        // Best-effort cleanup for desktop runtime.
+      }
+    }
+  })()
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>

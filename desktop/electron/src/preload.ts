@@ -14,4 +14,4 @@ const bridge: DesktopBridge = {
   },
 };
 
-contextBridge.exposeInMainWorld("scriberrDesktop", bridge);
+contextBridge.exposeInMainWorld("quillDesktop", bridge);

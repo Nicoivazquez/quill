@@ -67,9 +67,8 @@ export const TranscriptToolbar: React.FC<TranscriptToolbarProps> = ({
 }) => {
     return (
         <div className={cn(
-            "flex items-center gap-1 p-1.5 rounded-2xl border shadow-sm backdrop-blur-md transition-all duration-300",
-            "bg-white/80 dark:bg-carbon-900/80 border-carbon-200 dark:border-carbon-800",
-            "supports-[backdrop-filter]:bg-white/60 supports-[backdrop-filter]:dark:bg-carbon-900/60",
+            "flex items-center gap-1 p-1.5 rounded-[var(--radius-card)] border border-[var(--border-subtle)] shadow-[var(--shadow-card)] transition-all duration-300",
+            "bg-[var(--bg-card)]",
             className
         )}>
             {/* View Mode Toggle */}
@@ -101,7 +100,7 @@ export const TranscriptToolbar: React.FC<TranscriptToolbarProps> = ({
             >
                 <StickyNote className="w-4 h-4" />
                 {notes.length > 0 && (
-                    <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] flex items-center justify-center rounded-full bg-brand-600 text-[10px] font-bold text-white ring-2 ring-white dark:ring-carbon-900">
+                    <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] flex items-center justify-center rounded-full bg-[var(--brand-solid)] text-[10px] font-bold text-white ring-2 ring-[var(--bg-card)]">
                         {notes.length > 99 ? '99+' : notes.length}
                     </span>
                 )}
@@ -146,17 +145,17 @@ export const TranscriptToolbar: React.FC<TranscriptToolbarProps> = ({
                 <DropdownMenuTrigger asChild>
                     <button
                         className={cn(
-                            "flex items-center justify-center w-8 h-8 rounded-xl transition-all duration-200",
-                            "text-carbon-600 dark:text-carbon-400 hover:text-carbon-900 dark:hover:text-carbon-100",
-                            "hover:bg-carbon-100 dark:hover:bg-carbon-800",
-                            "focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                            "flex items-center justify-center w-8 h-8 rounded-[var(--radius-btn)] transition-all duration-200",
+                            "text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
+                            "hover:bg-[var(--bg-muted-pane)]",
+                            "focus:outline-none focus:ring-2 focus:ring-[var(--brand-solid)]/20"
                         )}
                         title="Download"
                     >
                         <Download className="w-4 h-4" />
                     </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48 bg-white/95 dark:bg-carbon-900/95 backdrop-blur-xl border-carbon-200 dark:border-carbon-800">
+                <DropdownMenuContent align="end" className="w-48 bg-[var(--bg-card)] border border-[var(--border-subtle)] shadow-[var(--shadow-float)]">
                     <DropdownMenuItem onClick={onDownloadSRT} className="cursor-pointer">
                         <FileImage className="w-4 h-4 mr-2" />
                         <span>Download SRT</span>
@@ -197,12 +196,12 @@ const ToolbarButton: React.FC<{
         disabled={disabled}
         title={title}
         className={cn(
-            "flex items-center justify-center w-8 h-8 rounded-xl transition-all duration-200",
-            "text-carbon-600 dark:text-carbon-400",
+            "flex items-center justify-center w-8 h-8 rounded-[var(--radius-btn)] transition-all duration-200",
+            "text-[var(--text-secondary)]",
             active
-                ? "bg-brand-50 text-brand-600 dark:bg-brand-900/20 dark:text-brand-400 shadow-sm ring-1 ring-brand-500/20"
-                : "hover:bg-carbon-100 dark:hover:bg-carbon-800 hover:text-carbon-900 dark:hover:text-carbon-100",
-            disabled && "opacity-50 cursor-not-allowed hover:bg-transparent dark:hover:bg-transparent",
+                ? "bg-[var(--brand-light)] text-[var(--brand-solid)] shadow-sm ring-1 ring-[var(--brand-solid)]/20"
+                : "hover:bg-[var(--bg-muted-pane)] hover:text-[var(--text-primary)]",
+            disabled && "opacity-50 cursor-not-allowed hover:bg-transparent",
             className
         )}
     >
@@ -211,5 +210,5 @@ const ToolbarButton: React.FC<{
 );
 
 const Divider = () => (
-    <div className="w-px h-4 bg-carbon-200 dark:bg-carbon-800 mx-1" />
+    <div className="w-px h-4 bg-[var(--border-subtle)] mx-1" />
 );

@@ -15,6 +15,20 @@ function speakerIndexToLabel(index: number): string {
     return `Speaker ${label}`;
 }
 
+function formatSegmentTime(value: unknown): string {
+    const numericValue = typeof value === "number" ? value : Number(value);
+    if (!Number.isFinite(numericValue) || numericValue < 0) {
+        return "--:--:--";
+    }
+
+    const totalSeconds = Math.floor(numericValue);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
 // Helper for cross-browser caret position
 function getCaretOffsetFromPoint(x: number, y: number) {
     if (document.caretRangeFromPoint) {
@@ -295,7 +309,7 @@ export const TranscriptView = forwardRef<HTMLDivElement, TranscriptViewProps>(({
                 ref={containerRef}
                 onClick={isDesktop ? handleWordClick : undefined}
                 className={cn(
-                    "text-lg leading-relaxed text-carbon-700 dark:text-carbon-300 whitespace-pre-wrap font-reading selection:bg-orange-500/30 transition-colors duration-200 select-text",
+                    "text-lg leading-relaxed text-carbon-700 dark:text-carbon-300 whitespace-pre-wrap font-reading selection:bg-[var(--brand-light)] transition-colors duration-200 select-text",
                     isDesktop && isModifierPressed ? 'cursor-pointer hover:text-carbon-900 dark:hover:text-carbon-100' : 'cursor-text'
                 )}
                 style={{
@@ -339,7 +353,7 @@ export const TranscriptView = forwardRef<HTMLDivElement, TranscriptViewProps>(({
                         {/* Timestamp & Speaker */}
                         <div className="flex-shrink-0 w-24 sm:w-28 flex flex-col items-start sm:items-end gap-1 text-xs text-carbon-500 dark:text-carbon-400 select-none mt-1">
                             <span className="font-mono bg-carbon-100 dark:bg-carbon-800/80 px-1.5 py-0.5 rounded text-[10px] sm:text-xs">
-                                {new Date(segment.start * 1000).toISOString().substr(11, 8)}
+                                {formatSegmentTime(segment.start)}
                             </span>
                             {segment.speaker && (
                                 <span

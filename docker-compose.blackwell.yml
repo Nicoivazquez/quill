@@ -1,14 +1,14 @@
-# Docker Compose for Scriberr with Blackwell GPU support (RTX 50-series)
+# Docker Compose for Quill with Blackwell GPU support (RTX 50-series)
 # Uses pre-built image from GitHub Container Registry
 # For legacy GPUs (GTX 10-series through RTX 40-series), use docker-compose.cuda.yml instead
 version: "3.9"
 services:
-  scriberr:
-    image: ghcr.io/rishikanthc/scriberr-cuda-blackwell:latest
+  quill:
+    image: ghcr.io/rishikanthc/quill-cuda-blackwell:latest
     ports:
       - "8080:8080"
     volumes:
-      - scriberr_data:/app/data
+      - quill_data:/app/data
       - env_data:/app/whisperx-env
     restart: unless-stopped
     deploy:
@@ -30,5 +30,5 @@ services:
       # - ALLOWED_ORIGINS=https://your-domain.com
 
 volumes:
-  scriberr_data: {}
+  quill_data: {}
   env_data: {}

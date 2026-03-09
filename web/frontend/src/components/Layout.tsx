@@ -11,8 +11,8 @@ export function Layout({ children }: LayoutProps) {
     }
 
     return (
-        <div className="min-h-screen">
-            <div className="mx-auto w-full max-w-6xl px-3 sm:px-6 lg:px-8 pb-12 space-y-4 sm:space-y-8">
+        <div className="min-h-screen bg-[var(--bg-main)]">
+            <div className="mx-auto w-full max-w-[1360px] px-3 sm:px-5 lg:px-8 pb-12 space-y-4 sm:space-y-6">
                 <Header onFileSelect={handleFileSelect} />
                 <main className="animate-fade-in">
                     {children}

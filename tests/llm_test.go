@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"scriberr/internal/llm"
+	"quill/internal/llm"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"

@@ -1,4 +1,4 @@
-export type ScriberrDesktopBridge = {
+export type QuillDesktopBridge = {
   selectFolder: (options?: {
     title?: string;
     defaultPath?: string;
@@ -7,7 +7,7 @@ export type ScriberrDesktopBridge = {
 
 declare global {
   interface Window {
-    scriberrDesktop?: ScriberrDesktopBridge;
+    quillDesktop?: QuillDesktopBridge;
   }
 }
 

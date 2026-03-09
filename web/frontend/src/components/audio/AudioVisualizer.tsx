@@ -11,6 +11,18 @@ interface AudioVisualizerProps {
 // This ensures we don't try to create a new SourceNode for an audio element that already has one.
 const audioSourceMap = new WeakMap<HTMLAudioElement, MediaElementAudioSourceNode>();
 
+function resolveCssColor(variableName: string, fallback: string): string {
+    if (typeof window === "undefined") return fallback;
+    const value = getComputedStyle(document.documentElement).getPropertyValue(variableName).trim();
+    if (!value) return fallback;
+
+    if (typeof CSS !== "undefined" && typeof CSS.supports === "function" && !CSS.supports("color", value)) {
+        return fallback;
+    }
+
+    return value;
+}
+
 export function AudioVisualizer({
     audioRef,
     isPlaying,
@@ -126,11 +138,15 @@ export function AudioVisualizer({
         const TOTAL_ROW_HEIGHT = TILE_SIZE + ROW_GAP;
         const COL_WIDTH = TILE_SIZE + COL_GAP;
 
-        // --- THEME GRADIENT (Electric Ember) ---
+        const brandStart = resolveCssColor("--brand-start", "#a86b22");
+        const brandSolid = resolveCssColor("--brand-solid", "#6b3fa0");
+        const brandEnd = resolveCssColor("--brand-end", "#6b3fa0");
+
+        // --- THEME GRADIENT ---
         const gradient = ctx.createLinearGradient(0, 0, 0, dimensions.height);
-        gradient.addColorStop(0, "#FFAB40"); // Top: Amber
-        gradient.addColorStop(0.5, "#FF6D1F"); // Mid: Orange
-        gradient.addColorStop(1, "#FF3D00");   // Bottom: Deep Red
+        gradient.addColorStop(0, brandStart);
+        gradient.addColorStop(0.5, brandSolid);
+        gradient.addColorStop(1, brandEnd);
 
         const draw = () => {
             // Ensure we have data array buffer
@@ -194,7 +210,7 @@ export function AudioVisualizer({
                         ctx.globalAlpha = 1.0;
                     } else if (j === peakTile && peakTile > 0 && isPlaying) {
                         // Floating Peak
-                        ctx.fillStyle = "#FFAB40";
+                        ctx.fillStyle = brandStart;
                         ctx.globalAlpha = 0.5;
                         ctx.beginPath();
                         if (ctx.roundRect) {

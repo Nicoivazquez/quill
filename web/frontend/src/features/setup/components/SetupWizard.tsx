@@ -23,6 +23,24 @@ interface SetupWizardProps {
     onComplete: () => Promise<void> | void;
 }
 
+type VaultSetupMode = 'create' | 'existing';
+
+function deriveVaultNameFromPath(selectedPath: string): string {
+    const trimmed = selectedPath.trim();
+    if (!trimmed) return 'Vault';
+    const normalized = trimmed.replace(/[\\/]+$/, '');
+    const segments = normalized.split(/[\\/]/).filter(Boolean);
+    if (segments.length === 0) return 'Vault';
+    return segments[segments.length - 1];
+}
+
+function getDesktopBridge() {
+    if (typeof window === 'undefined') {
+        return undefined;
+    }
+    return window.quillDesktop;
+}
+
 export function SetupWizard({ onComplete }: SetupWizardProps) {
     const [loadingState, setLoadingState] = useState(true);
     const [submitting, setSubmitting] = useState(false);
@@ -30,6 +48,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
 
     const [vaultPath, setVaultPath] = useState('');
     const [vaultName, setVaultName] = useState('Main Vault');
+    const [vaultMode, setVaultMode] = useState<VaultSetupMode>('create');
     const [authMode, setAuthMode] = useState<'local' | 'server'>('local');
     const [obsidianVaultDir, setObsidianVaultDir] = useState('');
     const [openClawDropDir, setOpenClawDropDir] = useState('');
@@ -38,7 +57,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
     const [pickingFolder, setPickingFolder] = useState<null | 'vault' | 'obsidian' | 'openclaw'>(null);
 
     const isDesktopApp = useMemo(() => {
-        return typeof window !== 'undefined' && typeof window.scriberrDesktop?.selectFolder === 'function';
+        return typeof getDesktopBridge()?.selectFolder === 'function';
     }, []);
 
     useEffect(() => {
@@ -55,10 +74,12 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
                 if (state.active_vault) {
                     setVaultPath(state.active_vault.path || '');
                     setVaultName(state.active_vault.name || 'Main Vault');
+                    setVaultMode('existing');
                 } else if (state.vaults && state.vaults.length > 0) {
                     const preferred = state.vaults.find((v) => v.is_active) || state.vaults[0];
                     setVaultPath(preferred.path || '');
                     setVaultName(preferred.name || 'Main Vault');
+                    setVaultMode('existing');
                 }
 
                 if (typeof state.auth_mode === 'string' && state.auth_mode.toLowerCase() === 'server') {
@@ -84,14 +105,24 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
 
     const recommendedPath = useMemo(() => {
         if (vaultPath.trim()) return vaultPath;
-        return '~/ScriberVault';
-    }, [vaultPath]);
+        if (vaultMode === 'existing') return '/path/to/existing/vault';
+        return '~/QuillVault';
+    }, [vaultPath, vaultMode]);
+
+    useEffect(() => {
+        if (vaultMode !== 'existing') return;
+        const derived = deriveVaultNameFromPath(vaultPath);
+        if (derived) {
+            setVaultName(derived);
+        }
+    }, [vaultMode, vaultPath]);
 
     const pickFolder = async (
         target: 'vault' | 'obsidian' | 'openclaw',
         options: { title: string; defaultPath?: string },
     ) => {
-        if (!window.scriberrDesktop?.selectFolder) {
+        const desktopBridge = getDesktopBridge();
+        if (!desktopBridge?.selectFolder) {
             setError('Folder picker is available in the desktop app.');
             return;
         }
@@ -99,7 +130,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
         setError(null);
         setPickingFolder(target);
         try {
-            const selectedPath = await window.scriberrDesktop.selectFolder({
+            const selectedPath = await desktopBridge.selectFolder({
                 title: options.title,
                 defaultPath: options.defaultPath,
             });
@@ -109,6 +140,9 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
 
             if (target === 'vault') {
                 setVaultPath(selectedPath);
+                if (vaultMode === 'existing') {
+                    setVaultName(deriveVaultNameFromPath(selectedPath));
+                }
             } else if (target === 'obsidian') {
                 setObsidianVaultDir(selectedPath);
             } else {
@@ -127,7 +161,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
 
         const trimmedPath = vaultPath.trim();
         if (!trimmedPath) {
-            setError('Vault path is required.');
+            setError(vaultMode === 'existing' ? 'Existing vault path is required.' : 'Vault path is required.');
             return;
         }
 
@@ -140,10 +174,13 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
                 },
                 body: JSON.stringify({
                     vault_path: trimmedPath,
-                    vault_name: vaultName.trim() || 'Main Vault',
+                    vault_mode: vaultMode,
                     auth_mode: authMode,
                     obsidian_vault_dir: obsidianVaultDir.trim() || undefined,
                     openclaw_drop_dir: openClawDropDir.trim() || undefined,
+                    ...(vaultMode === 'create'
+                        ? { vault_name: vaultName.trim() || 'Main Vault' }
+                        : {}),
                 }),
             });
 
@@ -173,25 +210,61 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
         <div className="min-h-screen bg-[var(--bg-main)] px-4 py-10 sm:px-6">
             <div className="mx-auto w-full max-w-3xl rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--bg-card)] p-6 shadow-[var(--shadow-float)] sm:p-8">
                 <div className="mb-8">
-                    <p className="text-xs uppercase tracking-[0.2em] text-[var(--text-tertiary)]">Scriber Local Setup</p>
+                    <p className="text-xs uppercase tracking-[0.2em] text-[var(--text-tertiary)]">Quill Local Setup</p>
                     <h1 className="mt-3 text-3xl font-bold tracking-tight text-[var(--text-primary)]">Choose Your Vault</h1>
                     <p className="mt-2 text-sm text-[var(--text-secondary)]">
-                        Scriber runs local-first. Pick the folder that will hold media, transcript artifacts, and contacts.
+                        Quill runs local-first. Pick the folder that will hold media, transcript artifacts, and contacts.
                     </p>
                 </div>
 
                 <form className="space-y-6" onSubmit={handleSubmit}>
                     <div className="space-y-2">
-                        <label className="text-sm font-medium text-[var(--text-primary)]">Vault Name</label>
-                        <Input
-                            value={vaultName}
-                            onChange={(event) => setVaultName(event.target.value)}
-                            placeholder="Main Vault"
-                        />
+                        <label className="text-sm font-medium text-[var(--text-primary)]">Vault Setup</label>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                            <button
+                                type="button"
+                                className={`rounded-[var(--radius-btn)] border px-3 py-3 text-left transition ${vaultMode === 'create'
+                                    ? 'border-[var(--brand-solid)] bg-[var(--brand-light)]/40'
+                                    : 'border-[var(--border-subtle)] hover:border-[var(--brand-solid)]/40'
+                                    }`}
+                                onClick={() => setVaultMode('create')}
+                            >
+                                <p className="text-sm font-medium text-[var(--text-primary)]">Create new vault</p>
+                                <p className="mt-1 text-xs text-[var(--text-tertiary)]">
+                                    Use a new folder. Quill creates the vault structure automatically.
+                                </p>
+                            </button>
+                            <button
+                                type="button"
+                                className={`rounded-[var(--radius-btn)] border px-3 py-3 text-left transition ${vaultMode === 'existing'
+                                    ? 'border-[var(--brand-solid)] bg-[var(--brand-light)]/40'
+                                    : 'border-[var(--border-subtle)] hover:border-[var(--brand-solid)]/40'
+                                    }`}
+                                onClick={() => setVaultMode('existing')}
+                            >
+                                <p className="text-sm font-medium text-[var(--text-primary)]">Use existing vault</p>
+                                <p className="mt-1 text-xs text-[var(--text-tertiary)]">
+                                    Reconnect to a folder that already has Quill vault data.
+                                </p>
+                            </button>
+                        </div>
                     </div>
 
+                    {vaultMode === 'create' && (
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-[var(--text-primary)]">Vault Name</label>
+                            <Input
+                                value={vaultName}
+                                onChange={(event) => setVaultName(event.target.value)}
+                                placeholder="Main Vault"
+                            />
+                        </div>
+                    )}
+
                     <div className="space-y-2">
-                        <label className="text-sm font-medium text-[var(--text-primary)]">Vault Path</label>
+                        <label className="text-sm font-medium text-[var(--text-primary)]">
+                            {vaultMode === 'existing' ? 'Existing Vault Path' : 'New Vault Path'}
+                        </label>
                         <div className="flex items-center gap-2">
                             <FolderOpen className="h-4 w-4 text-[var(--text-tertiary)]" />
                             <Input
@@ -204,16 +277,22 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
                                 variant="outline"
                                 disabled={!isDesktopApp || pickingFolder === 'vault'}
                                 onClick={() => pickFolder('vault', {
-                                    title: 'Select Vault Folder',
+                                    title: vaultMode === 'existing' ? 'Select Existing Vault Folder' : 'Select Vault Folder',
                                     defaultPath: vaultPath || undefined,
                                 })}
                             >
                                 {pickingFolder === 'vault' ? 'Opening...' : 'Browse'}
                             </Button>
                         </div>
-                        <p className="text-xs text-[var(--text-tertiary)]">
-                            Subfolders created automatically: `Inbox`, `Media`, `Transcripts`, `.scriber`, `Contacts/Snippets`.
-                        </p>
+                        {vaultMode === 'existing' ? (
+                            <p className="text-xs text-[var(--text-tertiary)]">
+                                Select a folder from a previous Quill install (`.quill`, `Inbox`, `Media`, or `Transcripts`).
+                            </p>
+                        ) : (
+                            <p className="text-xs text-[var(--text-tertiary)]">
+                                Subfolders created automatically: `Inbox`, `Media`, `Transcripts`, `.quill`, `Contacts/Snippets`.
+                            </p>
+                        )}
                         {!isDesktopApp && (
                             <p className="text-xs text-[var(--text-tertiary)]">
                                 Folder picker appears in the desktop app.
@@ -231,8 +310,9 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
                                         type="button"
                                         className="block w-full rounded px-2 py-1 text-left hover:bg-[var(--brand-light)]"
                                         onClick={() => {
+                                            setVaultMode('existing');
                                             setVaultPath(vault.path);
-                                            setVaultName(vault.name);
+                                            setVaultName(vault.name || deriveVaultNameFromPath(vault.path));
                                         }}
                                     >
                                         <span className="font-medium text-[var(--text-primary)]">{vault.name}</span>

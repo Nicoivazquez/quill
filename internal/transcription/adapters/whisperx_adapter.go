@@ -17,9 +17,9 @@ import (
 	"strings"
 	"time"
 
-	"scriberr/internal/transcription/interfaces"
-	"scriberr/pkg/binaries"
-	"scriberr/pkg/logger"
+	"quill/internal/transcription/interfaces"
+	"quill/pkg/binaries"
+	"quill/pkg/logger"
 )
 
 // WhisperXAdapter implements the TranscriptionAdapter interface for WhisperX
@@ -340,11 +340,11 @@ func (w *WhisperXAdapter) PrepareEnvironment(ctx context.Context) error {
 
 // cloneWhisperX clones the WhisperX repository
 func (w *WhisperXAdapter) cloneWhisperX() error {
-	downloadURL := strings.TrimSpace(os.Getenv("SCRIBERR_WHISPERX_ZIP_URL"))
+	downloadURL := strings.TrimSpace(os.Getenv("QUILL_WHISPERX_ZIP_URL"))
 	if downloadURL == "" {
 		downloadURL = defaultWhisperXZipURL
 	}
-	expectedSHA256 := strings.TrimSpace(os.Getenv("SCRIBERR_WHISPERX_ZIP_SHA256"))
+	expectedSHA256 := strings.TrimSpace(os.Getenv("QUILL_WHISPERX_ZIP_SHA256"))
 
 	tempZipPath := filepath.Join(w.envPath, "whisperx.zip")
 	targetDir := filepath.Join(w.envPath, "WhisperX")

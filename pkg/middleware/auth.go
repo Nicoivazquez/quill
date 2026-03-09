@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"scriberr/internal/auth"
-	"scriberr/internal/database"
-	"scriberr/internal/models"
+	"quill/internal/auth"
+	"quill/internal/database"
+	"quill/internal/models"
 
 	"github.com/gin-gonic/gin"
 )
@@ -21,6 +21,13 @@ func setLocalAuthContext(c *gin.Context) {
 	c.Set("auth_type", "local")
 	c.Set("user_id", uint(1))
 	c.Set("username", "local")
+}
+
+func getAccessTokenCookie(c *gin.Context) (string, bool) {
+	if cookie, err := c.Cookie("quill_access_token"); err == nil && cookie != "" {
+		return cookie, true
+	}
+	return "", false
 }
 
 // AuthMiddleware handles both API key and JWT authentication
@@ -56,7 +63,7 @@ func AuthMiddleware(authService *auth.AuthService) gin.HandlerFunc {
 
 		// Fallback to cookie if no header
 		if token == "" {
-			if cookie, err := c.Cookie("scriberr_access_token"); err == nil {
+			if cookie, ok := getAccessTokenCookie(c); ok {
 				token = cookie
 			}
 		}

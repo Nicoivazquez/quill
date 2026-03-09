@@ -148,6 +148,13 @@
       "tag": "transcription"
     },
     {
+      "method": "POST",
+      "path": "/api/v1/transcription/{id}/title/auto",
+      "summary": "Auto-generate transcription title",
+      "description": "Generate a concise title for a completed transcription from transcript content.",
+      "tag": "transcription"
+    },
+    {
       "method": "DELETE",
       "path": "/api/v1/transcription/{id}",
       "summary": "Delete transcription job",

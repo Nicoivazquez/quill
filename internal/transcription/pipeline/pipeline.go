@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"strings"
 
-	"scriberr/internal/transcription/interfaces"
-	"scriberr/pkg/binaries"
-	"scriberr/pkg/logger"
+	"quill/internal/transcription/interfaces"
+	"quill/pkg/binaries"
+	"quill/pkg/logger"
 )
 
 // ProcessingPipeline handles the full processing workflow with preprocessing

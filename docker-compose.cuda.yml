@@ -1,11 +1,11 @@
 version: "3.9"
 services:
-  scriberr:
-    image: ghcr.io/rishikanthc/scriberr:v1.0.4-cuda
+  quill:
+    image: ghcr.io/rishikanthc/quill:v1.0.4-cuda
     ports:
       - "8080:8080"
     volumes:
-      - scriberr_data:/app/data
+      - quill_data:/app/data
       - env_data:/app/whisperx-env
     restart: unless-stopped
     deploy:
@@ -27,5 +27,5 @@ services:
       # - ALLOWED_ORIGINS=https://your-domain.com
 
 volumes:
-  scriberr_data: {}
+  quill_data: {}
   env_data: {}

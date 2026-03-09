@@ -12,16 +12,16 @@ import (
 	"time"
 	"unicode"
 
-	"scriberr/internal/database"
-	"scriberr/internal/models"
-	"scriberr/internal/repository"
-	"scriberr/internal/sse"
-	"scriberr/internal/transcription/interfaces"
-	"scriberr/internal/transcription/pipeline"
-	"scriberr/internal/transcription/registry"
-	"scriberr/internal/webhook"
-	"scriberr/pkg/binaries"
-	"scriberr/pkg/logger"
+	"quill/internal/database"
+	"quill/internal/models"
+	"quill/internal/repository"
+	"quill/internal/sse"
+	"quill/internal/transcription/interfaces"
+	"quill/internal/transcription/pipeline"
+	"quill/internal/transcription/registry"
+	"quill/internal/webhook"
+	"quill/pkg/binaries"
+	"quill/pkg/logger"
 )
 
 const (

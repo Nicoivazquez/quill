@@ -10,14 +10,14 @@ import (
 	"path/filepath"
 )
 
-// UploadFile uploads a file to the Scriberr server
+// UploadFile uploads a file to the Quill server
 func UploadFile(filePath string) error {
 	config := GetConfig()
 	if config.ServerURL == "" {
-		return fmt.Errorf("server URL not configured. Please run 'scriberr login' or 'scriberr install'")
+		return fmt.Errorf("server URL not configured. Please run 'quill login' or 'quill install'")
 	}
 	if config.Token == "" {
-		return fmt.Errorf("not logged in (token missing). Please run 'scriberr login'")
+		return fmt.Errorf("not logged in (token missing). Please run 'quill login'")
 	}
 
 	file, err := os.Open(filePath)

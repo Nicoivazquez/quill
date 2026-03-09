@@ -7,7 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
-	"scriberr/internal/models"
+	"quill/internal/models"
 )
 
 type SummaryTemplateRequest struct {

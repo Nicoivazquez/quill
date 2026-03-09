@@ -41,7 +41,7 @@ export function LogsDialog({ audioId, isOpen, onClose }: LogsDialogProps) {
                             No logs available for this transcription job.
                         </div>
                     ) : (
-                        <pre className="bg-[#0A0A0A] text-[#EDEDED] p-4 rounded-[var(--radius-card)] overflow-x-auto text-xs sm:text-sm font-mono leading-relaxed whitespace-pre-wrap max-h-[60vh] overflow-y-auto border border-white/10 shadow-inner">
+                        <pre className="bg-[var(--bg-muted-pane)] text-[var(--text-primary)] p-4 rounded-[var(--radius-card)] overflow-x-auto text-xs sm:text-sm font-mono leading-relaxed whitespace-pre-wrap max-h-[60vh] overflow-y-auto border border-[var(--border-subtle)] shadow-inner">
                             {logsContent?.content || "No logs available."}
                         </pre>
                     )}

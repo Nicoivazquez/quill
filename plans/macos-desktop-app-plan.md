@@ -1,4 +1,4 @@
-# Scriberr macOS Desktop App Plan (Electron Wrapper)
+# Quill macOS Desktop App Plan (Electron Wrapper)
 
 ## Decision status
 
@@ -24,7 +24,7 @@ Estimated remaining effort for friend-ready macOS release:
 
 ## Objective
 
-Ship an installable macOS app (`.dmg`) so users launch Scriberr like a native app instead of manually opening `http://localhost:8080` in a browser.
+Ship an installable macOS app (`.dmg`) so users launch Quill like a native app instead of manually opening `http://localhost:8080` in a browser.
 
 ## Why this path
 
@@ -121,10 +121,10 @@ Tasks:
    - `ffprobe`
    - `yt-dlp`
 2. Inject tool paths into backend env:
-   - `SCRIBERR_UV_BIN`
-   - `SCRIBERR_FFMPEG_BIN`
-   - `SCRIBERR_FFPROBE_BIN`
-   - `SCRIBERR_YTDLP_BIN`
+   - `QUILL_UV_BIN`
+   - `QUILL_FFMPEG_BIN`
+   - `QUILL_FFPROBE_BIN`
+   - `QUILL_YTDLP_BIN`
 3. Keep model/data downloads on first run (acceptable and expected).
 4. Add first-run status UX (initializing models/environments).
 

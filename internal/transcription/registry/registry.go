@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"scriberr/internal/transcription/interfaces"
-	"scriberr/pkg/logger"
+	"quill/internal/transcription/interfaces"
+	"quill/pkg/logger"
 )
 
 // ModelRegistry manages all available model adapters with auto-discovery

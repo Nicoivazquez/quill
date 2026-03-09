@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"scriberr/internal/models"
-	"scriberr/internal/webhook"
+	"quill/internal/models"
+	"quill/internal/webhook"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"

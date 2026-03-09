@@ -7,7 +7,7 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Upload, Mic, Settings, LogOut, Home, Plus, Grip, Zap, Youtube, Video, Users, MonitorSpeaker } from "lucide-react";
-import { ScriberrLogo } from "./ScriberrLogo";
+import { QuillLogo } from "./QuillLogo";
 import { ThemeSwitcher } from "./ThemeSwitcher";
 import { AudioRecorder } from "./AudioRecorder";
 import { SystemAudioRecorder } from "./SystemAudioRecorder";
@@ -136,10 +136,10 @@ export function Header({ onFileSelect, onMultiTrackClick, onDownloadComplete }: 
 
 
 	return (
-		<header className="sticky top-4 sm:top-6 z-50 glass rounded-[var(--radius-card)] px-4 py-3 sm:px-6 sm:py-4 transition-all duration-500 shadow-[var(--shadow-float)] border border-[var(--border-subtle)]">
+		<header className="sticky top-2 sm:top-3 z-50 rounded-[var(--radius-card)] px-3 py-2 sm:px-4 sm:py-3 transition-all duration-300 shadow-[var(--shadow-card)] border border-[var(--border-subtle)] bg-[var(--bg-card)]/90 backdrop-blur-md">
 			<div className="flex items-center justify-between">
 				{/* Left side - Logo navigates home */}
-				<ScriberrLogo onClick={handleHomeClick} />
+				<QuillLogo onClick={handleHomeClick} />
 
 				{/* Right side - Plus (Add Audio), Grip Menu, Theme Switcher */}
 				<div className="flex items-center gap-2 sm:gap-3">
@@ -149,7 +149,7 @@ export function Header({ onFileSelect, onMultiTrackClick, onDownloadComplete }: 
 							<Button
 								variant="default"
 								size="icon"
-								className="bg-gradient-to-br from-[#FFAB40] to-[#FF3D00] text-white shadow-[0_4px_12px_rgba(255,61,0,0.4)] hover:shadow-[0_6px_16px_rgba(255,61,0,0.5)] border-none h-8 w-8 sm:h-10 sm:w-10 rounded-lg transition-all hover:scale-105 active:scale-95 cursor-pointer"
+								className="h-8 w-8 sm:h-10 sm:w-10 rounded-[var(--radius-btn)] border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--brand-solid)] shadow-sm hover:bg-[var(--brand-light)] hover:border-[var(--brand-solid)]/40 active:translate-y-px cursor-pointer"
 							>
 								<Plus className="h-5 w-5 sm:h-6 sm:w-6" />
 								<span className="sr-only">Add audio</span>
@@ -157,13 +157,13 @@ export function Header({ onFileSelect, onMultiTrackClick, onDownloadComplete }: 
 						</DropdownMenuTrigger>
 						<DropdownMenuContent
 							align="end"
-							className="w-64 glass-card p-2 rounded-[var(--radius-card)] shadow-[var(--shadow-float)] border-[var(--border-subtle)]"
+							className="w-64 p-2 rounded-[var(--radius-card)] shadow-[var(--shadow-float)] border border-[var(--border-subtle)] bg-[var(--bg-card)]"
 						>
 							<DropdownMenuItem
 								onClick={handleQuickTranscriptionClick}
-								className="group flex items-center gap-3 px-3 py-3 cursor-pointer rounded-[var(--radius-btn)] focus:bg-[var(--brand-light)] focus:text-[var(--brand-solid)] transition-colors"
+								className="group flex items-center gap-3 px-3 py-3 cursor-pointer rounded-[var(--radius-btn)] focus:bg-[var(--bg-muted-pane)] focus:text-[var(--brand-solid)] transition-colors"
 							>
-								<div className="p-2 bg-amber-500/10 rounded-[var(--radius-btn)] text-amber-600 group-focus:text-[var(--brand-solid)]">
+								<div className="p-2 bg-[var(--brand-light)] rounded-[var(--radius-btn)] text-[var(--brand-solid)] group-focus:text-[var(--brand-solid)]">
 									<Zap className="h-4 w-4" />
 								</div>
 								<div>
@@ -175,9 +175,9 @@ export function Header({ onFileSelect, onMultiTrackClick, onDownloadComplete }: 
 							</DropdownMenuItem>
 							<DropdownMenuItem
 								onClick={handleYouTubeClick}
-								className="group flex items-center gap-3 px-3 py-3 cursor-pointer rounded-[var(--radius-btn)] focus:bg-[var(--brand-light)] focus:text-[var(--brand-solid)] transition-colors"
+								className="group flex items-center gap-3 px-3 py-3 cursor-pointer rounded-[var(--radius-btn)] focus:bg-[var(--bg-muted-pane)] focus:text-[var(--brand-solid)] transition-colors"
 							>
-								<div className="p-2 bg-rose-500/10 rounded-[var(--radius-btn)] text-rose-600 group-focus:text-[var(--brand-solid)]">
+								<div className="p-2 bg-[var(--bg-muted-pane)] rounded-[var(--radius-btn)] text-[var(--text-secondary)] group-focus:text-[var(--brand-solid)]">
 									<Youtube className="h-4 w-4" />
 								</div>
 								<div>
@@ -189,7 +189,7 @@ export function Header({ onFileSelect, onMultiTrackClick, onDownloadComplete }: 
 							</DropdownMenuItem>
 							<DropdownMenuItem
 								onClick={handleUploadClick}
-								className="group flex items-center gap-3 px-3 py-3 cursor-pointer rounded-[var(--radius-btn)] focus:bg-[var(--brand-light)] focus:text-[var(--brand-solid)] transition-colors"
+								className="group flex items-center gap-3 px-3 py-3 cursor-pointer rounded-[var(--radius-btn)] focus:bg-[var(--bg-muted-pane)] focus:text-[var(--brand-solid)] transition-colors"
 							>
 								<div className="p-2 bg-[var(--brand-light)] rounded-[var(--radius-btn)] text-[var(--brand-solid)] group-focus:text-[var(--brand-solid)]">
 									<Upload className="h-4 w-4" />
@@ -203,9 +203,9 @@ export function Header({ onFileSelect, onMultiTrackClick, onDownloadComplete }: 
 							</DropdownMenuItem>
 							<DropdownMenuItem
 								onClick={handleVideoUploadClick}
-								className="group flex items-center gap-3 px-3 py-3 cursor-pointer rounded-[var(--radius-btn)] focus:bg-[var(--brand-light)] focus:text-[var(--brand-solid)] transition-colors"
+								className="group flex items-center gap-3 px-3 py-3 cursor-pointer rounded-[var(--radius-btn)] focus:bg-[var(--bg-muted-pane)] focus:text-[var(--brand-solid)] transition-colors"
 							>
-								<div className="p-2 bg-purple-500/10 rounded-[var(--radius-btn)] text-purple-600 group-focus:text-[var(--brand-solid)]">
+								<div className="p-2 bg-[var(--bg-muted-pane)] rounded-[var(--radius-btn)] text-[var(--text-secondary)] group-focus:text-[var(--brand-solid)]">
 									<Video className="h-4 w-4" />
 								</div>
 								<div>
@@ -217,7 +217,7 @@ export function Header({ onFileSelect, onMultiTrackClick, onDownloadComplete }: 
 							</DropdownMenuItem>
 							<DropdownMenuItem
 								onClick={handleRecordClick}
-								className="group flex items-center gap-3 px-3 py-3 cursor-pointer rounded-[var(--radius-btn)] focus:bg-[var(--brand-light)] focus:text-[var(--brand-solid)] transition-colors"
+								className="group flex items-center gap-3 px-3 py-3 cursor-pointer rounded-[var(--radius-btn)] focus:bg-[var(--bg-muted-pane)] focus:text-[var(--brand-solid)] transition-colors"
 							>
 								<div className="p-2 bg-emerald-500/10 rounded-[var(--radius-btn)] text-emerald-600 group-focus:text-[var(--brand-solid)]">
 									<Mic className="h-4 w-4" />
@@ -231,9 +231,9 @@ export function Header({ onFileSelect, onMultiTrackClick, onDownloadComplete }: 
 							</DropdownMenuItem>
 							<DropdownMenuItem
 								onClick={handleSystemRecordClick}
-								className="group flex items-center gap-3 px-3 py-3 cursor-pointer rounded-[var(--radius-btn)] focus:bg-[var(--brand-light)] focus:text-[var(--brand-solid)] transition-colors"
+								className="group flex items-center gap-3 px-3 py-3 cursor-pointer rounded-[var(--radius-btn)] focus:bg-[var(--bg-muted-pane)] focus:text-[var(--brand-solid)] transition-colors"
 							>
-								<div className="p-2 bg-blue-500/10 rounded-[var(--radius-btn)] text-blue-600 group-focus:text-[var(--brand-solid)]">
+								<div className="p-2 bg-[var(--bg-muted-pane)] rounded-[var(--radius-btn)] text-[var(--text-secondary)] group-focus:text-[var(--brand-solid)]">
 									<MonitorSpeaker className="h-4 w-4" />
 								</div>
 								<div>
@@ -245,9 +245,9 @@ export function Header({ onFileSelect, onMultiTrackClick, onDownloadComplete }: 
 							</DropdownMenuItem>
 							<DropdownMenuItem
 								onClick={handleMultiTrackClick}
-								className="group flex items-center gap-3 px-3 py-3 cursor-pointer rounded-[var(--radius-btn)] focus:bg-[var(--brand-light)] focus:text-[var(--brand-solid)] transition-colors"
+								className="group flex items-center gap-3 px-3 py-3 cursor-pointer rounded-[var(--radius-btn)] focus:bg-[var(--bg-muted-pane)] focus:text-[var(--brand-solid)] transition-colors"
 							>
-								<div className="p-2 bg-indigo-500/10 rounded-[var(--radius-btn)] text-indigo-600 group-focus:text-[var(--brand-solid)]">
+								<div className="p-2 bg-[var(--bg-muted-pane)] rounded-[var(--radius-btn)] text-[var(--text-secondary)] group-focus:text-[var(--brand-solid)]">
 									<Users className="h-4 w-4" />
 								</div>
 								<div>
@@ -266,18 +266,18 @@ export function Header({ onFileSelect, onMultiTrackClick, onDownloadComplete }: 
 							<Button
 								variant="ghost"
 								size="icon"
-								className="h-8 w-8 sm:h-10 sm:w-10 hover:bg-[var(--secondary)] rounded-[var(--radius-btn)] cursor-pointer text-[var(--text-secondary)]"
+								className="h-8 w-8 sm:h-10 sm:w-10 hover:bg-[var(--bg-muted-pane)] rounded-[var(--radius-btn)] cursor-pointer text-[var(--text-secondary)] border border-transparent hover:border-[var(--border-subtle)]"
 							>
 								<Grip className="h-4 w-4 sm:h-5 sm:w-5" />
 								<span className="sr-only">Open menu</span>
 							</Button>
 						</DropdownMenuTrigger>
-						<DropdownMenuContent align="end" className="w-48 glass-card border-[var(--border-subtle)] p-2 rounded-[var(--radius-card)] shadow-[var(--shadow-float)]">
-							<DropdownMenuItem onClick={handleHomeClick} className="cursor-pointer rounded-[var(--radius-btn)] focus:bg-[var(--secondary)] py-2.5">
+						<DropdownMenuContent align="end" className="w-48 border border-[var(--border-subtle)] p-2 rounded-[var(--radius-card)] shadow-[var(--shadow-float)] bg-[var(--bg-card)]">
+							<DropdownMenuItem onClick={handleHomeClick} className="cursor-pointer rounded-[var(--radius-btn)] focus:bg-[var(--bg-muted-pane)] py-2.5">
 								<Home className="h-4 w-4 mr-2" />
 								Home
 							</DropdownMenuItem>
-							<DropdownMenuItem onClick={handleSettingsClick} className="cursor-pointer rounded-[var(--radius-btn)] focus:bg-[var(--secondary)] py-2.5">
+							<DropdownMenuItem onClick={handleSettingsClick} className="cursor-pointer rounded-[var(--radius-btn)] focus:bg-[var(--bg-muted-pane)] py-2.5">
 								<Settings className="h-4 w-4 mr-2" />
 								Settings
 							</DropdownMenuItem>

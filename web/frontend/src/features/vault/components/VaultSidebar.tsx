@@ -92,7 +92,7 @@ export function VaultSidebar({ compact = false }: VaultSidebarProps) {
     });
 
     return (
-        <aside className={`rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 shadow-[var(--shadow-card)] ${compact ? '' : 'h-fit'}`}>
+        <aside className={`obsidian-pane p-3 ${compact ? '' : 'h-fit lg:sticky lg:top-[88px]'}`}>
             <div className="mb-4 flex items-center justify-between">
                 <div>
                     <p className="text-xs uppercase tracking-wider text-[var(--text-tertiary)]">Vault</p>
@@ -102,6 +102,7 @@ export function VaultSidebar({ compact = false }: VaultSidebarProps) {
                     type="button"
                     size="icon"
                     variant="ghost"
+                    className="h-8 w-8 border border-transparent hover:border-[var(--border-subtle)] hover:bg-[var(--bg-muted-pane)]"
                     onClick={() => setShowCreateForm((current) => !current)}
                 >
                     <Plus className="h-4 w-4" />
@@ -109,7 +110,7 @@ export function VaultSidebar({ compact = false }: VaultSidebarProps) {
             </div>
 
             {activeVault && (
-                <div className="mb-4 rounded-[var(--radius-btn)] bg-[var(--brand-light)]/50 p-3 text-xs">
+                <div className="mb-4 rounded-[var(--radius-btn)] bg-[var(--bg-muted-pane)] border border-[var(--border-subtle)] p-3 text-xs">
                     <div className="flex items-center gap-2 text-[var(--brand-solid)]">
                         <HardDrive className="h-3.5 w-3.5" />
                         <span className="font-semibold">Active</span>
@@ -120,7 +121,7 @@ export function VaultSidebar({ compact = false }: VaultSidebarProps) {
             )}
 
             {showCreateForm && (
-                <div className="mb-4 space-y-2 rounded-[var(--radius-btn)] border border-[var(--border-subtle)] p-3">
+                <div className="mb-4 space-y-2 rounded-[var(--radius-btn)] border border-[var(--border-subtle)] bg-[var(--bg-muted-pane)] p-3">
                     <Input
                         value={newVaultName}
                         onChange={(event) => setNewVaultName(event.target.value)}
@@ -133,7 +134,7 @@ export function VaultSidebar({ compact = false }: VaultSidebarProps) {
                     />
                     <Button
                         type="button"
-                        className="w-full"
+                        className="w-full rounded-[var(--radius-btn)]"
                         disabled={!newVaultPath.trim() || createVault.isPending}
                         onClick={() => createVault.mutate()}
                     >
@@ -153,7 +154,7 @@ export function VaultSidebar({ compact = false }: VaultSidebarProps) {
                         <button
                             key={vault.id}
                             type="button"
-                            className={`w-full rounded-[var(--radius-btn)] px-3 py-2 text-left transition ${isActive ? 'bg-[var(--brand-light)] text-[var(--brand-solid)]' : 'hover:bg-[var(--secondary)]/30'}`}
+                            className={`w-full rounded-[var(--radius-btn)] px-3 py-2 text-left transition border ${isActive ? 'bg-[var(--bg-muted-pane)] border-[var(--brand-solid)]/30 text-[var(--brand-solid)]' : 'border-transparent hover:bg-[var(--bg-muted-pane)] hover:border-[var(--border-subtle)]'}`}
                             onClick={() => {
                                 if (!isActive) {
                                     activateVault.mutate(vault.id);
@@ -175,7 +176,7 @@ export function VaultSidebar({ compact = false }: VaultSidebarProps) {
 
             <div className="mt-4 border-t border-[var(--border-subtle)] pt-3">
                 <p className="text-xs uppercase tracking-wider text-[var(--text-tertiary)]">Structure</p>
-                <p className="mt-1 text-xs text-[var(--text-secondary)]">Inbox / Media / Transcripts / .scriber</p>
+                <p className="mt-1 text-xs text-[var(--text-secondary)]">Inbox / Media / Transcripts / .quill</p>
             </div>
         </aside>
     );

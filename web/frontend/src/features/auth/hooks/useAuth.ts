@@ -3,7 +3,7 @@ import { useAuthStore } from '../store/authStore';
 
 declare global {
     interface Window {
-        __scriberr_original_fetch?: typeof window.fetch;
+        __quill_original_fetch?: typeof window.fetch;
     }
 }
 
@@ -30,6 +30,10 @@ export function useAuth() {
 
     const tokenCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const fetchWrapperSetupRef = useRef(false);
+
+    const getOriginalFetch = useCallback((): typeof window.fetch => {
+        return window.__quill_original_fetch || window.fetch;
+    }, []);
 
     const getAuthHeaders = useCallback((): Record<string, string> => {
         if (!isLocalMode && token) {
@@ -79,7 +83,7 @@ export function useAuth() {
         }
 
         try {
-            const fetchToUse = window.__scriberr_original_fetch || window.fetch;
+            const fetchToUse = getOriginalFetch();
             const res = await fetchToUse('/api/v1/auth/refresh', { method: 'POST' });
             if (!res.ok) return null;
             const data = await res.json();
@@ -91,11 +95,11 @@ export function useAuth() {
         } catch {
             return null;
         }
-    }, [isLocalMode, login]);
+    }, [getOriginalFetch, isLocalMode, login]);
 
     const refreshSetupState = useCallback(async (): Promise<SetupStateResponse | null> => {
         try {
-            const fetchToUse = window.__scriberr_original_fetch || window.fetch;
+            const fetchToUse = getOriginalFetch();
             const response = await fetchToUse('/api/v1/setup/state');
             if (!response.ok) return null;
 
@@ -114,15 +118,15 @@ export function useAuth() {
         } catch {
             return null;
         }
-    }, [setLocalMode, setSetupCompleted, setRequiresRegistration]);
+    }, [getOriginalFetch, setLocalMode, setSetupCompleted, setRequiresRegistration]);
 
     useEffect(() => {
         if (!fetchWrapperSetupRef.current) {
-            if (!window.__scriberr_original_fetch) {
-                window.__scriberr_original_fetch = window.fetch.bind(window);
+            if (!window.__quill_original_fetch) {
+                window.__quill_original_fetch = window.fetch.bind(window);
             }
 
-            const originalFetch = window.__scriberr_original_fetch;
+            const originalFetch = window.__quill_original_fetch;
             const wrappedFetch: typeof window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
                 if (isLocalMode) {
                     return originalFetch(input, init);

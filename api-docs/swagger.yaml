@@ -787,7 +787,7 @@ info:
     name: MIT
     url: https://opensource.org/licenses/MIT
   termsOfService: http://swagger.io/terms/
-  title: Scriberr API
+  title: Quill API
   version: "1.0"
 paths:
   /api/v1/admin/queue/stats:

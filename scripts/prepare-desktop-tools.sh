@@ -7,17 +7,24 @@ OUT_DIR="$ROOT_DIR/dist/desktop-tools"
 LOCK_FILE="$ROOT_DIR/scripts/desktop-tools.lock.env"
 DEFAULT_YTDLP_VERSION="2026.02.21"
 DEFAULT_YTDLP_SHA256="13dc66e13e87c187e16bf0def71b35f118bc06145907739d5549d213a9e3b9e5"
+DEFAULT_WHISPERX_VERSION="3.8.0"
 
 if [[ -f "$LOCK_FILE" ]]; then
   # shellcheck disable=SC1090
   source "$LOCK_FILE"
 fi
 
-: "${SCRIBERR_YTDLP_VERSION:=$DEFAULT_YTDLP_VERSION}"
-: "${SCRIBERR_YTDLP_SHA256:=$DEFAULT_YTDLP_SHA256}"
+: "${QUILL_YTDLP_VERSION:=$DEFAULT_YTDLP_VERSION}"
+: "${QUILL_YTDLP_SHA256:=$DEFAULT_YTDLP_SHA256}"
+: "${QUILL_WHISPERX_VERSION:=$DEFAULT_WHISPERX_VERSION}"
 
 mkdir -p "$OUT_DIR"
 rm -rf "$OUT_DIR"/*
+
+WHISPERX_OUT_DIR="$OUT_DIR/whisperx"
+WHISPERX_BUNDLE_PATH="$WHISPERX_OUT_DIR/whisperx.zip"
+WHISPERX_BUNDLE_SHA_PATH="${WHISPERX_BUNDLE_PATH}.sha256"
+mkdir -p "$WHISPERX_OUT_DIR"
 
 sha256_file() {
   local target="$1"
@@ -68,15 +75,15 @@ resolve_tool_path() {
 
   if [[ -z "$source_path" ]]; then
     if [[ "$tool_name" == "yt-dlp" ]]; then
-      local yt_dlp_url="${SCRIBERR_YTDLP_DOWNLOAD_URL:-https://github.com/yt-dlp/yt-dlp/releases/download/${SCRIBERR_YTDLP_VERSION}/yt-dlp_macos}"
+      local yt_dlp_url="${QUILL_YTDLP_DOWNLOAD_URL:-https://github.com/yt-dlp/yt-dlp/releases/download/${QUILL_YTDLP_VERSION}/yt-dlp_macos}"
       if command -v curl >/dev/null 2>&1; then
         echo "yt-dlp not found in PATH; downloading from $yt_dlp_url" >&2
         if ! curl -fsSL "$yt_dlp_url" -o "$OUT_DIR/yt-dlp"; then
-          echo "Failed to download yt-dlp automatically. Set SCRIBERR_YTDLP_SOURCE to a local yt-dlp binary path." >&2
+          echo "Failed to download yt-dlp automatically. Set QUILL_YTDLP_SOURCE to a local yt-dlp binary path." >&2
           exit 1
         fi
         chmod +x "$OUT_DIR/yt-dlp"
-        verify_checksum "yt-dlp" "$OUT_DIR/yt-dlp" "${SCRIBERR_YTDLP_SHA256:-}"
+        verify_checksum "yt-dlp" "$OUT_DIR/yt-dlp" "${QUILL_YTDLP_SHA256:-}"
         echo "Bundled yt-dlp from $yt_dlp_url" >&2
         echo "$OUT_DIR/yt-dlp"
         return
@@ -103,6 +110,50 @@ bundle_tool() {
   chmod +x "$OUT_DIR/$tool_name"
   chmod u+w "$OUT_DIR/$tool_name"
   echo "Bundled $tool_name from $source_path"
+}
+
+resolve_whisperx_archive() {
+  local source_path="${QUILL_WHISPERX_ZIP_SOURCE:-}"
+
+  if [[ -n "$source_path" ]]; then
+    if [[ ! -f "$source_path" ]]; then
+      echo "WhisperX source archive path is not a file: $source_path" >&2
+      exit 1
+    fi
+    echo "$source_path"
+    return
+  fi
+
+  local whisperx_url="${QUILL_WHISPERX_ZIP_URL:-https://github.com/m-bain/WhisperX/archive/refs/tags/v${QUILL_WHISPERX_VERSION}.zip}"
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "curl is required to download WhisperX source archive. Set QUILL_WHISPERX_ZIP_SOURCE to a local zip file." >&2
+    exit 1
+  fi
+
+  echo "Downloading WhisperX source archive from $whisperx_url" >&2
+  if ! curl -fsSL "$whisperx_url" -o "$WHISPERX_BUNDLE_PATH"; then
+    echo "Failed to download WhisperX source archive. Set QUILL_WHISPERX_ZIP_SOURCE to a local zip file." >&2
+    exit 1
+  fi
+
+  echo "$WHISPERX_BUNDLE_PATH"
+}
+
+bundle_whisperx_archive() {
+  local source_path="$1"
+
+  if [[ "$source_path" != "$WHISPERX_BUNDLE_PATH" ]]; then
+    cp -L "$source_path" "$WHISPERX_BUNDLE_PATH"
+  fi
+
+  chmod u+w "$WHISPERX_BUNDLE_PATH"
+
+  local sha
+  sha="$(sha256_file "$WHISPERX_BUNDLE_PATH")"
+  printf '%s\n' "$sha" > "$WHISPERX_BUNDLE_SHA_PATH"
+
+  echo "Bundled whisperx source archive from $source_path"
+  echo "WhisperX archive SHA-256: $sha"
 }
 
 is_system_dependency() {
@@ -314,15 +365,17 @@ codesign_macos_ffmpeg_runtime() {
   echo "Applied ad-hoc signatures to bundled ffmpeg runtime artifacts"
 }
 
-uv_source="$(resolve_tool_path "uv" "SCRIBERR_UV_SOURCE")"
-ffmpeg_source="$(resolve_tool_path "ffmpeg" "SCRIBERR_FFMPEG_SOURCE")"
-ffprobe_source="$(resolve_tool_path "ffprobe" "SCRIBERR_FFPROBE_SOURCE")"
-ytdlp_source="$(resolve_tool_path "yt-dlp" "SCRIBERR_YTDLP_SOURCE")"
+uv_source="$(resolve_tool_path "uv" "QUILL_UV_SOURCE")"
+ffmpeg_source="$(resolve_tool_path "ffmpeg" "QUILL_FFMPEG_SOURCE")"
+ffprobe_source="$(resolve_tool_path "ffprobe" "QUILL_FFPROBE_SOURCE")"
+ytdlp_source="$(resolve_tool_path "yt-dlp" "QUILL_YTDLP_SOURCE")"
+whisperx_source="$(resolve_whisperx_archive)"
 
-verify_checksum "uv" "$uv_source" "${SCRIBERR_UV_SHA256:-}"
-verify_checksum "ffmpeg" "$ffmpeg_source" "${SCRIBERR_FFMPEG_SHA256:-}"
-verify_checksum "ffprobe" "$ffprobe_source" "${SCRIBERR_FFPROBE_SHA256:-}"
-verify_checksum "yt-dlp" "$ytdlp_source" "${SCRIBERR_YTDLP_SHA256:-}"
+verify_checksum "uv" "$uv_source" "${QUILL_UV_SHA256:-}"
+verify_checksum "ffmpeg" "$ffmpeg_source" "${QUILL_FFMPEG_SHA256:-}"
+verify_checksum "ffprobe" "$ffprobe_source" "${QUILL_FFPROBE_SHA256:-}"
+verify_checksum "yt-dlp" "$ytdlp_source" "${QUILL_YTDLP_SHA256:-}"
+verify_checksum "whisperx.zip" "$whisperx_source" "${QUILL_WHISPERX_ZIP_SHA256:-}"
 
 bundle_tool "uv" "$uv_source"
 bundle_tool "ffmpeg" "$ffmpeg_source"
@@ -330,6 +383,7 @@ bundle_tool "ffprobe" "$ffprobe_source"
 if [[ "$ytdlp_source" != "$OUT_DIR/yt-dlp" ]]; then
   bundle_tool "yt-dlp" "$ytdlp_source"
 fi
+bundle_whisperx_archive "$whisperx_source"
 
 bundle_macos_ffmpeg_runtime
 codesign_macos_ffmpeg_runtime

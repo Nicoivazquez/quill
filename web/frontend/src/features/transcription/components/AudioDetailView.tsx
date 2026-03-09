@@ -26,7 +26,6 @@ import { ChatSidePanel } from "./ChatSidePanel";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { useSummaryTemplates, useExistingSummary, useSummarizer } from "@/features/transcription/hooks/useTranscriptionSummary";
-import { VaultSidebar } from "@/features/vault/components/VaultSidebar";
 
 // Types
 interface AudioDetailViewProps {
@@ -336,24 +335,21 @@ export const AudioDetailView = function AudioDetailView({ audioId: propAudioId }
         <div className="h-screen flex flex-col bg-[var(--bg-main)] relative selection:bg-[var(--brand-light)] overflow-hidden">
             {/* Split Container */}
             <div ref={splitContainerRef} className="flex-1 flex overflow-hidden relative">
-                <aside className="hidden xl:block w-[280px] shrink-0 overflow-y-auto border-r border-[var(--border-subtle)] p-4">
-                    <VaultSidebar compact />
-                </aside>
                 {/* LEFT PANE (Main) */}
                 <main className="flex-1 min-w-0 flex flex-col h-full relative z-0">
 
 
                     {/* Scrollable Content */}
                     <div className="flex-1 overflow-y-auto scrollbar-thin">
-                        <div className="mx-auto w-full max-w-[960px] px-4 sm:px-6 py-6 pb-32">
-                            <div className="mb-6 pb-6">
+                        <div className="mx-auto w-full max-w-[1320px] px-3 sm:px-5 lg:px-7 py-4 pb-32">
+                            <div className="mb-4">
                                 <Header />
                             </div>
-                            <div className="space-y-6 sm:space-y-8">
+                            <div className="space-y-5 sm:space-y-6">
                                 {/* Sticky header: Title + Audio Player */}
-                                <div className="sticky top-0 z-10">
+                                <div className="sticky top-0 z-10 pt-1">
                                     {/* Title & Metadata */}
-                                    <div className="space-y-4 glass-card rounded-[var(--radius-card)] border-[var(--border-subtle)] shadow-[var(--shadow-card)] p-4 md:p-6 mb-4">
+                                    <div className="space-y-4 obsidian-pane p-4 md:p-5 mb-4">
                                     <div className="flex items-start justify-between gap-4">
                                         <div className="space-y-3 flex-1 min-w-0">
                                             {/* Title Edit Logic */}
@@ -398,7 +394,7 @@ export const AudioDetailView = function AudioDetailView({ audioId: propAudioId }
                                                     {audioFile.status === 'processing' && (
                                                         <Tooltip>
                                                             <TooltipTrigger asChild>
-                                                                <div className="cursor-help text-amber-500">
+                                                                <div className="cursor-help text-[var(--brand-solid)]">
                                                                     <Loader2 className="h-5 w-5 animate-spin" strokeWidth={2.5} />
                                                                 </div>
                                                             </TooltipTrigger>
@@ -438,7 +434,7 @@ export const AudioDetailView = function AudioDetailView({ audioId: propAudioId }
                                                 size="sm"
                                                 onClick={() => setChatOpen(!chatOpen)}
                                                 className={cn(
-                                                    "rounded-full border-[var(--border-subtle)] shadow-sm bg-[var(--bg-card)] hover:bg-[var(--bg-main)] transition-all gap-2 px-3",
+                                                    "rounded-[var(--radius-btn)] border-[var(--border-subtle)] shadow-sm bg-[var(--bg-card)] hover:bg-[var(--bg-muted-pane)] transition-all gap-2 px-3",
                                                     chatOpen && "border-[var(--brand-solid)] text-[var(--brand-solid)]"
                                                 )}
                                             >
@@ -451,12 +447,12 @@ export const AudioDetailView = function AudioDetailView({ audioId: propAudioId }
                                                     <Button
                                                         variant="outline"
                                                         size="icon"
-                                                        className="rounded-full border-[var(--border-subtle)] shadow-sm bg-[var(--bg-card)] hover:bg-[var(--bg-main)] transition-all"
+                                                        className="rounded-[var(--radius-btn)] border-[var(--border-subtle)] shadow-sm bg-[var(--bg-card)] hover:bg-[var(--bg-muted-pane)] transition-all"
                                                     >
                                                         <MoreVertical className="h-4 w-4 text-[var(--text-secondary)]" />
                                                     </Button>
                                                 </DropdownMenuTrigger>
-                                                <DropdownMenuContent align="end" className="w-56 glass-card rounded-[var(--radius-card)] shadow-[var(--shadow-float)] border-[var(--border-subtle)] p-1.5">
+                                                <DropdownMenuContent align="end" className="w-56 rounded-[var(--radius-card)] shadow-[var(--shadow-float)] border border-[var(--border-subtle)] bg-[var(--bg-card)] p-1.5">
                                                     {/* ... (Menu Items same as before, update handlers) ... */}
                                                     {/* Only show timeline view toggle if transcript has word-level timestamps */}
                                                     {transcript?.word_segments && transcript.word_segments.length > 0 ? (
@@ -516,7 +512,7 @@ export const AudioDetailView = function AudioDetailView({ audioId: propAudioId }
                                 </div>
 
                                     {/* Audio Player */}
-                                    <div className="glass-card rounded-[var(--radius-card)] border-[var(--border-subtle)] shadow-[var(--shadow-card)] p-4 md:p-6 mb-8 transition-all duration-300 hover:shadow-[var(--shadow-float)]">
+                                    <div className="obsidian-pane p-4 md:p-5 mb-8 transition-all duration-300">
                                         <EmberPlayer
                                             ref={audioPlayerRef}
                                             audioId={audioId}

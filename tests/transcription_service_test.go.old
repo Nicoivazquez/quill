@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"scriberr/internal/models"
-	"scriberr/internal/transcription"
+	"quill/internal/models"
+	"quill/internal/transcription"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
@@ -33,7 +33,7 @@ func (suite *TranscriptionServiceTestSuite) SetupSuite() {
 	assert.NoError(suite.T(), err)
 
 	// Set path to sample audio file
-	suite.sampleAudioPath = "/Users/richandrasekaran/Code/machy/Scriberr/samples/jfk.wav"
+	suite.sampleAudioPath = "/Users/richandrasekaran/Code/machy/Quill/samples/jfk.wav"
 
 	// Verify sample file exists
 	_, err = os.Stat(suite.sampleAudioPath)

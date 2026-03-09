@@ -1,10 +1,10 @@
 package api
 
 import (
-	"scriberr/internal/auth"
-	"scriberr/internal/web"
-	"scriberr/pkg/logger"
-	"scriberr/pkg/middleware"
+	"quill/internal/auth"
+	"quill/internal/web"
+	"quill/pkg/logger"
+	"quill/pkg/middleware"
 
 	"github.com/gin-gonic/gin"
 )
@@ -208,6 +208,7 @@ func SetupRoutes(handler *Handler, authService *auth.AuthService) *gin.Engine {
 			vaults.PUT("/:id", handler.UpdateVault)
 			vaults.DELETE("/:id", handler.DeleteVault)
 			vaults.POST("/:id/activate", handler.ActivateVault)
+			vaults.POST("/:id/rehydrate", handler.RehydrateVault)
 		}
 
 		// Obsidian bridge routes

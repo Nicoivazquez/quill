@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"time"
 
-	"scriberr/internal/models"
-	"scriberr/pkg/logger"
+	"quill/internal/models"
+	"quill/pkg/logger"
 )
 
 // WebhookPayload represents the data sent to the callback URL
@@ -59,7 +59,7 @@ func (s *Service) SendWebhook(ctx context.Context, url string, payload WebhookPa
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "Scriberr-Webhook/1.0")
+	req.Header.Set("User-Agent", "Quill-Webhook/1.0")
 
 	// Send request with retry logic
 	maxRetries := 3

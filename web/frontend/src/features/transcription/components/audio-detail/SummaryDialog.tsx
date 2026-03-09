@@ -140,13 +140,13 @@ export function SummaryDialog({ audioId, isOpen, onClose, llmReady }: SummaryDia
     };
 
     if (showOutput) {
-        // Output View - Redesigned with Scriberr Design System
+        // Output View - Redesigned with Quill Design System
         return (
             <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-                <DialogContent className="w-[calc(100%-2rem)] max-w-4xl mx-auto bg-[var(--bg-card)] dark:bg-[#0A0A0A] border border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)] shadow-[0_2px_4px_rgba(0,0,0,0.04),0_24px_48px_rgba(0,0,0,0.08)] dark:shadow-[0_2px_4px_rgba(0,0,0,0.3),0_24px_48px_rgba(0,0,0,0.3)] p-0 rounded-2xl max-h-[85vh] overflow-hidden">
-                    <DialogHeader className="p-5 pb-4 border-b border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)]">
+                <DialogContent className="w-[calc(100%-2rem)] max-w-4xl mx-auto bg-[var(--bg-card)] border border-[var(--border-subtle)] shadow-[var(--shadow-float)] p-0 rounded-[var(--radius-card)] max-h-[85vh] overflow-hidden">
+                    <DialogHeader className="p-5 pb-4 border-b border-[var(--border-subtle)]">
                         <DialogTitle className="text-xl font-bold text-[var(--text-primary)] flex items-center gap-2">
-                            <div className="h-9 w-9 rounded-full bg-gradient-to-br from-[#FFAB40] to-[#FF6D20] flex items-center justify-center shadow-md">
+                            <div className="h-9 w-9 rounded-[var(--radius-btn)] bg-gradient-to-br from-[var(--brand-start)] to-[var(--brand-solid)] flex items-center justify-center shadow-sm">
                                 <Sparkles className="h-4 w-4 text-white" />
                             </div>
                             Summary
@@ -178,7 +178,7 @@ export function SummaryDialog({ audioId, isOpen, onClose, llmReady }: SummaryDia
                                     setSelectedTemplateId('');
                                 }}
                                 disabled={isStreaming}
-                                className="h-9 rounded-full border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)] hover:bg-[var(--bg-main)] transition-all"
+                                className="h-9 rounded-[var(--radius-btn)] border-[var(--border-subtle)] hover:bg-[var(--bg-muted-pane)] transition-all"
                             >
                                 <RefreshCw className="h-3.5 w-3.5" />
                                 Regenerate
@@ -188,7 +188,7 @@ export function SummaryDialog({ audioId, isOpen, onClose, llmReady }: SummaryDia
                                 size="sm"
                                 onClick={handleCopy}
                                 disabled={!streamContent && !existingSummary?.content}
-                                className="h-9 rounded-full border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)] hover:bg-[var(--bg-main)] transition-all"
+                                className="h-9 rounded-[var(--radius-btn)] border-[var(--border-subtle)] hover:bg-[var(--bg-muted-pane)] transition-all"
                             >
                                 <Copy className="h-3.5 w-3.5" />
                                 Copy
@@ -198,7 +198,7 @@ export function SummaryDialog({ audioId, isOpen, onClose, llmReady }: SummaryDia
                                 size="sm"
                                 onClick={handleDownload}
                                 disabled={!streamContent && !existingSummary?.content}
-                                className="h-9 rounded-full border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)] hover:bg-[var(--bg-main)] transition-all"
+                                className="h-9 rounded-[var(--radius-btn)] border-[var(--border-subtle)] hover:bg-[var(--bg-muted-pane)] transition-all"
                             >
                                 <Download className="h-3.5 w-3.5" />
                                 Download
@@ -221,17 +221,17 @@ export function SummaryDialog({ audioId, isOpen, onClose, llmReady }: SummaryDia
                                     <p className="text-xs mt-1">This may take a moment</p>
                                 </div>
                             ) : (
-                                <div className="prose prose-stone dark:prose-invert max-w-none text-[#171717] dark:text-[#EDEDED] leading-relaxed">
+                                <div className="prose prose-stone dark:prose-invert max-w-none text-[var(--text-primary)] leading-relaxed">
                                     <ReactMarkdown
                                         remarkPlugins={[remarkMath]}
                                         rehypePlugins={[rehypeRaw as any, rehypeKatex as any, rehypeHighlight as any]} // eslint-disable-line @typescript-eslint/no-explicit-any
                                         components={{
-                                            p: ({ ...props }) => <p className="text-[#525252] dark:text-[#A3A3A3] leading-7 mb-4" {...props} />,
-                                            h1: ({ ...props }) => <h1 className="text-[#171717] dark:text-[#EDEDED] font-bold text-2xl mt-6 mb-4" {...props} />,
-                                            h2: ({ ...props }) => <h2 className="text-[#171717] dark:text-[#EDEDED] font-bold text-xl mt-6 mb-3" {...props} />,
-                                            h3: ({ ...props }) => <h3 className="text-[#171717] dark:text-[#EDEDED] font-bold text-lg mt-5 mb-2" {...props} />,
-                                            li: ({ ...props }) => <li className="pl-1 text-[#525252] dark:text-[#A3A3A3] mb-1" {...props} />,
-                                            strong: ({ ...props }) => <strong className="text-[#171717] dark:text-[#EDEDED] font-bold" {...props} />,
+                                            p: ({ ...props }) => <p className="text-[var(--text-secondary)] leading-7 mb-4" {...props} />,
+                                            h1: ({ ...props }) => <h1 className="text-[var(--text-primary)] font-bold text-2xl mt-6 mb-4" {...props} />,
+                                            h2: ({ ...props }) => <h2 className="text-[var(--text-primary)] font-bold text-xl mt-6 mb-3" {...props} />,
+                                            h3: ({ ...props }) => <h3 className="text-[var(--text-primary)] font-bold text-lg mt-5 mb-2" {...props} />,
+                                            li: ({ ...props }) => <li className="pl-1 text-[var(--text-secondary)] mb-1" {...props} />,
+                                            strong: ({ ...props }) => <strong className="text-[var(--text-primary)] font-bold" {...props} />,
                                             ul: ({ ...props }) => <ul className="list-disc pl-5 mb-4" {...props} />,
                                             ol: ({ ...props }) => <ol className="list-decimal pl-5 mb-4" {...props} />,
                                         }}
@@ -253,11 +253,11 @@ export function SummaryDialog({ audioId, isOpen, onClose, llmReady }: SummaryDia
         );
     }
 
-    // Template Selector View - Redesigned with Scriberr Design System
+    // Template Selector View - Redesigned with Quill Design System
     return (
         <Dialog open={isOpen} onOpenChange={handleOpenChange}>
             <DialogContent
-                className="w-[calc(100%-2rem)] max-w-lg mx-auto bg-[var(--bg-card)] dark:bg-[#0A0A0A] border border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)] shadow-[0_2px_4px_rgba(0,0,0,0.04),0_24px_48px_rgba(0,0,0,0.08)] dark:shadow-[0_2px_4px_rgba(0,0,0,0.3),0_24px_48px_rgba(0,0,0,0.3)] p-0 rounded-2xl overflow-hidden"
+                className="w-[calc(100%-2rem)] max-w-lg mx-auto bg-[var(--bg-card)] border border-[var(--border-subtle)] shadow-[var(--shadow-float)] p-0 rounded-[var(--radius-card)] overflow-hidden"
                 onPointerDownOutside={(e) => {
                     // Prevent closing when clicking inside popover
                     if (tplPopoverOpen) {
@@ -267,7 +267,7 @@ export function SummaryDialog({ audioId, isOpen, onClose, llmReady }: SummaryDia
             >
                 <DialogHeader className="p-5 pb-0">
                     <DialogTitle className="text-xl font-bold text-[var(--text-primary)] flex items-center gap-2">
-                        <div className="h-9 w-9 rounded-full bg-gradient-to-br from-[#FFAB40] to-[#FF6D20] flex items-center justify-center shadow-md">
+                        <div className="h-9 w-9 rounded-[var(--radius-btn)] bg-gradient-to-br from-[var(--brand-start)] to-[var(--brand-solid)] flex items-center justify-center shadow-sm">
                             <FileText className="h-4 w-4 text-white" />
                         </div>
                         Summarize Transcript
@@ -279,8 +279,8 @@ export function SummaryDialog({ audioId, isOpen, onClose, llmReady }: SummaryDia
 
                 <div className="p-5 space-y-5">
                     {llmReady === false && (
-                        <div className="p-4 bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 rounded-xl text-sm flex items-center gap-2">
-                            <span className="h-2 w-2 bg-amber-500 rounded-full animate-pulse" />
+                        <div className="p-4 bg-[var(--brand-light)] text-[var(--brand-solid)] dark:text-[var(--brand-300)] border border-[var(--brand-solid)]/20 rounded-xl text-sm flex items-center gap-2">
+                            <span className="h-2 w-2 bg-[var(--brand-solid)] rounded-full animate-pulse" />
                             LLM is not configured or active. Please check settings.
                         </div>
                     )}
@@ -290,7 +290,7 @@ export function SummaryDialog({ audioId, isOpen, onClose, llmReady }: SummaryDia
                         <Popover open={tplPopoverOpen} onOpenChange={setTplPopoverOpen} modal={true}>
                             <PopoverTrigger asChild>
                                 <button
-                                    className="w-full h-11 inline-flex justify-between items-center rounded-xl border border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)] bg-[var(--bg-main)] dark:bg-[#141414] px-4 text-sm text-[var(--text-primary)] hover:border-[var(--brand-solid)]/50 focus:ring-2 focus:ring-[var(--brand-solid)]/20 transition-all outline-none disabled:opacity-50 shadow-[0_2px_4px_rgba(0,0,0,0.04)]"
+                                    className="w-full h-11 inline-flex justify-between items-center rounded-[var(--radius-btn)] border border-[var(--border-subtle)] bg-[var(--bg-muted-pane)] px-4 text-sm text-[var(--text-primary)] hover:border-[var(--brand-solid)]/50 focus:ring-2 focus:ring-[var(--brand-solid)]/20 transition-all outline-none disabled:opacity-50 shadow-sm"
                                     aria-label="Choose template"
                                     disabled={!llmReady}
                                     type="button"
@@ -303,7 +303,7 @@ export function SummaryDialog({ audioId, isOpen, onClose, llmReady }: SummaryDia
                                 </button>
                             </PopoverTrigger>
                             <PopoverContent
-                                className="w-[var(--radix-popover-trigger-width)] p-1 bg-[var(--bg-card)] dark:bg-[#1F1F1F] border border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)] shadow-xl rounded-xl"
+                                className="w-[var(--radix-popover-trigger-width)] p-1 bg-[var(--bg-card)] border border-[var(--border-subtle)] shadow-[var(--shadow-float)] rounded-[var(--radius-card)]"
                                 onOpenAutoFocus={(e) => e.preventDefault()}
                             >
                                 <Command className="bg-transparent">
@@ -343,14 +343,14 @@ export function SummaryDialog({ audioId, isOpen, onClose, llmReady }: SummaryDia
                     <Button
                         variant="ghost"
                         onClick={() => onClose(false)}
-                        className="h-11 px-6 rounded-full text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-main)] w-full sm:w-auto"
+                        className="h-11 px-6 rounded-[var(--radius-btn)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted-pane)] w-full sm:w-auto"
                     >
                         Cancel
                     </Button>
                     <Button
                         disabled={!selectedTemplateId || !selectedTemplate?.model || !llmReady}
                         onClick={handleStartSummary}
-                        className="h-11 px-6 bg-gradient-to-br from-[#FFAB40] to-[#FF3D00] text-white hover:scale-[1.02] active:scale-[0.98] transition-transform shadow-md disabled:opacity-50 disabled:cursor-not-allowed rounded-full w-full sm:w-auto"
+                        className="h-11 px-6 bg-gradient-to-br from-[var(--brand-start)] to-[var(--brand-end)] text-white hover:brightness-110 active:translate-y-px transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed rounded-[var(--radius-btn)] w-full sm:w-auto"
                     >
                         <Sparkles className="h-4 w-4 mr-2" />
                         Generate Summary

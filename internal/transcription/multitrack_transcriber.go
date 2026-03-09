@@ -12,10 +12,10 @@ import (
 	"sync"
 	"time"
 
-	"scriberr/internal/database"
-	"scriberr/internal/models"
-	"scriberr/internal/transcription/interfaces"
-	"scriberr/pkg/logger"
+	"quill/internal/database"
+	"quill/internal/models"
+	"quill/internal/transcription/interfaces"
+	"quill/pkg/logger"
 
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"

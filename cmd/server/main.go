@@ -12,21 +12,21 @@ import (
 	"syscall"
 	"time"
 
-	"scriberr/internal/api"
-	"scriberr/internal/auth"
-	"scriberr/internal/config"
-	"scriberr/internal/database"
-	"scriberr/internal/folderwatch"
-	"scriberr/internal/models"
-	"scriberr/internal/processing"
-	"scriberr/internal/queue"
-	"scriberr/internal/repository"
-	"scriberr/internal/service"
-	"scriberr/internal/sse"
-	"scriberr/internal/transcription"
-	"scriberr/internal/transcription/adapters"
-	"scriberr/internal/transcription/registry"
-	"scriberr/pkg/logger"
+	"quill/internal/api"
+	"quill/internal/auth"
+	"quill/internal/config"
+	"quill/internal/database"
+	"quill/internal/folderwatch"
+	"quill/internal/models"
+	"quill/internal/processing"
+	"quill/internal/queue"
+	"quill/internal/repository"
+	"quill/internal/service"
+	"quill/internal/sse"
+	"quill/internal/transcription"
+	"quill/internal/transcription/adapters"
+	"quill/internal/transcription/registry"
+	"quill/pkg/logger"
 )
 
 // Version information (set by GoReleaser)
@@ -36,7 +36,7 @@ var (
 	date    = "unknown"
 )
 
-// @title Scriberr API
+// @title Quill API
 // @version 1.0
 // @description Audio transcription service using WhisperX
 // @termsOfService http://swagger.io/terms/
@@ -66,7 +66,7 @@ func main() {
 	flag.Parse()
 
 	if *showVersion {
-		fmt.Printf("Scriberr %s\n", version)
+		fmt.Printf("Quill %s\n", version)
 		fmt.Printf("Commit: %s\n", commit)
 		fmt.Printf("Built: %s\n", date)
 		os.Exit(0)
@@ -74,7 +74,7 @@ func main() {
 
 	// Initialize structured logging first
 	logger.Init(os.Getenv("LOG_LEVEL"))
-	logger.Info("Starting Scriberr", "version", version)
+	logger.Info("Starting Quill", "version", version)
 
 	// Load configuration
 	logger.Startup("config", "Loading configuration")
@@ -132,8 +132,8 @@ func main() {
 	unifiedProcessor.GetUnifiedService().SetBroadcaster(broadcaster)
 
 	// Bootstrap embedded Python environment (for all adapters) unless deferred.
-	// Desktop builds can set SCRIBERR_DEFER_MODEL_INIT=true to avoid long first-run startup delays.
-	deferModelInit := strings.EqualFold(os.Getenv("SCRIBERR_DEFER_MODEL_INIT"), "true")
+	// Desktop builds can set QUILL_DEFER_MODEL_INIT=true to avoid long first-run startup delays.
+	deferModelInit := strings.EqualFold(os.Getenv("QUILL_DEFER_MODEL_INIT"), "true")
 	if deferModelInit {
 		logger.Startup("python", "Deferring Python environment setup until first transcription request")
 	} else {
@@ -220,7 +220,7 @@ func main() {
 
 	// Give the server a moment to start
 	time.Sleep(100 * time.Millisecond)
-	logger.Info("Scriberr is ready",
+	logger.Info("Quill is ready",
 		"url", fmt.Sprintf("http://%s:%s", cfg.Host, cfg.Port))
 	logger.Debug("API documentation available at /swagger/index.html")
 

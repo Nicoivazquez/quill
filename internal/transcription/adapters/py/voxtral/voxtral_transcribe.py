@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Voxtral-mini transcription script for Scriberr
+Voxtral-mini transcription script for Quill
 Transcribes audio using Mistral's Voxtral-mini model
 """
 
@@ -82,7 +82,7 @@ def transcribe_audio(
 
     print(f"Transcription completed ({len(transcription_text)} chars)", file=sys.stderr)
 
-    # Prepare output in Scriberr format
+    # Prepare output in Quill format
     # Note: Voxtral doesn't provide word-level timestamps, so we create a single segment
     result = {
         "text": transcription_text,

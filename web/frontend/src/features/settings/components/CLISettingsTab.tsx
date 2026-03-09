@@ -38,7 +38,7 @@ export function CLISettingsTab() {
                         Installation
                     </h2>
                     <p className="text-[var(--text-secondary)] mb-6">
-                        Run this command in your terminal to install the Scriberr CLI. This script will automatically detect your OS and architecture.
+                        Run this command in your terminal to install the Quill CLI. This script will automatically detect your OS and architecture.
                     </p>
 
                     <div className="relative">
@@ -78,7 +78,7 @@ export function CLISettingsTab() {
                         Link the CLI to your account. This will open your browser for approval.
                     </p>
                     <div className="bg-[var(--bg-card)] rounded p-3 font-mono text-sm text-[var(--text-primary)] border border-[var(--border-subtle)]">
-                        scriberr login
+                        quill login
                     </div>
                 </div>
 
@@ -90,7 +90,7 @@ export function CLISettingsTab() {
                         Start watching a directory for new audio files.
                     </p>
                     <div className="bg-[var(--bg-card)] rounded p-3 font-mono text-sm text-[var(--text-primary)] border border-[var(--border-subtle)]">
-                        scriberr watch ~/Recordings
+                        quill watch ~/Recordings
                     </div>
                 </div>
 
@@ -102,8 +102,8 @@ export function CLISettingsTab() {
                         Install as a background service to keep watching after restart.
                     </p>
                     <div className="bg-[var(--bg-card)] rounded p-3 font-mono text-sm text-[var(--text-primary)] border border-[var(--border-subtle)]">
-                        sudo scriberr install ~/Recordings<br />
-                        sudo scriberr start
+                        sudo quill install ~/Recordings<br />
+                        sudo quill start
                     </div>
                 </div>
             </div>

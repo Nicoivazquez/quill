@@ -29,17 +29,17 @@ func (h *Handler) DownloadCLIBinary(c *gin.Context) {
 	switch osName {
 	case "linux":
 		if arch == ArchAMD64 {
-			filename = "scriberr-linux-amd64"
+			filename = "quill-linux-amd64"
 		}
 	case "darwin":
 		if arch == ArchAMD64 {
-			filename = "scriberr-darwin-amd64"
+			filename = "quill-darwin-amd64"
 		} else if arch == "arm64" {
-			filename = "scriberr-darwin-arm64"
+			filename = "quill-darwin-arm64"
 		}
 	case "windows":
 		if arch == ArchAMD64 {
-			filename = "scriberr-windows-amd64.exe"
+			filename = "quill-windows-amd64.exe"
 		}
 	}
 
@@ -72,7 +72,7 @@ set -e
 SERVER_URL="{{.ServerURL}}"
 TOKEN="{{.Token}}"
 INSTALL_DIR="/usr/local/bin"
-BINARY_NAME="scriberr"
+BINARY_NAME="quill"
 
 # Detect OS and Arch
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"

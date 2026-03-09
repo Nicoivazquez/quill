@@ -324,7 +324,7 @@ function HuggingFaceTokenSetupGuide() {
                     <div className="space-y-3 text-xs text-[var(--text-secondary)]">
                         <p>
                             <span className="font-medium text-[var(--text-primary)]">Speaker Diarization Setup:</span>{" "}
-                            Scriberr uses pyannote.audio for speaker diarization. You need a Hugging Face access token to use this mode.
+                            Quill uses pyannote.audio for speaker diarization. You need a Hugging Face access token to use this mode.
                         </p>
 
                         <div className="space-y-1">
@@ -617,7 +617,7 @@ export const TranscriptionConfigDialog = memo(function TranscriptionConfigDialog
                     <Button
                         onClick={handleSubmit}
                         disabled={loading || (isProfileMode && !profileName.trim())}
-                        className="rounded-xl text-white cursor-pointer bg-gradient-to-r from-[#FFAB40] to-[#FF3D00] hover:opacity-90 active:scale-[0.98] transition-all shadow-lg shadow-orange-500/20"
+                        className="rounded-xl text-white cursor-pointer bg-gradient-to-r from-[var(--brand-start)] to-[var(--brand-end)] hover:opacity-90 active:scale-[0.98] transition-all shadow-lg shadow-black/20"
                     >
                         {loading ? (
                             <>

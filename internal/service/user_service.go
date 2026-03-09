@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"scriberr/internal/auth"
-	"scriberr/internal/models"
-	"scriberr/internal/repository"
+	"quill/internal/auth"
+	"quill/internal/models"
+	"quill/internal/repository"
 )
 
 // UserService handles user business logic

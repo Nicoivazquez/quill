@@ -76,7 +76,7 @@ func (p *program) run() {
 	log.Printf("Loaded config: ServerURL=%s, WatchFolder=%s, TokenSet=%v", config.ServerURL, config.WatchFolder, config.Token != "")
 
 	if config.WatchFolder == "" {
-		log.Println("No watch folder configured. Please run 'scriberr install [folder]' first.")
+		log.Println("No watch folder configured. Please run 'quill install [folder]' first.")
 		return
 	}
 
@@ -104,9 +104,9 @@ func getServiceConfig(configPath string) *service.Config {
 	}
 
 	return &service.Config{
-		Name:        "scriberr-watcher",
-		DisplayName: "Scriberr Watcher Service",
-		Description: "Watches a folder and uploads audio files to Scriberr.",
+		Name:        "quill-watcher",
+		DisplayName: "Quill Watcher Service",
+		Description: "Watches a folder and uploads audio files to Quill.",
 		Executable:  ex,
 		Arguments:   args,
 	}
@@ -139,7 +139,7 @@ var serviceRunCmd = &cobra.Command{
 		if err != nil {
 			log.Printf("Failed to get system logger: %v", err)
 		} else {
-			_ = logger.Info("Scriberr service starting...")
+			_ = logger.Info("Quill service starting...")
 		}
 
 		if err = s.Run(); err != nil {
@@ -174,7 +174,7 @@ func runInstall(cmd *cobra.Command, args []string) {
 			sudoUser := os.Getenv("SUDO_USER")
 			if sudoUser != "" {
 				if u, err := user.Lookup(sudoUser); err == nil {
-					userConfigPath := filepath.Join(u.HomeDir, ".scriberr.yaml")
+					userConfigPath := filepath.Join(u.HomeDir, ".quill.yaml")
 					if _, err := os.Stat(userConfigPath); err == nil {
 						// Read user config using a separate viper instance
 						v := viper.New()
@@ -204,7 +204,7 @@ func runInstall(cmd *cobra.Command, args []string) {
 		// Check if already configured
 		config := GetConfig()
 		if config.WatchFolder == "" {
-			log.Fatalf("No watch folder specified. Usage: scriberr install [folder]")
+			log.Fatalf("No watch folder specified. Usage: quill install [folder]")
 		}
 		// We need to know where the config is to pass it to the service.
 		// Since we didn't save it, we assume it's in the default location or cfgFile.
@@ -213,7 +213,7 @@ func runInstall(cmd *cobra.Command, args []string) {
 		} else {
 			home, err := os.UserHomeDir()
 			if err == nil {
-				configPath = filepath.Join(home, ".scriberr.yaml")
+				configPath = filepath.Join(home, ".quill.yaml")
 			}
 		}
 	}
@@ -263,8 +263,8 @@ func runUninstall(cmd *cobra.Command, args []string) {
 }
 
 func getLogFilePath() string {
-	// Use /tmp/scriberr-service.log for simplicity and broad access
-	return "/tmp/scriberr-service.log"
+	// Use /tmp/quill-service.log for simplicity and broad access
+	return "/tmp/quill-service.log"
 }
 
 func setupServiceLogging() error {

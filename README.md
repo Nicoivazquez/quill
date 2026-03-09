@@ -5,13 +5,13 @@
 </br>
 </br>
 <p align="center">
-Scriberr is an open-source, and completely offline audio transcription application designed for self-hosters who value privacy and performance.
+Quill is an open-source, and completely offline audio transcription application designed for self-hosters who value privacy and performance.
 </p>
 
 <p align="center">
-  <a href="https://scriberr.app">Website</a> •
-  <a href="https://scriberr.app/docs/">Docs</a> •
-  <a href="https://scriberr.app/api">API Reference</a>
+  <a href="https://quill.app">Website</a> •
+  <a href="https://quill.app/docs/">Docs</a> •
+  <a href="https://quill.app/api">API Reference</a>
 </p>
 
 <p align="center">
@@ -19,41 +19,41 @@ Scriberr is an open-source, and completely offline audio transcription applicati
 </p>
 
 <div align="center">
-  <img src="screenshots/hero.png" alt="Scriberr Desktop App" width="800" />
+  <img src="screenshots/hero.png" alt="Quill Desktop App" width="800" />
 </div>
 
 ## Sponsors
 
 ![recall.ai-logo](https://cdn.prod.website-files.com/620d732b1f1f7b244ac89f0e/66b294e51ee15f18dd2b171e_recall-logo.svg) Meeting Transcription API   
-If you're looking for a transcription API for meetings, consider checking out [Recall.ai](https://www.recall.ai/?utm_source=github&utm_medium=sponsorship&utm_campaign=rishikanthc-scriberr), an API that works with Zoom, Google Meet, Microsoft Teams, and more.
+If you're looking for a transcription API for meetings, consider checking out [Recall.ai](https://www.recall.ai/?utm_source=github&utm_medium=sponsorship&utm_campaign=rishikanthc-quill), an API that works with Zoom, Google Meet, Microsoft Teams, and more.
 Recall.ai diarizes by pulling the speaker data and seperate audio streams from the meeting platforms, which means 100% accurate speaker diarization with actual speaker names.
 
 ## Introduction
 
-At its core, Scriberr allows you to transcribe audio and video locally on your machine, ensuring no data is ever sent to a third-party cloud provider.
+At its core, Quill allows you to transcribe audio and video locally on your machine, ensuring no data is ever sent to a third-party cloud provider.
 Leveraging state-of-the-art machine learning models (such as **NVIDIA Parakeet**, and **Canary**) or the older more popular **Whisper** models, it delivers high-accuracy text with word-level timing.
 
-Scriberr goes beyond simple transcription and provides various advanced capabilities.
-It combines powerful under-the-hood AI with a polished, fluid user interface that makes managing your recordings feel effortless. Whether you are sorting through voice notes or analyzing long meetings, Scriberr provides a beautiful environment to get work done:
+Quill goes beyond simple transcription and provides various advanced capabilities.
+It combines powerful under-the-hood AI with a polished, fluid user interface that makes managing your recordings feel effortless. Whether you are sorting through voice notes or analyzing long meetings, Quill provides a beautiful environment to get work done:
 
-- **Smart Speaker Detection**: Scriberr automatically detects different speakers (Diarization) and labels exactly who said what.
+- **Smart Speaker Detection**: Quill automatically detects different speakers (Diarization) and labels exactly who said what.
 - **Chat with your Audio**: Connect seamlessly with Ollama or OpenAI API compatible providers. You can generate summaries, ask questions, or have a full conversation with your transcripts right inside the app.
-- **Built for your Workflow**: With extensive APIs and Folder Watcher that automatically processes new files in a folder, Scriberr fits right into your existing automations (like n8n).
+- **Built for your Workflow**: With extensive APIs and Folder Watcher that automatically processes new files in a folder, Quill fits right into your existing automations (like n8n).
 - **Capture & Organize**: Use the built-in audio recorder to capture thoughts on the fly, and the integrated note-taking features to annotate your transcripts as you listen.
-- **Native Experience everywhere**: Scriberr supports PWA (Progressive Web App) installation, giving you a native app experience on your desktop or mobile device.
+- **Native Experience everywhere**: Quill supports PWA (Progressive Web App) installation, giving you a native app experience on your desktop or mobile device.
 - **A Polished UI**: I’ve focused on the little UI niceties that make the app feel responsive and satisfying to use.
 
-[View full list of features →](https://scriberr.app/docs/features)
+[View full list of features →](https://quill.app/docs/features)
 
 ### Why I built this
 
-The inspiration for Scriberr was born out of privacy paranoia and not wanting to pay for subscription.
+The inspiration for Quill was born out of privacy paranoia and not wanting to pay for subscription.
 About a year ago, I purchased a [Plaud Note](https://www.plaud.ai/) for recording voice memos. I loved the device itself; the form factor, microphone quality, and workflow were excellent.
 
 However, transcription was done on their cloud servers. As someone who is paranoid about privacy I wasn't comfortable with uploading my recordings to a third party provider.
 Moreover I was hit with subscription costs: $100 a year for 20 hours of transcription per month, or $240 a year for unlimited access. As an avid self-hoster with a background in ML and AI, it felt wrong to pay such a premium for a service I knew I could engineer myself.
 
-I decided to build Scriberr to bridge that gap, creating a powerful, private, and free alternative for everyone.
+I decided to build Quill to bridge that gap, creating a powerful, private, and free alternative for everyone.
 
 ## Screenshots
 
@@ -112,7 +112,7 @@ I decided to build Scriberr to bridge that gap, creating a powerful, private, an
 
 ## Installation
 
-Get Scriberr running on your system in a few minutes.
+Get Quill running on your system in a few minutes.
 
 ### Migrating from v1.1.0
 
@@ -122,7 +122,7 @@ If you are upgrading from v1.1.0, please follow these steps to ensure a smooth t
 
 You will need to update your Docker volume configuration to split your data:
 
-*   **Application Data:** Bind your existing data folder (containing `scriberr.db`, `jwt_secret`, `transcripts/`, and `uploads/`) to `/app/data`.
+*   **Application Data:** Bind your existing data folder (containing `quill.db`, `jwt_secret`, `transcripts/`, and `uploads/`) to `/app/data`.
 *   **Model Environment:** Create a **new, empty folder** and bind it to `/app/whisperx-env`.
 
 #### 2. Clean Up Old Environments
@@ -133,24 +133,24 @@ The Python environment and models need to be reinitialized for v1.2.0. If the ap
 
 ### Install with Homebrew (macOS & Linux)
 
-The easiest way to install Scriberr is using Homebrew. If you don’t have Homebrew installed, [get it here first](https://brew.sh/).
+The easiest way to install Quill is using Homebrew. If you don’t have Homebrew installed, [get it here first](https://brew.sh/).
 
 ```bash
-# Add the Scriberr tap
-brew tap rishikanthc/scriberr
+# Add the Quill tap
+brew tap rishikanthc/quill
 
-# Install Scriberr (automatically installs UV dependency)
-brew install scriberr
+# Install Quill (automatically installs UV dependency)
+brew install quill
 
 # Start the server
-scriberr
+quill
 ```
 
 Open [http://localhost:8080](http://localhost:8080) in your browser.
 
 ### Configuration
 
-Scriberr works out of the box. However, for Homebrew or manual installations, you can customize the application behavior using environment variables or a `.env` file placed in the same directory as the binary (or where you run the command from).
+Quill works out of the box. However, for Homebrew or manual installations, you can customize the application behavior using environment variables or a `.env` file placed in the same directory as the binary (or where you run the command from).
 
 > **Docker Users:** You can ignore this section if you are using `docker-compose.yml`, as these values are already configured with sane defaults.
 
@@ -162,14 +162,16 @@ Scriberr works out of the box. However, for Homebrew or manual installations, yo
 | `HOST` | The interface to bind to. | `0.0.0.0` |
 | `APP_ENV` | Application environment (`development` or `production`). | `development` |
 | `ALLOWED_ORIGINS` | CORS allowed origins (comma separated). | `http://localhost:5173,http://localhost:8080` |
-| `DATABASE_PATH` | Path to the SQLite database file. | `data/scriberr.db` |
+| `DATABASE_PATH` | Path to the SQLite database file. | `data/quill.db` |
 | `UPLOAD_DIR` | Directory for storing uploaded files. | `data/uploads` |
 | `TRANSCRIPTS_DIR` | Directory for storing transcripts. | `data/transcripts` |
 | `WHISPERX_ENV` | Path to the managed Python environment for models. | `data/whisperx-env` |
-| `SCRIBERR_WHISPERX_ZIP_URL` | WhisperX source archive URL/path used to initialize `WHISPERX_ENV`. | `https://github.com/m-bain/WhisperX/archive/refs/tags/v3.8.0.zip` |
-| `SCRIBERR_WHISPERX_ZIP_SHA256` | Optional SHA-256 checksum to verify the WhisperX source archive. | `""` |
+| `QUILL_WHISPERX_ZIP_URL` | WhisperX source archive URL/path used to initialize `WHISPERX_ENV`. | `https://github.com/m-bain/WhisperX/archive/refs/tags/v3.8.0.zip` |
+| `QUILL_WHISPERX_ZIP_SHA256` | Optional SHA-256 checksum to verify the WhisperX source archive. | `""` |
 | `OPENAI_API_KEY` | API Key for OpenAI (optional). | `""` |
 | `JWT_SECRET` | Secret for signing JWTs. Auto-generated if not set. | Auto-generated |
+
+For packaged desktop builds, Quill can override `QUILL_WHISPERX_ZIP_URL` automatically to a bundled local archive under app resources when available.
 
 **Example `.env` file:**
 
@@ -180,8 +182,8 @@ PORT=8080
 APP_ENV=production
 
 # Paths
-DATABASE_PATH=/var/lib/scriberr/data/scriberr.db
-UPLOAD_DIR=/var/lib/scriberr/data/uploads
+DATABASE_PATH=/var/lib/quill/data/quill.db
+UPLOAD_DIR=/var/lib/quill/data/uploads
 
 # Security
 JWT_SECRET=your-super-secret-key-change-this
@@ -194,22 +196,22 @@ For a containerized setup, you can use Docker. We provide two configurations: on
 > [!IMPORTANT]
 > **Permissions:** Ensure you set the `PUID` and `PGID` environment variables to your host user's UID and GID (typically `1000` on Linux) to avoid permission issues with the SQLite database. You can find your UID/GID by running `id` on your host.
 >
-> **HTTP vs HTTPS:** By default, Scriberr enables **Secure Cookies** in production. If you are accessing the app via plain HTTP (not HTTPS), you MUST set `SECURE_COOKIES=false` in your environment variables, otherwise you will encounter "Unable to load audio stream" errors.
+> **HTTP vs HTTPS:** By default, Quill enables **Secure Cookies** in production. If you are accessing the app via plain HTTP (not HTTPS), you MUST set `SECURE_COOKIES=false` in your environment variables, otherwise you will encounter "Unable to load audio stream" errors.
 
 #### Standard Deployment (CPU)
 
-Use this configuration for running Scriberr on any machine without a dedicated NVIDIA GPU.
+Use this configuration for running Quill on any machine without a dedicated NVIDIA GPU.
 
 1.  Create a file named `docker-compose.yml`:
 
 ```yaml
 services:
-  scriberr:
-    image: ghcr.io/rishikanthc/scriberr:v1.2.0
+  quill:
+    image: ghcr.io/rishikanthc/quill:v1.2.0
     ports:
       - "8080:8080"
     volumes:
-      - scriberr_data:/app/data # volume for data
+      - quill_data:/app/data # volume for data
       - env_data:/app/whisperx-env # volume for models and python envs
     environment:
       - PUID=${PUID:-1000}
@@ -221,7 +223,7 @@ services:
     restart: unless-stopped
 
 volumes:
-  scriberr_data: {}
+  quill_data: {}
   env_data: {}
 ```
 
@@ -240,12 +242,12 @@ If you have a compatible NVIDIA GPU, this configuration enables hardware acceler
 
 ```yaml
 services:
-  scriberr:
-    image: ghcr.io/rishikanthc/scriberr-cuda:v1.2.0
+  quill:
+    image: ghcr.io/rishikanthc/quill-cuda:v1.2.0
     ports:
       - "8080:8080"
     volumes:
-      - scriberr_data:/app/data # volume for data
+      - quill_data:/app/data # volume for data
       - env_data:/app/whisperx-env # volume for models and python envs
     restart: unless-stopped
     deploy:
@@ -267,7 +269,7 @@ services:
       # - SECURE_COOKIES=false # Uncomment this ONLY if you are not using SSL
 
 volumes:
-  scriberr_data: {}
+  quill_data: {}
   env_data: {}
 ```
 
@@ -279,15 +281,15 @@ docker compose -f docker-compose.cuda.yml up -d
 
 #### GPU Compatibility
 
-Scriberr provides separate Docker images for different NVIDIA GPU generations due to CUDA/PyTorch compatibility requirements:
+Quill provides separate Docker images for different NVIDIA GPU generations due to CUDA/PyTorch compatibility requirements:
 
 | GPU Generation | Compute Capability | Docker Image | Docker Compose File |
 |:---|:---|:---|:---|
-| GTX 10-series (Pascal) | sm_61 | `scriberr-cuda` | `docker-compose.cuda.yml` |
-| RTX 20-series (Turing) | sm_75 | `scriberr-cuda` | `docker-compose.cuda.yml` |
-| RTX 30-series (Ampere) | sm_86 | `scriberr-cuda` | `docker-compose.cuda.yml` |
-| RTX 40-series (Ada Lovelace) | sm_89 | `scriberr-cuda` | `docker-compose.cuda.yml` |
-| **RTX 50-series (Blackwell)** | sm_120 | `scriberr-cuda-blackwell` | `docker-compose.blackwell.yml` |
+| GTX 10-series (Pascal) | sm_61 | `quill-cuda` | `docker-compose.cuda.yml` |
+| RTX 20-series (Turing) | sm_75 | `quill-cuda` | `docker-compose.cuda.yml` |
+| RTX 30-series (Ampere) | sm_86 | `quill-cuda` | `docker-compose.cuda.yml` |
+| RTX 40-series (Ada Lovelace) | sm_89 | `quill-cuda` | `docker-compose.cuda.yml` |
+| **RTX 50-series (Blackwell)** | sm_120 | `quill-cuda-blackwell` | `docker-compose.blackwell.yml` |
 
 **RTX 50-series users (RTX 5080, 5090, etc.):** You must use the Blackwell-specific image. The standard CUDA image will not work due to PyTorch CUDA compatibility requirements. Use:
 
@@ -303,7 +305,7 @@ docker compose -f docker-compose.build.blackwell.yml up -d
 
 ### App Startup
 
-When you run Scriberr for the first time, it may take several minutes to start. This is normal!
+When you run Quill for the first time, it may take several minutes to start. This is normal!
 
 The application needs to:
 1.  Initialize the Python environments.
@@ -312,7 +314,7 @@ The application needs to:
 
 **Subsequent runs will be much faster** because all models and environments are persisted to the `env_data` volume (or your local mapped folders).
 
-You will know the application is ready when you see the line: `msg="Scriberr is ready" url=http://0.0.0.0:8080`.
+You will know the application is ready when you see the line: `msg="Quill is ready" url=http://0.0.0.0:8080`.
 
 ### Troubleshooting
 
@@ -323,11 +325,11 @@ If you see an "out of memory (14)" error from SQLite (specifically `SQLITE_CANTO
 You can fix this by setting the `PUID` and `PGID` in your `docker-compose.yml` to match your host user's UID and GID, or by manually changing the ownership of the mapped folders on your host:
 
 ```bash
-# If you used a named volume (e.g., 'scriberr_scriberr_data'):
-sudo chown -R 1000:1000 /var/lib/docker/volumes/scriberr_scriberr_data/_data
+# If you used a named volume (e.g., 'quill_quill_data'):
+sudo chown -R 1000:1000 /var/lib/docker/volumes/quill_quill_data/_data
 
-# If you mapped a specific host folder (e.g., ./scriberr_data):
-sudo chown -R 1000:1000 ./scriberr_data
+# If you mapped a specific host folder (e.g., ./quill_data):
+sudo chown -R 1000:1000 ./quill_data
 sudo chown -R 1000:1000 ./env_data
 ```
 
@@ -337,10 +339,10 @@ Replace `1000` with the value you set for `PUID`/`PGID` (default is `1000`).
 
 If the application loads but you cannot play or see the audio waveform (receiving "Unable to load audio stream"), this is often due to the **Secure Cookies** security flag.
 
-By default, when `APP_ENV=production`, Scriberr enables `SECURE_COOKIES=true`. This prevents cookies from being sent over insecure (HTTP) connections.
+By default, when `APP_ENV=production`, Quill enables `SECURE_COOKIES=true`. This prevents cookies from being sent over insecure (HTTP) connections.
 
 **Solutions:**
-- **Recommended:** Deploy Scriberr behind a Reverse Proxy (like Nginx, Caddy, or Traefik) and use SSL/TLS (HTTPS).
+- **Recommended:** Deploy Quill behind a Reverse Proxy (like Nginx, Caddy, or Traefik) and use SSL/TLS (HTTPS).
 - **Alternative:** If you must access over plain HTTP, set the following environment variable in your `docker-compose.yml`:
   ```yaml
   environment:
@@ -349,10 +351,10 @@ By default, when `APP_ENV=production`, Scriberr enables `SECURE_COOKIES=true`. T
 
 ## Post installation
 
-Once you have Scriberr up and running:
+Once you have Quill up and running:
 
-- **Configure Diarization**: To enable speaker identification, visit the [Configuration page](https://scriberr.app/docs/configuration).
-- **Usage Guide**: For a detailed usage guide, visit [https://scriberr.app/docs/usage](https://scriberr.app/docs/usage).
+- **Configure Diarization**: To enable speaker identification, visit the [Configuration page](https://quill.app/docs/configuration).
+- **Usage Guide**: For a detailed usage guide, visit [https://quill.app/docs/usage](https://quill.app/docs/usage).
 
 ## LLM Disclosure
 

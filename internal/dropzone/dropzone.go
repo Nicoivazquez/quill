@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"scriberr/internal/config"
-	"scriberr/internal/models"
-	"scriberr/internal/repository"
+	"quill/internal/config"
+	"quill/internal/models"
+	"quill/internal/repository"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/google/uuid"

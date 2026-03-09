@@ -1,5 +1,5 @@
 
-export function ScriberrTextLogo({ className = "" }: { className?: string }) {
+export function QuillTextLogo({ className = "" }: { className?: string }) {
     // Hardcoded for light mode as per requirements
     const fillColor = '#000000';
 
@@ -12,7 +12,7 @@ export function ScriberrTextLogo({ className = "" }: { className?: string }) {
             preserveAspectRatio="xMidYMid"
             xmlns="http://www.w3.org/2000/svg"
             className={`${className} transition-all duration-300`}
-            aria-label="Scriberr"
+            aria-label="Quill"
         >
             <g
                 transform="matrix(0.065,0,0,-0.065,-2,650)"

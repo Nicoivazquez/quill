@@ -26,7 +26,7 @@ cp -r web/frontend/dist internal/web/
 
 echo "Building backend binary for Electron packaging..."
 mkdir -p dist/desktop-backend
-go build -o dist/desktop-backend/scriberr cmd/server/main.go
-chmod +x dist/desktop-backend/scriberr
+go build -o dist/desktop-backend/quill cmd/server/main.go
+chmod +x dist/desktop-backend/quill
 
-echo "Desktop backend prepared at dist/desktop-backend/scriberr"
+echo "Desktop backend prepared at dist/desktop-backend/quill"

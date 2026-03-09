@@ -215,7 +215,7 @@ export function AccountSettings() {
 
 						<Button
 							type="submit"
-							className="!bg-[var(--brand-gradient)] hover:!opacity-90 !text-black dark:!text-white border-none shadow-lg shadow-orange-500/20"
+							className="!bg-[var(--brand-gradient)] hover:!opacity-90 !text-black dark:!text-white border-none shadow-lg shadow-black/20"
 							disabled={loading || !newUsername.trim() || !usernamePassword.trim()}
 						>
 							{loading ? "Changing Username..." : "Change Username"}
@@ -345,7 +345,7 @@ export function AccountSettings() {
 
 						<Button
 							type="submit"
-							className="!bg-[var(--brand-gradient)] hover:!opacity-90 !text-black dark:!text-white shadow-lg shadow-orange-500/20 border-none"
+							className="!bg-[var(--brand-gradient)] hover:!opacity-90 !text-black dark:!text-white shadow-lg shadow-black/20 border-none"
 							disabled={loading || !currentPassword.trim() || !isPasswordValid || !passwordsMatch}
 						>
 							{loading ? "Changing Password..." : "Change Password"}

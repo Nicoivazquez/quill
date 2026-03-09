@@ -10,19 +10,18 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground shadow-xs hover:bg-primary/90 active:scale-[0.98]",
+          "bg-primary text-primary-foreground shadow-xs hover:bg-primary/90 active:translate-y-px",
         destructive:
-          "bg-destructive text-white shadow-xs hover:bg-destructive/90 active:scale-[0.98] focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60",
+          "bg-destructive text-white shadow-xs hover:bg-destructive/90 active:translate-y-px focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60",
         outline:
-          "border border-[var(--border-subtle)] bg-[var(--bg-main)] shadow-xs hover:bg-[var(--bg-card)] hover:border-[var(--brand-solid)] active:scale-[0.98] dark:bg-[var(--bg-card)] dark:hover:bg-carbon-700",
+          "border border-[var(--border-subtle)] bg-[var(--bg-muted-pane)] text-[var(--text-primary)] shadow-xs hover:bg-[var(--bg-card)] hover:border-[var(--brand-solid)] active:translate-y-px dark:bg-[var(--bg-muted-pane)] dark:hover:bg-[var(--bg-elevated)]",
         secondary:
-          "bg-secondary text-secondary-foreground shadow-xs hover:bg-secondary/80 active:scale-[0.98]",
+          "bg-secondary text-secondary-foreground shadow-xs hover:bg-secondary/80 active:translate-y-px",
         ghost:
-          "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50 active:scale-[0.98]",
+          "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50 active:translate-y-px",
         link: "text-primary underline-offset-4 hover:underline",
-        // Brand variant with gradient and micro-animations
         brand:
-          "bg-gradient-to-r from-[var(--brand-start,#FFAB40)] to-[var(--brand-end,#FF3D00)] text-white shadow-md hover:shadow-lg hover:scale-[1.02] active:scale-[0.98]",
+          "bg-gradient-to-r from-[var(--brand-start)] to-[var(--brand-end)] text-white shadow-sm hover:brightness-110 active:translate-y-px",
       },
       size: {
         default: "h-9 px-4 py-2 has-[>svg]:px-3",

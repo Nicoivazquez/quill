@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"scriberr/internal/transcription/interfaces"
-	"scriberr/pkg/logger"
+	"quill/internal/transcription/interfaces"
+	"quill/pkg/logger"
 )
 
 // OpenAIAdapter implements the TranscriptionAdapter interface for OpenAI API

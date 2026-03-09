@@ -1,4 +1,4 @@
-module scriberr
+module quill
 
 go 1.24.0
 

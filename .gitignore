@@ -25,9 +25,9 @@ vite.config.ts.timestamp-*
 .env
 .env
 samples
-scriberr
+quill
 data
-data/scriberr.db
+data/quill.db
 data/transcripts
 data/uploads
 data/whisperx-env/test
@@ -36,7 +36,7 @@ web/landing_bak
 CLAUDE.md
 AGENTS.md
 # .env.example
-scriberr-data
+quill-data
 whisperx-env
 
 # internal/web
@@ -48,7 +48,7 @@ results.json
 test_word_conversion.go
 debug_whisperx_parsing.go
 debug_parsing.go
-scriberr-optimized
+quill-optimized
 tests/database_test.db-shm
 
 # Project documentation (local only)

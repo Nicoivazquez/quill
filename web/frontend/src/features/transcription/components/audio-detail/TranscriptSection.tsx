@@ -161,7 +161,7 @@ export function TranscriptSection({
     if (!transcript) return null;
 
     return (
-        <div className="md:glass-card md:rounded-[var(--radius-card)] md:border-[var(--border-subtle)] md:shadow-[var(--shadow-card)] md:hover:shadow-[var(--shadow-float)] p-4 md:p-6 min-h-[500px] transition-shadow">
+        <div className="obsidian-pane p-4 md:p-5 min-h-[500px]">
             {/* 
                   TOOLBAR REMOVED -> Moved to Context Menu 
                 */}

@@ -2,8 +2,8 @@ package binaries
 
 import "os"
 
-func resolve(envKey, fallback string) string {
-	if value := os.Getenv(envKey); value != "" {
+func resolve(primaryEnvKey, fallback string) string {
+	if value := os.Getenv(primaryEnvKey); value != "" {
 		return value
 	}
 	return fallback
@@ -11,20 +11,20 @@ func resolve(envKey, fallback string) string {
 
 // UV returns the configured uv executable path.
 func UV() string {
-	return resolve("SCRIBERR_UV_BIN", "uv")
+	return resolve("QUILL_UV_BIN", "uv")
 }
 
 // FFmpeg returns the configured ffmpeg executable path.
 func FFmpeg() string {
-	return resolve("SCRIBERR_FFMPEG_BIN", "ffmpeg")
+	return resolve("QUILL_FFMPEG_BIN", "ffmpeg")
 }
 
 // FFprobe returns the configured ffprobe executable path.
 func FFprobe() string {
-	return resolve("SCRIBERR_FFPROBE_BIN", "ffprobe")
+	return resolve("QUILL_FFPROBE_BIN", "ffprobe")
 }
 
 // YtDLP returns the configured yt-dlp executable path.
 func YtDLP() string {
-	return resolve("SCRIBERR_YTDLP_BIN", "yt-dlp")
+	return resolve("QUILL_YTDLP_BIN", "yt-dlp")
 }

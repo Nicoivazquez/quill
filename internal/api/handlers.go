@@ -19,19 +19,19 @@ import (
 	"time"
 	"unicode"
 
-	"scriberr/internal/auth"
-	"scriberr/internal/config"
-	"scriberr/internal/folderwatch"
-	"scriberr/internal/llm"
-	"scriberr/internal/models"
-	"scriberr/internal/processing"
-	"scriberr/internal/queue"
-	"scriberr/internal/repository"
-	"scriberr/internal/service"
-	"scriberr/internal/sse"
-	"scriberr/internal/transcription"
-	"scriberr/pkg/binaries"
-	"scriberr/pkg/logger"
+	"quill/internal/auth"
+	"quill/internal/config"
+	"quill/internal/folderwatch"
+	"quill/internal/llm"
+	"quill/internal/models"
+	"quill/internal/processing"
+	"quill/internal/queue"
+	"quill/internal/repository"
+	"quill/internal/service"
+	"quill/internal/sse"
+	"quill/internal/transcription"
+	"quill/pkg/binaries"
+	"quill/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -145,6 +145,24 @@ type RegisterRequest struct {
 type RegistrationStatusResponse struct {
 	// Match tests expecting snake_case key
 	RegistrationEnabled bool `json:"registration_enabled"`
+}
+
+const (
+	accessTokenCookieName  = "quill_access_token"
+	refreshTokenCookieName = "quill_refresh_token"
+)
+
+func clearCookie(c *gin.Context, name string, secure bool) {
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     name,
+		Value:    "",
+		Path:     "/",
+		Expires:  time.Unix(0, 0),
+		MaxAge:   -1,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   secure,
+	})
 }
 
 // ChangePasswordRequest represents the change password request
@@ -957,7 +975,14 @@ func (h *Handler) ListTranscriptionJobs(c *gin.Context) {
 		}
 	}
 
-	jobs, total, err := h.jobRepo.ListWithParams(c.Request.Context(), offset, limit, sortBy, sortOrder, searchQuery, updatedAfter)
+	var activeVaultID *uint
+	if !strings.EqualFold(strings.TrimSpace(c.Query("all_vaults")), "true") {
+		if activeVault, vaultErr := getActiveVault(); vaultErr == nil {
+			activeVaultID = &activeVault.ID
+		}
+	}
+
+	jobs, total, err := h.jobRepo.ListWithParams(c.Request.Context(), offset, limit, sortBy, sortOrder, searchQuery, updatedAfter, activeVaultID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list jobs"})
 		return
@@ -2096,7 +2121,7 @@ func (h *Handler) Login(c *gin.Context) {
 	// Set access token cookie for streaming/media access
 	// Use Lax mode because Strict mode blocks <audio>/<video> subresource requests on mobile browsers.
 	http.SetCookie(c.Writer, &http.Cookie{
-		Name:     "scriberr_access_token",
+		Name:     accessTokenCookieName,
 		Value:    token,
 		Path:     "/",
 		Expires:  time.Now().Add(24 * time.Hour), // Match your token duration constant
@@ -2122,31 +2147,12 @@ func (h *Handler) Login(c *gin.Context) {
 // @Router /api/v1/auth/logout [post]
 func (h *Handler) Logout(c *gin.Context) {
 	// Best-effort refresh token revocation and cookie clear
-	if cookie, err := c.Cookie("scriberr_refresh_token"); err == nil {
+	if cookie, err := c.Cookie(refreshTokenCookieName); err == nil {
 		h.revokeRefreshToken(c, cookie)
 
 	}
-	http.SetCookie(c.Writer, &http.Cookie{
-		Name:     "scriberr_refresh_token",
-		Value:    "",
-		Path:     "/",
-		Expires:  time.Unix(0, 0),
-		MaxAge:   -1,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Secure:   h.config.SecureCookies,
-	})
-	// Also clear access token
-	http.SetCookie(c.Writer, &http.Cookie{
-		Name:     "scriberr_access_token",
-		Value:    "",
-		Path:     "/",
-		Expires:  time.Unix(0, 0),
-		MaxAge:   -1,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Secure:   h.config.SecureCookies,
-	})
+	clearCookie(c, refreshTokenCookieName, h.config.SecureCookies)
+	clearCookie(c, accessTokenCookieName, h.config.SecureCookies)
 	c.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
 }
 
@@ -2241,7 +2247,7 @@ func (h *Handler) Register(c *gin.Context) {
 
 	// Set access token cookie for streaming/media access
 	http.SetCookie(c.Writer, &http.Cookie{
-		Name:     "scriberr_access_token",
+		Name:     accessTokenCookieName,
 		Value:    token,
 		Path:     "/",
 		Expires:  time.Now().Add(24 * time.Hour),
@@ -2270,7 +2276,7 @@ type RefreshTokenResponse struct {
 // @Failure 401 {object} map[string]string
 // @Router /api/v1/auth/refresh [post]
 func (h *Handler) Refresh(c *gin.Context) {
-	cookie, err := c.Cookie("scriberr_refresh_token")
+	cookie, err := c.Cookie(refreshTokenCookieName)
 	if err != nil || cookie == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Missing refresh token"})
 		return
@@ -2294,7 +2300,7 @@ func (h *Handler) Refresh(c *gin.Context) {
 
 	// Set access token cookie for streaming/media access
 	http.SetCookie(c.Writer, &http.Cookie{
-		Name:     "scriberr_access_token",
+		Name:     accessTokenCookieName,
 		Value:    token,
 		Path:     "/",
 		Expires:  time.Now().Add(24 * time.Hour),
@@ -2320,7 +2326,7 @@ func (h *Handler) issueRefreshToken(c *gin.Context, userID uint) error {
 		return err
 	}
 	http.SetCookie(c.Writer, &http.Cookie{
-		Name:     "scriberr_refresh_token",
+		Name:     refreshTokenCookieName,
 		Value:    tokenValue,
 		Path:     "/",
 		Expires:  rt.ExpiresAt,

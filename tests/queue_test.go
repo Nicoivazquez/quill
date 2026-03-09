@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"scriberr/internal/models"
-	"scriberr/internal/queue"
-	"scriberr/internal/repository"
+	"quill/internal/models"
+	"quill/internal/queue"
+	"quill/internal/repository"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"

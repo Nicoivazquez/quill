@@ -9,6 +9,8 @@ const HEALTH_TIMEOUT_MS = 120_000;
 const HEALTH_POLL_INTERVAL_MS = 500;
 const STARTUP_LOG_UPDATE_MS = 1_000;
 const DEFAULT_WHISPERX_ZIP_URL = "https://github.com/m-bain/WhisperX/archive/refs/tags/v3.8.0.zip";
+const BUNDLED_WHISPERX_ZIP_RELATIVE_PATH = path.join("whisperx", "whisperx.zip");
+const BUNDLED_WHISPERX_ZIP_SHA_RELATIVE_PATH = path.join("whisperx", "whisperx.zip.sha256");
 
 let mainWindow: BrowserWindow | null = null;
 let backendProcess: ChildProcessByStdio<null, Readable, Readable> | null = null;
@@ -56,7 +58,8 @@ function getDataPaths(): {
   const transcripts = path.join(root, "transcripts");
   const temp = path.join(root, "temp");
   const whisperxEnv = path.join(root, "whisperx-env");
-  const databasePath = path.join(root, "scriberr.db");
+  const primaryDatabasePath = path.join(root, "quill.db");
+  const databasePath = primaryDatabasePath;
   const jwtSecretPath = path.join(root, "jwt_secret");
 
   const logsDir = path.join(userDataPath, "logs");
@@ -111,15 +114,16 @@ async function getFreePort(): Promise<number> {
 }
 
 function resolveBackendBinaryPath(): string {
-  if (process.env.SCRIBERR_BACKEND_BIN) {
-    return process.env.SCRIBERR_BACKEND_BIN;
+  if (process.env.QUILL_BACKEND_BIN) {
+    return process.env.QUILL_BACKEND_BIN;
   }
 
   if (app.isPackaged) {
-    return path.join(process.resourcesPath, "backend", "scriberr");
+    const primary = path.join(process.resourcesPath, "backend", "quill");
+    return primary;
   }
 
-  return path.resolve(__dirname, "../../../scriberr");
+  return path.resolve(__dirname, "../../../quill");
 }
 
 function resolveBundledToolPath(toolName: string): string {
@@ -130,7 +134,7 @@ function resolveBundledToolPath(toolName: string): string {
 }
 
 function getMissingBundledTools(): string[] {
-  const toolNames = ["uv", "ffmpeg", "ffprobe", "yt-dlp"];
+  const toolNames = ["uv", "ffmpeg", "ffprobe", "yt-dlp", BUNDLED_WHISPERX_ZIP_RELATIVE_PATH];
   const missing: string[] = [];
 
   for (const name of toolNames) {
@@ -140,6 +144,24 @@ function getMissingBundledTools(): string[] {
   }
 
   return missing;
+}
+
+function readBundledWhisperXChecksum(): string | undefined {
+  const checksumPath = resolveBundledToolPath(BUNDLED_WHISPERX_ZIP_SHA_RELATIVE_PATH);
+  if (!fs.existsSync(checksumPath)) {
+    return undefined;
+  }
+
+  try {
+    const raw = fs.readFileSync(checksumPath, "utf8").trim();
+    if (!raw) {
+      return undefined;
+    }
+    const firstToken = raw.split(/\s+/)[0];
+    return firstToken || undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function buildPathValue(preferredEntries: string[], basePath?: string): string {
@@ -176,8 +198,14 @@ function buildBackendEnv(port: number): NodeJS.ProcessEnv {
   const ffprobePath = resolveBundledToolPath("ffprobe");
   const ytDlpPath = resolveBundledToolPath("yt-dlp");
   const bundledLibPath = resolveBundledToolPath("lib");
+  const bundledWhisperxZipPath = resolveBundledToolPath(BUNDLED_WHISPERX_ZIP_RELATIVE_PATH);
+  const bundledWhisperxZipExists = fs.existsSync(bundledWhisperxZipPath);
   const bundledToolPaths = [uvPath, ffmpegPath, ffprobePath, ytDlpPath].filter((toolPath) => fs.existsSync(toolPath));
   const bundledToolDirs = Array.from(new Set(bundledToolPaths.map((toolPath) => path.dirname(toolPath))));
+  const whisperxZipURL =
+    process.env.QUILL_WHISPERX_ZIP_URL ||
+    (bundledWhisperxZipExists ? bundledWhisperxZipPath : DEFAULT_WHISPERX_ZIP_URL);
+  const whisperxZipSHA256 = process.env.QUILL_WHISPERX_ZIP_SHA256 || readBundledWhisperXChecksum();
 
   const env: NodeJS.ProcessEnv = {
     ...process.env,
@@ -192,9 +220,9 @@ function buildBackendEnv(port: number): NodeJS.ProcessEnv {
     TRANSCRIPTS_DIR: paths.transcripts,
     TEMP_DIR: paths.temp,
     WHISPERX_ENV: paths.whisperxEnv,
-    SCRIBERR_DEFER_MODEL_INIT: "true",
-    SCRIBERR_WHISPERX_ZIP_URL: process.env.SCRIBERR_WHISPERX_ZIP_URL || DEFAULT_WHISPERX_ZIP_URL,
-    SCRIBERR_WHISPERX_ZIP_SHA256: process.env.SCRIBERR_WHISPERX_ZIP_SHA256,
+    QUILL_DEFER_MODEL_INIT: "true",
+    QUILL_WHISPERX_ZIP_URL: whisperxZipURL,
+    QUILL_WHISPERX_ZIP_SHA256: whisperxZipSHA256,
     UV_PYTHON: "3.11",
     PATH: buildPathValue([...bundledToolDirs, "/opt/homebrew/bin", "/usr/local/bin"], process.env.PATH),
   };
@@ -205,16 +233,16 @@ function buildBackendEnv(port: number): NodeJS.ProcessEnv {
   }
 
   if (fs.existsSync(uvPath)) {
-    env.SCRIBERR_UV_BIN = uvPath;
+    env.QUILL_UV_BIN = uvPath;
   }
   if (fs.existsSync(ffmpegPath)) {
-    env.SCRIBERR_FFMPEG_BIN = ffmpegPath;
+    env.QUILL_FFMPEG_BIN = ffmpegPath;
   }
   if (fs.existsSync(ffprobePath)) {
-    env.SCRIBERR_FFPROBE_BIN = ffprobePath;
+    env.QUILL_FFPROBE_BIN = ffprobePath;
   }
   if (fs.existsSync(ytDlpPath)) {
-    env.SCRIBERR_YTDLP_BIN = ytDlpPath;
+    env.QUILL_YTDLP_BIN = ytDlpPath;
   }
 
   return env;
@@ -228,7 +256,7 @@ function inferStartupStatus(logTail: string): { title: string; detail: string } 
 
   if (lines.length === 0) {
     return {
-      title: "Starting Scriberr",
+      title: "Starting Quill",
       detail: "Preparing local services...",
     };
   }
@@ -263,11 +291,11 @@ function inferStartupStatus(logTail: string): { title: string; detail: string } 
   if (lowered.includes("starting http server")) {
     return { title: "Starting Local Service", detail: latest };
   }
-  if (lowered.includes("scriberr is ready")) {
+  if (lowered.includes("quill is ready")) {
     return { title: "Launching App", detail: "Startup complete." };
   }
 
-  return { title: "Starting Scriberr", detail: latest };
+  return { title: "Starting Quill", detail: latest };
 }
 
 function getLogTail(pathToLog: string, maxLines = 80): string {
@@ -289,7 +317,7 @@ function renderStartupHtml(title: string, detail: string): string {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Scriberr</title>
+  <title>Quill</title>
   <style>
     :root {
       color-scheme: dark;
@@ -359,7 +387,7 @@ function renderStartupHtml(title: string, detail: string): string {
       <h1>${escapeHtml(title)}</h1>
     </div>
     <p>${escapeHtml(detail)}</p>
-    <p class="hint">Scriberr is preparing local AI models and services. First launch can take several minutes.</p>
+    <p class="hint">Quill is preparing local AI models and services. First launch can take several minutes.</p>
   </section>
 </body>
 </html>`;
@@ -392,7 +420,7 @@ function attachBackendLogs(processHandle: ChildProcessByStdio<null, Readable, Re
   const { backendLogPath } = getDataPaths();
   const logStream = fs.createWriteStream(backendLogPath, { flags: "a" });
   const stamp = new Date().toISOString();
-  logStream.write(`\n[${stamp}] Starting Scriberr backend\n`);
+  logStream.write(`\n[${stamp}] Starting Quill backend\n`);
 
   processHandle.stdout.on("data", (chunk: Buffer) => {
     logStream.write(chunk);
@@ -411,7 +439,7 @@ function startBackend(port: number): void {
   const backendBinaryPath = resolveBackendBinaryPath();
   if (!fs.existsSync(backendBinaryPath)) {
     throw new Error(
-      `Backend binary not found at ${backendBinaryPath}. Build it with 'go build -o scriberr cmd/server/main.go'.`,
+      `Backend binary not found at ${backendBinaryPath}. Build it with 'go build -o quill cmd/server/main.go'.`,
     );
   }
 
@@ -429,7 +457,7 @@ function startBackend(port: number): void {
     if (isQuitting) {
       return;
     }
-    dialog.showErrorBox("Scriberr Backend Error", `Failed to start backend process:\n${error.message}`);
+    dialog.showErrorBox("Quill Backend Error", `Failed to start backend process:\n${error.message}`);
   });
 
   childProcess.on("exit", (code, signal) => {
@@ -438,7 +466,7 @@ function startBackend(port: number): void {
     }
 
     dialog.showErrorBox(
-      "Scriberr Backend Stopped",
+      "Quill Backend Stopped",
       [
         `The backend process exited unexpectedly.`,
         `Exit code: ${String(code)}, signal: ${String(signal)}.`,
@@ -541,7 +569,7 @@ async function stopBackend(): Promise<void> {
 async function boot(): Promise<void> {
   backendReady = false;
   mainWindow = createMainWindow();
-  await loadStartupScreen(mainWindow, "Starting Scriberr", "Preparing local services...");
+  await loadStartupScreen(mainWindow, "Starting Quill", "Preparing local services...");
 
   if (app.isPackaged) {
     const missingTools = getMissingBundledTools();
@@ -628,14 +656,14 @@ void app.whenReady()
         `Backend binary path: ${backendPath}`,
         `Backend logs: ${logPath}`,
         "",
-        "Required runtime tools must also be available: uv, ffmpeg, ffprobe, yt-dlp.",
+        "Required runtime tools must also be available: uv, ffmpeg, ffprobe, yt-dlp, whisperx/whisperx.zip.",
         "Packaged builds should include these under app resources/tools.",
       ].join("\n");
 
       const buttonIndex = dialog.showMessageBoxSync({
         type: "error",
-        title: "Scriberr Startup Failed",
-        message: "Scriberr could not start.",
+        title: "Quill Startup Failed",
+        message: "Quill could not start.",
         detail,
         buttons: ["Quit", "Retry"],
         defaultId: 1,
@@ -653,7 +681,7 @@ void app.whenReady()
   })
   .catch((error) => {
     const message = error instanceof Error ? error.message : String(error);
-    dialog.showErrorBox("Scriberr Fatal Error", message);
+    dialog.showErrorBox("Quill Fatal Error", message);
     app.exit(1);
   });
 

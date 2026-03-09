@@ -14,9 +14,9 @@ import (
 	"sync"
 	"time"
 
-	"scriberr/internal/transcription/interfaces"
-	"scriberr/pkg/binaries"
-	"scriberr/pkg/logger"
+	"quill/internal/transcription/interfaces"
+	"quill/pkg/binaries"
+	"quill/pkg/logger"
 
 	"golang.org/x/sync/singleflight"
 )

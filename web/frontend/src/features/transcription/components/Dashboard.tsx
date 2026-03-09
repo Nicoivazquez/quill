@@ -6,7 +6,6 @@ import { DragDropOverlay } from "@/components/DragDropOverlay";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { X, CheckCircle, AlertCircle } from "lucide-react";
-import { VaultSidebar } from "@/features/vault/components/VaultSidebar";
 import {
 	groupFiles,
 	convertToFileWithType,
@@ -138,75 +137,72 @@ export function Dashboard() {
 			className="min-h-screen bg-[var(--bg-main)]"
 			header={<Header />}
 		>
-			<div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
-				<VaultSidebar />
-				<div>
-					{/* Upload Progress */}
-					{uploadProgress.length > 0 && (
-						<div className="mb-8 glass-card rounded-[var(--radius-card)] p-6 sm:p-8 shadow-[var(--shadow-float)] border border-[var(--border-subtle)] animate-in fade-in slide-in-from-top-4 duration-500">
-							<div className="flex items-center justify-between mb-6">
-								<h3 className="text-lg font-bold tracking-tight text-[var(--text-primary)]">
-									Uploading Files ({uploadProgress.filter(p => p.status === 'success').length}/{uploadProgress.length})
-								</h3>
-								{!isUploading && (
-									<Button
-										variant="ghost"
-										size="icon"
-										onClick={dismissProgress}
-										className="h-8 w-8"
-									>
-										<X className="h-4 w-4" />
-									</Button>
-								)}
-							</div>
-
-							<div className="mb-6">
-								<Progress
-									value={(uploadProgress.filter(p => p.status !== 'uploading').length / uploadProgress.length) * 100}
-									className="h-2 bg-[var(--secondary)]"
-									indicatorClassName="bg-gradient-to-r from-[var(--brand-solid)] to-[var(--brand-solid)]"
-								/>
-							</div>
-
-							<div className="space-y-3 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
-								{uploadProgress.map((progress, index) => (
-									<div key={index} className="flex items-center gap-4 text-sm p-3 rounded-[var(--radius-btn)] bg-[var(--bg-main)] border border-[var(--border-subtle)]">
-										<div className="flex-shrink-0">
-											{progress.status === 'uploading' && (
-												<div className="w-4 h-4 border-2 border-[var(--brand-solid)] border-t-transparent rounded-full animate-spin" />
-											)}
-											{progress.status === 'success' && (
-												<CheckCircle className="w-4 h-4 text-[var(--success)]" />
-											)}
-											{progress.status === 'error' && (
-												<AlertCircle className="w-4 h-4 text-[var(--error)]" />
-											)}
-										</div>
-										<div className="flex-1 min-w-0">
-											<div className="truncate font-medium text-[var(--text-primary)]">
-												{progress.fileName}
-											</div>
-											{progress.error && (
-												<div className="text-[var(--error)] text-xs mt-0.5">
-													{progress.error}
-												</div>
-											)}
-										</div>
-										<div className="flex-shrink-0 text-xs font-medium text-[var(--text-tertiary)]">
-											{progress.status === 'uploading' && 'Uploading...'}
-											{progress.status === 'success' && 'Completed'}
-											{progress.status === 'error' && 'Failed'}
-										</div>
-									</div>
-								))}
-							</div>
+			<div className="space-y-5">
+				{/* Upload Progress */}
+				{uploadProgress.length > 0 && (
+					<div className="obsidian-pane animate-in fade-in slide-in-from-top-4 duration-500 p-5 sm:p-6">
+						<div className="flex items-center justify-between mb-6">
+							<h3 className="text-lg font-bold tracking-tight text-[var(--text-primary)]">
+								Uploading Files ({uploadProgress.filter(p => p.status === 'success').length}/{uploadProgress.length})
+							</h3>
+							{!isUploading && (
+								<Button
+									variant="ghost"
+									size="icon"
+									onClick={dismissProgress}
+									className="h-8 w-8"
+								>
+									<X className="h-4 w-4" />
+								</Button>
+							)}
 						</div>
-					)}
 
-					<AudioFilesTable
-						onTranscribe={handleTranscribe}
-					/>
-				</div>
+						<div className="mb-6">
+							<Progress
+								value={(uploadProgress.filter(p => p.status !== 'uploading').length / uploadProgress.length) * 100}
+								className="h-2 bg-[var(--secondary)]"
+								indicatorClassName="bg-[var(--brand-solid)]"
+							/>
+						</div>
+
+						<div className="space-y-3 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
+							{uploadProgress.map((progress, index) => (
+								<div key={index} className="flex items-center gap-4 text-sm p-3 rounded-[var(--radius-btn)] bg-[var(--bg-main)] border border-[var(--border-subtle)]">
+									<div className="flex-shrink-0">
+										{progress.status === 'uploading' && (
+											<div className="w-4 h-4 border-2 border-[var(--brand-solid)] border-t-transparent rounded-full animate-spin" />
+										)}
+										{progress.status === 'success' && (
+											<CheckCircle className="w-4 h-4 text-[var(--success)]" />
+										)}
+										{progress.status === 'error' && (
+											<AlertCircle className="w-4 h-4 text-[var(--error)]" />
+										)}
+									</div>
+									<div className="flex-1 min-w-0">
+										<div className="truncate font-medium text-[var(--text-primary)]">
+											{progress.fileName}
+										</div>
+										{progress.error && (
+											<div className="text-[var(--error)] text-xs mt-0.5">
+												{progress.error}
+											</div>
+										)}
+									</div>
+									<div className="flex-shrink-0 text-xs font-medium text-[var(--text-tertiary)]">
+										{progress.status === 'uploading' && 'Uploading...'}
+										{progress.status === 'success' && 'Completed'}
+										{progress.status === 'error' && 'Failed'}
+									</div>
+								</div>
+							))}
+						</div>
+					</div>
+				)}
+
+				<AudioFilesTable
+					onTranscribe={handleTranscribe}
+				/>
 			</div>
 
 

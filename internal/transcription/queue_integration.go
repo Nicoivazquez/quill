@@ -4,8 +4,8 @@ import (
 	"context"
 	"os/exec"
 
-	"scriberr/internal/repository"
-	"scriberr/pkg/logger"
+	"quill/internal/repository"
+	"quill/pkg/logger"
 )
 
 // UnifiedJobProcessor implements the existing JobProcessor interface using the new unified service

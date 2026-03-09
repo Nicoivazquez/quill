@@ -44,15 +44,15 @@ export function ChatSidePanel({ transcriptionId, isOpen, onClose, isMobile }: Ch
 
     return (
         <div className={cn(
-            "flex flex-col h-full bg-[var(--bg-card)] border-l border-[var(--border-subtle)] shadow-[var(--shadow-float)] transition-all duration-300",
+            "flex flex-col h-full bg-[var(--bg-card)] border-l border-[var(--border-subtle)] shadow-[var(--shadow-card)] transition-all duration-300",
             // Mobile Specifics handled by parent usually, but here for internal structure
             "w-full h-full"
         )}>
             {/* Header */}
-            <div className="flex-shrink-0 h-14 border-b border-[var(--border-subtle)] flex items-center justify-between px-4 bg-[var(--bg-card)]/50 backdrop-blur-sm z-10">
+            <div className="flex-shrink-0 h-14 border-b border-[var(--border-subtle)] flex items-center justify-between px-4 bg-[var(--bg-elevated)] z-10">
                 <div className="flex items-center gap-2">
                     {view === 'chat' && (
-                        <Button variant="ghost" size="icon" onClick={handleBackToList} className="h-8 w-8 -ml-2 text-[var(--text-secondary)]">
+                        <Button variant="ghost" size="icon" onClick={handleBackToList} className="h-8 w-8 -ml-2 text-[var(--text-secondary)] hover:bg-[var(--bg-muted-pane)]">
                             <ArrowLeft className="h-4 w-4" />
                         </Button>
                     )}
@@ -60,7 +60,7 @@ export function ChatSidePanel({ transcriptionId, isOpen, onClose, isMobile }: Ch
                         <span>{view === 'chat' ? 'Chat' : 'Sessions'}</span>
                     </div>
                 </div>
-                <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
+                <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted-pane)]">
                     <X className="h-4 w-4" />
                 </Button>
             </div>

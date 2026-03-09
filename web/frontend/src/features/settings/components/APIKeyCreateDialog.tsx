@@ -105,7 +105,7 @@ export function APIKeyCreateDialog({
 				<DialogHeader>
 					<DialogTitle>Create New API Key</DialogTitle>
 					<DialogDescription>
-						Create a new API key for external access to Scriberr. Give it a
+						Create a new API key for external access to Quill. Give it a
 						descriptive name to help you identify it later.
 					</DialogDescription>
 				</DialogHeader>

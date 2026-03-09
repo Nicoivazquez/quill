@@ -1,6 +1,6 @@
 package main
 
-import "scriberr/internal/cli"
+import "quill/internal/cli"
 
 func main() {
 	cli.Execute()

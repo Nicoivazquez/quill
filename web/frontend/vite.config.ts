@@ -14,15 +14,15 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
       manifest: {
-        name: 'Scriberr',
-        short_name: 'Scriberr',
+        name: 'Quill',
+        short_name: 'Quill',
         description: 'Offline Audio Transcription',
         theme_color: '#8936FF',
         background_color: '#2EC6FE',
         display: 'standalone',
         orientation: 'any',
         start_url: '/',
-        id: 'scriberr-transcription',
+        id: 'quill-transcription',
         icons: [
           {
             src: 'icon512_maskable.png',

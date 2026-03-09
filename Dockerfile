@@ -1,4 +1,4 @@
-# Multi-stage build for Scriberr: builds React UI and Go server, then
+# Multi-stage build for Quill: builds React UI and Go server, then
 # ships a slim runtime with Python, uv, and ffmpeg for WhisperX/yt-dlp.
 
 ########################
@@ -36,14 +36,14 @@ COPY --from=ui-builder /web/frontend/dist internal/web/dist
 
 # Build binary (arch matches builder platform)
 RUN CGO_ENABLED=0 \
-  go build -o /out/scriberr cmd/server/main.go
+  go build -o /out/quill cmd/server/main.go
 
 # Build CLI binaries (cross-platform)
 RUN mkdir -p /out/bin/cli \
-  && GOOS=linux GOARCH=amd64 go build -o /out/bin/cli/scriberr-linux-amd64 ./cmd/scriberr-cli \
-  && GOOS=darwin GOARCH=amd64 go build -o /out/bin/cli/scriberr-darwin-amd64 ./cmd/scriberr-cli \
-  && GOOS=darwin GOARCH=arm64 go build -o /out/bin/cli/scriberr-darwin-arm64 ./cmd/scriberr-cli \
-  && GOOS=windows GOARCH=amd64 go build -o /out/bin/cli/scriberr-windows-amd64.exe ./cmd/scriberr-cli
+  && GOOS=linux GOARCH=amd64 go build -o /out/bin/cli/quill-linux-amd64 ./cmd/quill-cli \
+  && GOOS=darwin GOARCH=amd64 go build -o /out/bin/cli/quill-darwin-amd64 ./cmd/quill-cli \
+  && GOOS=darwin GOARCH=arm64 go build -o /out/bin/cli/quill-darwin-arm64 ./cmd/quill-cli \
+  && GOOS=windows GOARCH=amd64 go build -o /out/bin/cli/quill-windows-amd64.exe ./cmd/quill-cli
 
 
 ########################
@@ -54,7 +54,7 @@ FROM python:3.11-slim AS runtime
 ENV PYTHONUNBUFFERED=1 \
   HOST=0.0.0.0 \
   PORT=8080 \
-  DATABASE_PATH=/app/data/scriberr.db \
+  DATABASE_PATH=/app/data/quill.db \
   UPLOAD_DIR=/app/data/uploads \
   WHISPERX_ENV=/app/whisperx-env \
   APP_ENV=production \
@@ -97,13 +97,13 @@ RUN groupadd -g 1000 appuser \
   && chown -R appuser:appuser /app
 
 # Copy binary and entrypoint script
-COPY --from=go-builder /out/scriberr /app/scriberr
+COPY --from=go-builder /out/quill /app/quill
 COPY --from=go-builder /out/bin/cli /app/bin/cli
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 # Make entrypoint script executable and set up basic permissions
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
-  && chown appuser:appuser /app/scriberr
+  && chown appuser:appuser /app/quill
 
 # Expose port and declare volume for persistence
 EXPOSE 8080
@@ -115,4 +115,4 @@ RUN uv --version
 
 # Use entrypoint script that handles user switching and permissions
 ENTRYPOINT ["docker-entrypoint.sh"]
-CMD ["/app/scriberr"]
+CMD ["/app/quill"]

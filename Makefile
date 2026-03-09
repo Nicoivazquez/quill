@@ -79,10 +79,10 @@ website-serve: website-build ## Build and preview project website locally
 
 docs-serve: website-serve ## Alias for website-serve
 
-build: ## Build Scriberr binary with embedded frontend
-	@echo "Starting Scriberr build process..."
+build: ## Build Quill binary with embedded frontend
+	@echo "Starting Quill build process..."
 	@echo "Cleaning old build files..."
-	@rm -f scriberr
+	@rm -f quill
 	@rm -rf internal/web/dist
 	@cd web/frontend && rm -rf dist/ && rm -rf assets/ 2>/dev/null || true
 	@echo "✓ Build files cleaned"
@@ -95,17 +95,17 @@ build: ## Build Scriberr binary with embedded frontend
 	@echo "✓ Assets copied"
 	@echo "Building Go binary..."
 	@go clean -cache
-	@go build -o scriberr cmd/server/main.go
+	@go build -o quill cmd/server/main.go
 	@echo "✓ Binary built successfully"
-	@echo "Build complete. Run './scriberr' to start the server"
+	@echo "Build complete. Run './quill' to start the server"
 
 build-cli: ## Build CLI binaries for Linux, macOS, and Windows
 	@echo "Building CLI binaries..."
 	@mkdir -p bin/cli
-	GOOS=linux GOARCH=amd64 go build -o bin/cli/scriberr-linux-amd64 ./cmd/scriberr-cli
-	GOOS=darwin GOARCH=amd64 go build -o bin/cli/scriberr-darwin-amd64 ./cmd/scriberr-cli
-	GOOS=darwin GOARCH=arm64 go build -o bin/cli/scriberr-darwin-arm64 ./cmd/scriberr-cli
-	GOOS=windows GOARCH=amd64 go build -o bin/cli/scriberr-windows-amd64.exe ./cmd/scriberr-cli
+	GOOS=linux GOARCH=amd64 go build -o bin/cli/quill-linux-amd64 ./cmd/quill-cli
+	GOOS=darwin GOARCH=amd64 go build -o bin/cli/quill-darwin-amd64 ./cmd/quill-cli
+	GOOS=darwin GOARCH=arm64 go build -o bin/cli/quill-darwin-arm64 ./cmd/quill-cli
+	GOOS=windows GOARCH=amd64 go build -o bin/cli/quill-windows-amd64.exe ./cmd/quill-cli
 	@echo "✓ CLI binaries built in bin/cli/"
 
 test: ## Run tests using gotestsum (via go tool)
@@ -123,7 +123,7 @@ desktop-tools: ## Bundle external tool binaries for Electron packaging
 	@./scripts/prepare-desktop-tools.sh
 
 desktop-dev: ## Run Electron shell against local backend binary
-	@go build -o scriberr cmd/server/main.go
+	@go build -o quill cmd/server/main.go
 	@cd desktop/electron && npm run dev
 
 desktop-dist-mac: ## Build macOS DMG with Electron

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"scriberr/internal/models"
+	"quill/internal/models"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -23,7 +23,7 @@ func TestSendWebhook(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			assert.Equal(t, "POST", r.Method)
 			assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
-			assert.Equal(t, "Scriberr-Webhook/1.0", r.Header.Get("User-Agent"))
+			assert.Equal(t, "Quill-Webhook/1.0", r.Header.Get("User-Agent"))
 
 			var payload WebhookPayload
 			err := json.NewDecoder(r.Body).Decode(&payload)

@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"scriberr/internal/audio"
-	"scriberr/internal/models"
-	"scriberr/internal/repository"
-	"scriberr/pkg/logger"
+	"quill/internal/audio"
+	"quill/internal/models"
+	"quill/internal/repository"
+	"quill/pkg/logger"
 
 	"gorm.io/gorm"
 )

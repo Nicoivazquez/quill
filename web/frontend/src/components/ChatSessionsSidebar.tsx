@@ -261,7 +261,7 @@ export function ChatSessionsSidebar({
   }
 
   return (
-    <div className="h-full flex flex-col bg-background/50">
+    <div className="h-full flex flex-col bg-[var(--bg-card)]">
       {/* Header */}
       <div className="flex-shrink-0 p-4">
         <div className="flex items-center justify-between mb-4">
@@ -271,16 +271,16 @@ export function ChatSessionsSidebar({
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-8 w-8 p-0 text-muted-foreground hover:text-[#FF6D20] hover:bg-orange-500/10 transition-colors"
+                className="h-8 w-8 p-0 text-muted-foreground hover:text-[var(--brand-solid)] hover:bg-[var(--brand-light)] transition-colors"
                 title="New Chat"
               >
                 <Plus className="h-5 w-5" />
               </Button>
             </DialogTrigger>
-            <DialogContent className="w-[calc(100%-2rem)] max-w-md mx-auto bg-[var(--bg-card)] dark:bg-[#0A0A0A] border border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)] shadow-[0_2px_4px_rgba(0,0,0,0.04),0_24px_48px_rgba(0,0,0,0.08)] dark:shadow-[0_2px_4px_rgba(0,0,0,0.3),0_24px_48px_rgba(0,0,0,0.3)] p-0 rounded-2xl overflow-hidden">
+            <DialogContent className="w-[calc(100%-2rem)] max-w-md mx-auto bg-[var(--bg-card)] border border-[var(--border-subtle)] shadow-[var(--shadow-float)] p-0 rounded-[var(--radius-card)] overflow-hidden">
               <DialogHeader className="p-5 pb-0">
                 <DialogTitle className="text-xl font-bold text-[var(--text-primary)] flex items-center gap-2">
-                  <div className="h-9 w-9 rounded-full bg-gradient-to-br from-[#FFAB40] to-[#FF6D20] flex items-center justify-center shadow-md">
+                  <div className="h-9 w-9 rounded-[var(--radius-btn)] bg-gradient-to-br from-[var(--brand-start)] to-[var(--brand-solid)] flex items-center justify-center shadow-sm">
                     <Sparkles className="h-4 w-4 text-white" />
                   </div>
                   New Chat Session
@@ -293,10 +293,10 @@ export function ChatSessionsSidebar({
                 <div className="space-y-2">
                   <Label htmlFor="provider" className="text-sm font-medium text-[var(--text-secondary)]">Provider</Label>
                   <Select value={selectedProvider} onValueChange={setSelectedProvider}>
-                    <SelectTrigger className="w-full h-11 bg-[var(--bg-main)] border-[var(--border-subtle)] text-[var(--text-primary)] focus:ring-2 focus:ring-[var(--brand-solid)]/20 focus:border-[var(--brand-solid)] hover:border-[var(--brand-solid)]/50 transition-all rounded-xl">
+                    <SelectTrigger className="w-full h-11 bg-[var(--bg-muted-pane)] border-[var(--border-subtle)] text-[var(--text-primary)] focus:ring-2 focus:ring-[var(--brand-solid)]/20 focus:border-[var(--brand-solid)] hover:border-[var(--brand-solid)]/50 transition-all rounded-[var(--radius-btn)]">
                       <SelectValue placeholder="Select a provider" />
                     </SelectTrigger>
-                    <SelectContent className="bg-[var(--bg-card)] border-[var(--border-subtle)] rounded-xl shadow-lg">
+                    <SelectContent className="bg-[var(--bg-card)] border-[var(--border-subtle)] rounded-[var(--radius-card)] shadow-[var(--shadow-float)]">
                       {(availableProviders || []).map(provider => (
                         <SelectItem
                           key={provider.provider}
@@ -316,10 +316,10 @@ export function ChatSessionsSidebar({
                 <div className="space-y-2">
                   <Label htmlFor="model" className="text-sm font-medium text-[var(--text-secondary)]">Model</Label>
                   <Select value={selectedModel} onValueChange={setSelectedModel}>
-                    <SelectTrigger className="w-full h-11 bg-[var(--bg-main)] border-[var(--border-subtle)] text-[var(--text-primary)] focus:ring-2 focus:ring-[var(--brand-solid)]/20 focus:border-[var(--brand-solid)] hover:border-[var(--brand-solid)]/50 transition-all rounded-xl">
+                    <SelectTrigger className="w-full h-11 bg-[var(--bg-muted-pane)] border-[var(--border-subtle)] text-[var(--text-primary)] focus:ring-2 focus:ring-[var(--brand-solid)]/20 focus:border-[var(--brand-solid)] hover:border-[var(--brand-solid)]/50 transition-all rounded-[var(--radius-btn)]">
                       <SelectValue placeholder={availableModels.length ? "Select a model" : "No models available"} />
                     </SelectTrigger>
-                    <SelectContent className="bg-[var(--bg-card)] border-[var(--border-subtle)] rounded-xl shadow-lg">
+                    <SelectContent className="bg-[var(--bg-card)] border-[var(--border-subtle)] rounded-[var(--radius-card)] shadow-[var(--shadow-float)]">
                       {(availableModels || []).map(m => (
                         <SelectItem
                           key={m}
@@ -346,7 +346,7 @@ export function ChatSessionsSidebar({
                     value={newSessionTitle}
                     onChange={e => setNewSessionTitle(e.target.value)}
                     placeholder="Optional title (auto-title can be toggled in settings)"
-                    className="h-11 bg-[var(--bg-main)] border-[var(--border-subtle)] focus-visible:ring-2 focus-visible:ring-[var(--brand-solid)]/20 focus-visible:border-[var(--brand-solid)] transition-all rounded-xl"
+                    className="h-11 bg-[var(--bg-muted-pane)] border-[var(--border-subtle)] focus-visible:ring-2 focus-visible:ring-[var(--brand-solid)]/20 focus-visible:border-[var(--brand-solid)] transition-all rounded-[var(--radius-btn)]"
                   />
                 </div>
               </div>
@@ -354,14 +354,14 @@ export function ChatSessionsSidebar({
                 <Button
                   variant="ghost"
                   onClick={() => setShowNewSessionDialog(false)}
-                  className="h-11 px-6 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-main)] rounded-full w-full sm:w-auto"
+                  className="h-11 px-6 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted-pane)] rounded-[var(--radius-btn)] w-full sm:w-auto"
                 >
                   Cancel
                 </Button>
                 <Button
                   onClick={createSession}
                   disabled={!selectedProvider || !selectedModel}
-                  className="h-11 px-6 bg-gradient-to-br from-[#FFAB40] to-[#FF3D00] text-white hover:scale-[1.02] active:scale-[0.98] transition-transform shadow-md disabled:opacity-50 disabled:cursor-not-allowed rounded-full w-full sm:w-auto"
+                  className="h-11 px-6 bg-gradient-to-br from-[var(--brand-start)] to-[var(--brand-end)] text-white hover:brightness-110 active:translate-y-px transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed rounded-[var(--radius-btn)] w-full sm:w-auto"
                 >
                   <MessageSquare className="h-4 w-4 mr-2" />
                   Start Chat
@@ -399,10 +399,10 @@ export function ChatSessionsSidebar({
                 key={session.id}
                 onClick={() => onSessionChange(session.id)}
                 className={`
-                  group relative p-3 rounded-xl border cursor-pointer transition-all duration-200 pr-10 min-h-[64px]
+                  group relative p-3 rounded-[var(--radius-btn)] border cursor-pointer transition-all duration-200 pr-10 min-h-[64px]
                   ${session.id === activeSessionId
-                    ? 'bg-[var(--bg-card)] dark:bg-[#1F1F1F] border-[#FF6D20] shadow-[0_2px_4px_rgba(0,0,0,0.04),0_8px_16px_rgba(0,0,0,0.06)] dark:shadow-[0_2px_4px_rgba(0,0,0,0.3),0_8px_16px_rgba(0,0,0,0.2)] ring-1 ring-[#FF6D20]/20 z-10'
-                    : 'bg-[var(--bg-card)] dark:bg-[#141414] border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)] shadow-[0_2px_4px_rgba(0,0,0,0.04),0_8px_16px_rgba(0,0,0,0.04)] dark:shadow-[0_2px_4px_rgba(0,0,0,0.2),0_8px_16px_rgba(0,0,0,0.1)] hover:shadow-[0_4px_8px_rgba(0,0,0,0.06),0_12px_24px_rgba(0,0,0,0.06)] hover:-translate-y-0.5 hover:border-[var(--brand-solid)]/30'
+                    ? 'bg-[var(--bg-elevated)] border-[var(--brand-solid)] shadow-[var(--shadow-card)] ring-1 ring-[var(--brand-solid)]/20 z-10'
+                    : 'bg-[var(--bg-card)] border-[var(--border-subtle)] shadow-[var(--shadow-card)] hover:border-[var(--brand-solid)]/30'
                   }
                 `}
               >
@@ -421,7 +421,7 @@ export function ChatSessionsSidebar({
                         autoFocus
                       />
                     ) : (
-                      <h3 className={`text-sm font-medium truncate leading-tight ${session.id === activeSessionId ? 'text-[#FF6D20]' : 'text-foreground group-hover:text-foreground'}`}>
+                      <h3 className={`text-sm font-medium truncate leading-tight ${session.id === activeSessionId ? 'text-[var(--brand-solid)]' : 'text-foreground group-hover:text-foreground'}`}>
                         {session.title || 'Untitled Chat'}
                         {generatingTitleIds.has(session.id) && (
                           <span className="inline-flex items-center ml-2 text-brand-500 dark:text-brand-400" title="Generating title...">
@@ -479,7 +479,7 @@ export function ChatSessionsSidebar({
 
       {/* Delete Confirmation Alert */}
       <AlertDialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
-        <AlertDialogContent className="bg-[#FFFFFF] dark:bg-[#0A0A0A] border-[var(--border-subtle)] shadow-[var(--shadow-float)] rounded-[var(--radius-card)]">
+        <AlertDialogContent className="bg-[var(--bg-card)] border-[var(--border-subtle)] shadow-[var(--shadow-float)] rounded-[var(--radius-card)]">
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Chat Session?</AlertDialogTitle>
             <AlertDialogDescription>
@@ -487,10 +487,10 @@ export function ChatSessionsSidebar({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="rounded-full border-[var(--border-subtle)] hover:bg-[var(--bg-main)]">Cancel</AlertDialogCancel>
+            <AlertDialogCancel className="rounded-[var(--radius-btn)] border-[var(--border-subtle)] hover:bg-[var(--bg-muted-pane)]">Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmDelete}
-              className="rounded-full bg-red-500 text-white hover:bg-red-600 shadow-sm"
+              className="rounded-[var(--radius-btn)] bg-red-500 text-white hover:bg-red-600 shadow-sm"
             >
               Delete
             </AlertDialogAction>

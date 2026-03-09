@@ -647,7 +647,7 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 				return (
 					<Tooltip>
 						<TooltipTrigger asChild>
-							<div className="cursor-help text-amber-500">
+							<div className="cursor-help text-[var(--brand-solid)]">
 								<Loader2 className="h-4 w-4 animate-spin" strokeWidth={2.5} />
 							</div>
 						</TooltipTrigger>
@@ -737,20 +737,20 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 					placeholder="Search recordings..."
 					value={globalFilter ?? ""}
 					onChange={(value) => setGlobalFilter(String(value))}
-					className="w-full sm:w-80 shadow-sm border-transparent focus:border-[var(--brand-solid)] bg-white dark:bg-zinc-900"
+					className="w-full sm:w-80 shadow-sm border-[var(--border-subtle)] focus:border-[var(--brand-solid)] bg-[var(--bg-muted-pane)]"
 				/>
 			</div>
 
 			{/* List Container */}
-			<div className="space-y-3 min-h-[300px] pb-24">
+			<div className="obsidian-pane p-3 sm:p-4 space-y-3 min-h-[300px] pb-24">
 				{loading ? (
 					// Skeleton Loaders
 					Array.from({ length: 5 }).map((_, i) => (
-						<div key={i} className="h-20 w-full bg-[var(--bg-card)] rounded-xl animate-pulse" />
+						<div key={i} className="h-20 w-full bg-[var(--bg-elevated)] rounded-[var(--radius-btn)] animate-pulse" />
 					))
 				) : data.length === 0 ? (
-					<div className="flex flex-col items-center justify-center p-12 text-center border-2 border-dashed border-[var(--border-subtle)] rounded-xl bg-[var(--bg-card)]/50">
-						<div className="p-4 bg-[var(--bg-main)] rounded-full mb-4">
+					<div className="flex flex-col items-center justify-center p-12 text-center border border-dashed border-[var(--border-subtle)] rounded-[var(--radius-card)] bg-[var(--bg-muted-pane)]">
+						<div className="p-4 bg-[var(--bg-card)] rounded-[var(--radius-btn)] mb-4">
 							<Music className="h-8 w-8 text-[var(--text-tertiary)]" />
 						</div>
 						<h3 className="text-lg font-medium text-[var(--text-primary)]">No recordings found</h3>
@@ -776,9 +776,9 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 								<div
 									className={cn(
 										"group relative flex justify-between items-center p-4",
-										"bg-[var(--bg-card)] rounded-xl border border-[var(--border-subtle)]",
-										"shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 cursor-pointer select-none",
-										rowSelection[file.id as keyof typeof rowSelection] && "border-[var(--brand-solid)] ring-1 ring-[var(--brand-solid)]/10 bg-orange-50 dark:bg-orange-950"
+										"bg-[var(--bg-elevated)] rounded-[var(--radius-btn)] border border-[var(--border-subtle)]",
+										"shadow-[var(--shadow-card)] hover:border-[var(--brand-solid)]/30 transition-all duration-200 cursor-pointer select-none",
+										rowSelection[file.id as keyof typeof rowSelection] && "border-[var(--brand-solid)] ring-1 ring-[var(--brand-solid)]/10 bg-[var(--brand-light)] dark:bg-[var(--accent)]"
 									)}
 									onClick={(e) => handleRowClick(file, e)}
 									onMouseDown={(e) => startLongPress(file.id, e)}
@@ -790,13 +790,13 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 								>
 									<div className="flex items-center gap-4 min-w-0 transition-[padding] duration-200">
 										{/* Icon (Tinted Pastel Square) - Lighter Shade */}
-										<div className="flex-shrink-0 w-12 h-12 flex items-center justify-center rounded-xl bg-[#FFFAF0] text-[#FF6D20] transition-opacity duration-200">
+										<div className="flex-shrink-0 w-12 h-12 flex items-center justify-center rounded-[var(--radius-btn)] bg-[var(--bg-card)] text-[var(--brand-solid)] transition-opacity duration-200 border border-[var(--border-subtle)]">
 											<FileAudio className="h-6 w-6" strokeWidth={2} />
 										</div>
 
 										{/* Text */}
 										<div className="min-w-0">
-											<h4 className="font-normal text-gray-900 dark:text-gray-100 truncate text-lg leading-tight group-hover:text-[#FF6D20] transition-colors">
+											<h4 className="font-normal text-gray-900 dark:text-gray-100 truncate text-lg leading-tight group-hover:text-[var(--brand-solid)] transition-colors">
 												{file.title || getFileName(file.audio_path)}
 											</h4>
 											<div className="flex items-center gap-1.5 mt-1 text-sm text-gray-500">
@@ -820,7 +820,7 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 																variant="ghost"
 																size="icon"
 																onClick={() => handleTranscribeDClick(file.id)}
-																className="h-9 w-9 rounded-lg text-gray-400 hover:text-[var(--brand-solid)] hover:bg-orange-50 cursor-pointer transition-colors"
+																className="h-9 w-9 rounded-lg text-gray-400 hover:text-[var(--brand-solid)] hover:bg-[var(--brand-light)] cursor-pointer transition-colors"
 															>
 																<Wand2 className="h-5 w-5" strokeWidth={2} />
 															</Button>
@@ -834,7 +834,7 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 																variant="ghost"
 																size="icon"
 																onClick={() => handleTranscribeClick(file.id)}
-																className="h-9 w-9 rounded-lg text-gray-400 hover:text-[var(--brand-solid)] hover:bg-orange-50 cursor-pointer transition-colors"
+																className="h-9 w-9 rounded-lg text-gray-400 hover:text-[var(--brand-solid)] hover:bg-[var(--brand-light)] cursor-pointer transition-colors"
 															>
 																<WandAdvancedIcon className="h-5 w-5" strokeWidth={2} />
 															</Button>
@@ -890,7 +890,7 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 			{/* Floating Bulk Actions Pill */}
 			{Object.keys(rowSelection).length > 0 && (
 				<div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-4 duration-300">
-					<div className="glass-card flex items-center gap-1 p-1.5 pl-4 pr-1.5 rounded-full shadow-[var(--shadow-float)] border border-[var(--border-subtle)] bg-[var(--bg-main)]/95 backdrop-blur-xl ring-1 ring-black/5">
+					<div className="obsidian-pane flex items-center gap-1 p-1.5 pl-4 pr-1.5 rounded-[var(--radius-card)] shadow-[var(--shadow-float)] bg-[var(--bg-card)]/95 backdrop-blur-md">
 						<div className="flex items-center gap-3 mr-2">
 							<span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--brand-solid)] text-[10px] font-bold text-white shadow-sm">
 								{selectedCount}

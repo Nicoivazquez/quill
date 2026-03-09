@@ -311,7 +311,7 @@ export function LLMSettings() {
 						<Button
 							onClick={handleSave}
 							disabled={!isFormValid() || saving}
-							className="!bg-[var(--brand-gradient)] hover:!opacity-90 !text-black dark:!text-white border-none shadow-lg shadow-orange-500/20"
+							className="!bg-[var(--brand-gradient)] hover:!opacity-90 !text-black dark:!text-white border-none shadow-lg shadow-black/20"
 						>
 							{saving ? "Saving..." : "Save Configuration"}
 						</Button>

@@ -5,61 +5,58 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-  /* User's Custom Black-to-Gray Palette */
-  --gray-50: #f3f5ef;
-  --gray-100: #dfe1db;
-  --gray-200: #c5c7c1;
-  --gray-300: #a7a9a4;
-  --gray-400: #8c8d8a;
-  --gray-500: #6f6f6c;
-  --gray-600: #525250;
-  --gray-700: #393937;
-  --gray-800: #262626;
-  --gray-900: #161616;
-  --gray-950: #000000;
+  --gray-50: #f3f5f9;
+  --gray-100: #e4e8f0;
+  --gray-200: #cad2e0;
+  --gray-300: #adb8cb;
+  --gray-400: #8e9aae;
+  --gray-500: #707b90;
+  --gray-600: #586176;
+  --gray-700: #41485b;
+  --gray-800: #2c3242;
+  --gray-900: #1a1f29;
+  --gray-950: #11141b;
 
-  --color-carbon-950: #000000;
-  --color-carbon-900: #161616;
-  --color-carbon-800: #262626;
-  --color-carbon-700: #393939;
-  --color-carbon-600: #525252;
-  --color-carbon-500: #6f6f6f;
-  --color-carbon-400: #8d8d8d;
-  --color-carbon-300: #a8a8a8;
-  --color-carbon-200: #c6c6c6;
-  --color-carbon-100: #e0e0e0;
-  --color-carbon-50: #f4f4f4;
+  --color-carbon-950: #10141b;
+  --color-carbon-900: #171c25;
+  --color-carbon-800: #212836;
+  --color-carbon-700: #2d3648;
+  --color-carbon-600: #414c63;
+  --color-carbon-500: #5c6a85;
+  --color-carbon-400: #7b89a3;
+  --color-carbon-300: #9ba9c0;
+  --color-carbon-200: #c1ccdd;
+  --color-carbon-100: #dde4ef;
+  --color-carbon-50: #f2f5fb;
   --color-carbon-white: #ffffff;
 
-  /* Black Palette (matching gray for consistency) */
-  --black-rich: #000000;
-  --black-soft: #161616;
-  --black-card: #262626;
-  --black-border: #393937;
-  --color-black-50: #f3f5ef;
-  --color-black-100: #dfe1db;
-  --color-black-200: #c5c7c1;
-  --color-black-300: #a7a9a4;
-  --color-black-400: #8c8d8a;
-  --color-black-500: #6f6f6c;
-  --color-black-600: #525250;
-  --color-black-700: #393939;
-  --color-black-800: #262626;
-  --color-black-900: #161616;
-  --color-black-950: #000000;
+  --black-rich: #0f131a;
+  --black-soft: #171c25;
+  --black-card: #212836;
+  --black-border: #2f384b;
+  --color-black-50: #f3f5f9;
+  --color-black-100: #e4e8f0;
+  --color-black-200: #cad2e0;
+  --color-black-300: #adb8cb;
+  --color-black-400: #8e9aae;
+  --color-black-500: #707b90;
+  --color-black-600: #586176;
+  --color-black-700: #41485b;
+  --color-black-800: #2c3242;
+  --color-black-900: #1a1f29;
+  --color-black-950: #11141b;
 
-  /* Brand Palette (Orange #fe9a00) */
-  --brand-50: #fff8e6;
-  --brand-100: #ffedcc;
-  --brand-200: #ffdd99;
-  --brand-300: #ffcc66;
-  --brand-400: #ffbb33;
-  --brand-500: #fe9a00;
-  --brand-600: #e68a00;
-  --brand-700: #cc7a00;
-  --brand-800: #b36b00;
-  --brand-900: #995c00;
-  --brand-950: #663d00;
+  --brand-50: #f4edf9;
+  --brand-100: #e9dcf4;
+  --brand-200: #d7bee8;
+  --brand-300: #bf99d9;
+  --brand-400: #a678c4;
+  --brand-500: #8f5bad;
+  --brand-600: #75458f;
+  --brand-700: #5f3773;
+  --brand-800: #4a2a59;
+  --brand-900: #382041;
+  --brand-950: #25142b;
 
   --color-brand-50: var(--brand-50);
   --color-brand-100: var(--brand-100);
@@ -73,12 +70,12 @@
   --color-brand-900: var(--brand-900);
   --color-brand-950: var(--brand-950);
 
-  --font-sans: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
-  --font-display: 'Outfit', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --font-mono: 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  --font-inter: 'Inter', sans-serif;
-  --font-reading: 'Literata', serif;
-  /* For Transcripts */
+  --font-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: 'Cormorant Garamond', 'Source Serif 4', serif;
+  --font-script: 'Dancing Script', 'Brush Script MT', cursive;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace;
+  --font-inter: 'IBM Plex Sans', sans-serif;
+  --font-reading: 'Source Serif 4', serif;
 
   /* UI Token Mappings for Tailwind v4 */
   --color-background: var(--background);
@@ -116,65 +113,45 @@
 }
 
 :root {
-  /* --- BRAND IDENTITY --- */
-  /* Extracted from your logo */
-  /* --brand-gradient: linear-gradient(135deg, #FFAB40 0%, #FF3D00 100%); */
-  --brand-gradient: linear-gradient(135deg, #FF9800 0%, #FF3D00 100%);
-  --brand-solid: #FF6D20;
-  /* The midpoint color for text/icons */
-  --brand-light: rgba(255, 171, 64, 0.12);
-  /* For subtle backgrounds/hovers */
+  --scribe-gold: #d4a843;
+  --scribe-ink: #704214;
+  --scribe-plum: #6b3fa0;
 
-  /* --- SPACING & SHAPE (The "Premium" Feel) --- */
-  --radius-card: 20px;
-  /* Larger radius = friendlier, modern feel */
-  --radius-btn: 12px;
+  --brand-start: #a86b22;
+  --brand-end: #6b3fa0;
+  --brand-gradient: linear-gradient(135deg, var(--brand-start) 0%, var(--brand-end) 100%);
+  --brand-solid: var(--scribe-plum);
+  --brand-light: rgba(107, 63, 160, 0.16);
 
-  /* --- LIGHT MODE VARIABLES (Pure White Base) --- */
-  --bg-main: #FFFFFF;
-  /* PURE WHITE requested */
-  --bg-card: #FFFFFF;
-  /* Card is also white */
+  --radius-card: 10px;
+  --radius-btn: 8px;
 
-  /* Text: Never use pure black #000000. It causes eye strain on white. */
-  --text-primary: #161616;
-  /* Neutral Charcoal */
-  --text-secondary: #737373;
-  /* Neutral Grey */
-  --text-tertiary: #A3A3A3;
-  /* Lighter Grey */
+  --bg-main: #f4e9d4;
+  --bg-card: #faf0de;
+  --bg-elevated: #f2e4cb;
+  --bg-muted-pane: #e8dac0;
 
-  /* Borders: Essential for "White on White" design */
-  --border-subtle: rgba(0, 0, 0, 0.06);
-  --border-focus: rgba(0, 0, 0, 0.12);
+  --text-primary: #3d2b1f;
+  --text-secondary: #5f4634;
+  --text-tertiary: #7f654f;
 
-  /* SHADOWS: The engine of your "Raised" look */
-  /* Level 1: Subtle lift (Cards) */
-  /* Level 1: Subtle lift (Cards) */
+  --border-subtle: rgba(112, 66, 20, 0.22);
+  --border-focus: rgba(107, 63, 160, 0.42);
+
   --shadow-card:
-    0 2px 4px rgba(0, 0, 0, 0.015),
-    /* Sharp definition - Reduced slightly */
-    0 8px 24px rgba(0, 0, 0, 0.04);
-  /* Soft, luxurious float - Reduced slightly */
-
-  /* Level 2: High lift (Dropdowns, Sticky Headers) */
+    0 1px 0 rgba(255, 255, 255, 0.8),
+    0 10px 20px rgba(16, 22, 38, 0.06);
   --shadow-float:
-    0 4px 8px rgba(0, 0, 0, 0.03),
-    0 20px 40px rgba(0, 0, 0, 0.06);
+    0 14px 34px rgba(10, 16, 32, 0.12);
 
-  /* --- STATUS COLORS (Harmonized) --- */
   --success: #10B981;
   --success-solid: #10B981;
   --success-translucent: rgba(16, 185, 129, 0.15);
-  /* Emerald Green (Goes well with orange) */
   --error: #EF4444;
-  /* Soft Red */
   --warning: #F59E0B;
   --warning-solid: #F59E0B;
   --warning-translucent: rgba(245, 158, 11, 0.15);
-  /* Amber */
 
-  /* --- MAPPING TO TAILWIND UTILITIES (Backward Compatibility) --- */
   --background: var(--bg-main);
   --foreground: var(--text-primary);
 
@@ -183,73 +160,66 @@
   --popover: var(--bg-card);
   --popover-foreground: var(--text-primary);
 
-  --primary: #171717;
-  --primary-foreground: #FFFFFF;
+  --primary: #2c1810;
+  --primary-foreground: #ede0cc;
 
-  --secondary: #F5F5F5;
+  --secondary: #efe1c8;
   --secondary-foreground: var(--text-primary);
 
-  --muted: #F5F5F5;
+  --muted: #e8dac0;
   --muted-foreground: var(--text-secondary);
 
   --accent: var(--brand-light);
   --accent-foreground: var(--brand-solid);
 
   --destructive: var(--error);
-  --destructive-foreground: #FFFFFF;
+  --destructive-foreground: #ffffff;
 
   --border: var(--border-subtle);
   --input: var(--border-subtle);
   --ring: var(--brand-solid);
 
-  --radius: 0.5rem;
+  --radius: 0.625rem;
 
-  /* Chart Colors (mapped to neutrals) */
-  --chart-1: #171717;
-  --chart-2: #404040;
-  --chart-3: #737373;
-  --chart-4: #A3A3A3;
-  --chart-5: #D4D4D4;
+  --chart-1: #6b3fa0;
+  --chart-2: #d4a843;
+  --chart-3: #4a8b7f;
+  --chart-4: #8d6f53;
+  --chart-5: #3d2b1f;
 
-  /* Sidebar */
-  --sidebar: #FFFFFF;
+  --sidebar: #f1e1c6;
   --sidebar-foreground: var(--text-primary);
-  --sidebar-primary: #171717;
-  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-primary: #2c1810;
+  --sidebar-primary-foreground: #ede0cc;
   --sidebar-accent: var(--brand-light);
   --sidebar-accent-foreground: var(--brand-solid);
   --sidebar-border: var(--border-subtle);
   --sidebar-ring: var(--brand-solid);
 
-  /* Scrollbar */
   --scroll-track: transparent;
-  --scroll-thumb: #D4D4D4;
-  --scroll-thumb-hover: #A3A3A3;
+  --scroll-thumb: #9b7d5e;
+  --scroll-thumb-hover: #7b6148;
 }
 
-/* --- DARK MODE OVERRIDES (Achromatic/True Grey) --- */
 .dark {
-  /* Backgrounds: Pure Greys, no Blue tint */
-  --bg-main: #0A0A0A;
-  /* Almost Black (Deepest depth) */
-  --bg-card: #171717;
-  /* Slightly lighter neutral grey */
+  --bg-main: #171019;
+  --bg-card: #221928;
+  --bg-elevated: #2d2233;
+  --bg-muted-pane: #1a1320;
 
-  /* Text */
-  --text-primary: #EDEDED;
-  /* Soft White */
-  --text-secondary: #A1A1A1;
-  --text-tertiary: #525252;
+  --text-primary: #e8dac6;
+  --text-secondary: #c2ad93;
+  --text-tertiary: #a08870;
 
-  /* Borders: Light borders define edges in dark mode (Rim Light) */
-  --border-subtle: rgba(255, 255, 255, 0.08);
-  --border-focus: rgba(255, 255, 255, 0.15);
+  --border-subtle: rgba(168, 128, 82, 0.26);
+  --border-focus: rgba(139, 96, 194, 0.56);
 
-  /* Shadows: Dark mode shadows are for grounding, not lift */
-  --shadow-card: 0 10px 30px rgba(0, 0, 0, 0.4);
-  --shadow-float: 0 20px 50px rgba(0, 0, 0, 0.6);
+  --shadow-card:
+    0 1px 0 rgba(255, 255, 255, 0.02),
+    0 0 0 1px rgba(10, 12, 18, 0.35);
+  --shadow-float:
+    0 18px 36px rgba(5, 8, 14, 0.55);
 
-  /* --- MAPPINGS --- */
   --background: var(--bg-main);
   --foreground: var(--text-primary);
 
@@ -258,39 +228,36 @@
   --popover: var(--bg-card);
   --popover-foreground: var(--text-primary);
 
-  --primary: #EDEDED;
-  --primary-foreground: #0A0A0A;
+  --primary: #ede0cc;
+  --primary-foreground: #1b1412;
 
-  --secondary: #262626;
+  --secondary: #302430;
   --secondary-foreground: var(--text-primary);
 
-  --muted: #262626;
+  --muted: #271c2a;
   --muted-foreground: var(--text-secondary);
 
-  --accent: rgba(255, 171, 64, 0.15);
-  --accent-foreground: #FFAB40;
+  --accent: rgba(139, 96, 194, 0.22);
+  --accent-foreground: #d4b8ff;
 
-  --destructive: 0 62.8% 30.6%;
-  /* Keeping original destructive for dark mode safety or use var(--error) */
-  --destructive-foreground: #EDEDED;
+  --destructive: var(--error);
+  --destructive-foreground: #ffffff;
 
   --border: var(--border-subtle);
   --input: var(--border-subtle);
   --ring: var(--border-focus);
 
-  /* Sidebar */
-  --sidebar: #0A0A0A;
+  --sidebar: #1a1220;
   --sidebar-foreground: var(--text-primary);
-  --sidebar-primary: #EDEDED;
-  --sidebar-primary-foreground: #0A0A0A;
-  --sidebar-accent: #262626;
+  --sidebar-primary: #ede0cc;
+  --sidebar-primary-foreground: #1a1315;
+  --sidebar-accent: #2a1d31;
   --sidebar-accent-foreground: var(--text-primary);
   --sidebar-border: var(--border-subtle);
   --sidebar-ring: var(--border-focus);
 
-  /* Scrollbar */
-  --scroll-thumb: #404040;
-  --scroll-thumb-hover: #525252;
+  --scroll-thumb: #71563f;
+  --scroll-thumb-hover: #96765a;
 }
 
 @layer base {
@@ -299,8 +266,23 @@
   }
 
   body {
-    @apply bg-background text-foreground antialiased selection:bg-gray-200 dark:selection:bg-carbon-800;
-    font-family: var(--font-inter);
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+    background-image:
+      linear-gradient(rgba(112, 66, 20, 0.04) 1px, transparent 1px),
+      radial-gradient(circle at 12% 0%, rgba(212, 168, 67, 0.17), transparent 33%),
+      radial-gradient(circle at 88% 100%, rgba(107, 63, 160, 0.11), transparent 30%),
+      repeating-linear-gradient(125deg, rgba(112, 66, 20, 0.022) 0 2px, transparent 2px 8px);
+    background-size: 100% 24px, auto, auto, 14px 14px;
+    background-attachment: fixed;
+  }
+
+  .dark body {
+    background-image:
+      linear-gradient(rgba(232, 197, 71, 0.05) 1px, transparent 1px),
+      radial-gradient(circle at 14% -6%, rgba(212, 168, 67, 0.12), transparent 36%),
+      radial-gradient(circle at 88% 108%, rgba(107, 63, 160, 0.15), transparent 34%),
+      repeating-linear-gradient(125deg, rgba(237, 224, 204, 0.012) 0 2px, transparent 2px 8px);
   }
 
   /* Stable Layout Gutter */
@@ -320,13 +302,61 @@
     /* Tighten tracking for headings */
   }
 
-  /* Glassmorphism Utilities - Refined */
+  .quill-wordmark {
+    display: inline-block;
+    overflow: visible;
+    padding-right: 0.08em;
+    font-family: var(--font-script);
+    font-weight: 700;
+    letter-spacing: 0.012em;
+    background-image: linear-gradient(120deg, var(--scribe-gold) 0%, var(--brand-solid) 66%);
+    color: transparent;
+    background-clip: text;
+    -webkit-background-clip: text;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.24);
+  }
+
+  .dark .quill-wordmark {
+    background-image: linear-gradient(120deg, #f0cb74 0%, #d2b5ff 68%);
+    text-shadow: 0 1px 0 rgba(0, 0, 0, 0.32);
+  }
+
   .glass {
-    @apply bg-white/80 dark:bg-carbon-900/80 backdrop-blur-xl border border-white/20 dark:border-white/5 shadow-sm;
+    background: color-mix(in oklab, var(--bg-card) 88%, transparent);
+    border: 1px solid var(--border-subtle);
+    box-shadow: var(--shadow-card);
+    backdrop-filter: blur(6px);
+  }
+
+  .dark .glass {
+    background: color-mix(in oklab, var(--bg-card) 90%, transparent);
   }
 
   .glass-card {
-    @apply bg-white/60 dark:bg-carbon-900/60 backdrop-blur-lg border border-gray-200/50 dark:border-carbon-800/50 shadow-sm;
+    background: color-mix(in oklab, var(--bg-card) 92%, transparent);
+    border: 1px solid var(--border-subtle);
+    box-shadow: var(--shadow-card);
+  }
+
+  .dark .glass-card {
+    background: color-mix(in oklab, var(--bg-card) 94%, transparent);
+  }
+
+  .obsidian-pane {
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+  }
+
+  .obsidian-inset {
+    background: var(--bg-muted-pane);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-btn);
+  }
+
+  .obsidian-divider {
+    border-color: color-mix(in oklab, var(--border-subtle) 90%, transparent);
   }
 
   /* Transcript Font Utility */

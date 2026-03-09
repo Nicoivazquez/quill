@@ -1,7 +1,7 @@
 
-import { ScriberrTextLogo } from "./ScriberrTextLogo";
+import { QuillTextLogo } from "./QuillTextLogo";
 
-export function ScriberrLogo({ className = "", onClick }: { className?: string; onClick?: () => void }) {
+export function QuillLogo({ className = "", onClick }: { className?: string; onClick?: () => void }) {
     const clickable = typeof onClick === 'function';
 
     return (
@@ -18,14 +18,14 @@ export function ScriberrLogo({ className = "", onClick }: { className?: string; 
                 }
             }}
         >
-            <ScriberrIcon className="h-8 w-auto sm:h-9 select-none transition-all duration-300" />
-            <ScriberrTextLogo className="hidden sm:block sm:h-5 w-auto" />
+            <QuillIcon className="h-8 w-auto sm:h-9 select-none transition-all duration-300" />
+            <QuillTextLogo className="hidden sm:block sm:h-5 w-auto" />
         </div>
     )
 }
 
-export function ScriberrIcon({ className = "" }: { className?: string }) {
-    const gradientColors = { start: '#FF9800', end: '#FF3D00' };
+export function QuillIcon({ className = "" }: { className?: string }) {
+    const gradientColors = { start: 'var(--brand-start)', end: 'var(--brand-end)' };
 
     return (
         <svg
@@ -36,7 +36,7 @@ export function ScriberrIcon({ className = "" }: { className?: string }) {
             version="1.1"
             xmlns="http://www.w3.org/2000/svg"
             className={className}
-            aria-label="Scriberr Icon"
+            aria-label="Quill Icon"
         >
             <defs>
                 <linearGradient id="dynamicGradient" x1="0%" y1="0%" x2="100%" y2="100%">

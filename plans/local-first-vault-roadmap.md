@@ -44,7 +44,7 @@
   - `Media/`
   - `Transcripts/`
   - `Contacts/Snippets/`
-  - `.scriber/`
+  - `.quill/`
 
 ### Completion Criteria
 - Completed jobs materialize both JSON and Markdown artifacts.

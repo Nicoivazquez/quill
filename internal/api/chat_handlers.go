@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"scriberr/internal/llm"
-	"scriberr/internal/models"
+	"quill/internal/llm"
+	"quill/internal/models"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
