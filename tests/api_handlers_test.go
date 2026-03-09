@@ -302,6 +302,52 @@ func (suite *APIHandlerTestSuite) TestListTranscriptionJobs() {
 	assert.True(suite.T(), foundJob)
 }
 
+// Test transcription job listing search includes transcript content
+func (suite *APIHandlerTestSuite) TestListTranscriptionJobsSearchByTranscriptContent() {
+	testJob := suite.helper.CreateTestTranscriptionJob(suite.T(), "Title Without Search Keyword")
+	searchTerm := "uniquetranscriptterm123"
+
+	transcriptPayload := map[string]interface{}{
+		"text": "This transcript contains " + searchTerm + " in its content.",
+		"segments": []map[string]interface{}{
+			{
+				"start": 0.0,
+				"end":   1.0,
+				"text":  "This transcript contains " + searchTerm + " in its content.",
+			},
+		},
+	}
+
+	transcriptJSON, err := json.Marshal(transcriptPayload)
+	assert.NoError(suite.T(), err)
+
+	err = suite.helper.DB.Model(&models.TranscriptionJob{}).
+		Where("id = ?", testJob.ID).
+		Update("transcript", string(transcriptJSON)).Error
+	assert.NoError(suite.T(), err)
+
+	w := suite.makeAuthenticatedRequest("GET", fmt.Sprintf("/api/v1/transcription/list?q=%s", searchTerm), nil, false)
+	assert.Equal(suite.T(), 200, w.Code)
+
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(suite.T(), err)
+
+	jobs := response["jobs"].([]interface{})
+	assert.GreaterOrEqual(suite.T(), len(jobs), 1)
+
+	foundJob := false
+	for _, job := range jobs {
+		jobMap := job.(map[string]interface{})
+		if jobMap["id"] == testJob.ID {
+			foundJob = true
+			break
+		}
+	}
+
+	assert.True(suite.T(), foundJob, "expected transcript search to match job by transcript content")
+}
+
 // Test transcription job listing with delta sync
 func (suite *APIHandlerTestSuite) TestListTranscriptionJobsDeltaSync() {
 	// 1. Create a job

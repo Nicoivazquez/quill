@@ -951,7 +951,7 @@ func (h *Handler) GetTranscript(c *gin.Context) {
 // @Param sort_by query string false "Sort By"
 // @Param sort_order query string false "Sort Order (asc/desc)"
 // @Param status query string false "Filter by status"
-// @Param q query string false "Search in title and audio filename"
+// @Param q query string false "Search in title, audio filename, and transcript content"
 // @Param updated_after query string false "Filter by updated_at > timestamp (RFC3339)"
 // @Success 200 {object} map[string]interface{}
 // @Failure 500 {object} map[string]string
