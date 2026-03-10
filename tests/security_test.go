@@ -71,6 +71,7 @@ func (suite *SecurityTestSuite) SetupSuite() {
 	chatRepo := repository.NewChatRepository(database.DB)
 	noteRepo := repository.NewNoteRepository(database.DB)
 	speakerMappingRepo := repository.NewSpeakerMappingRepository(database.DB)
+	contactRepo := repository.NewContactRepository(database.DB)
 	refreshTokenRepo := repository.NewRefreshTokenRepository(database.DB)
 
 	// Initialize services
@@ -104,6 +105,7 @@ func (suite *SecurityTestSuite) SetupSuite() {
 		chatRepo,
 		noteRepo,
 		speakerMappingRepo,
+		contactRepo,
 		refreshTokenRepo,
 		suite.taskQueue,
 		suite.unifiedProcessor,

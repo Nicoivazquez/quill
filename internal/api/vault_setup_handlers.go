@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,11 +14,12 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 
+	"quill/internal/contacts"
 	"quill/internal/database"
 	"quill/internal/models"
 	"quill/pkg/logger"
+	"quill/pkg/slug"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -160,32 +162,6 @@ func ensureVaultStructure(vaultPath string) error {
 		}
 	}
 	return nil
-}
-
-func sanitizeSlug(value string) string {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return "transcript"
-	}
-	var b strings.Builder
-	lastDash := false
-	for _, r := range strings.ToLower(trimmed) {
-		switch {
-		case unicode.IsLetter(r) || unicode.IsDigit(r):
-			b.WriteRune(r)
-			lastDash = false
-		case unicode.IsSpace(r) || r == '-' || r == '_' || r == '.':
-			if !lastDash {
-				b.WriteRune('-')
-				lastDash = true
-			}
-		}
-	}
-	result := strings.Trim(b.String(), "-")
-	if result == "" {
-		return "transcript"
-	}
-	return result
 }
 
 func formatMMSS(seconds float64) string {
@@ -604,7 +580,7 @@ func writeTranscriptArtifactsForJob(job *models.TranscriptionJob) error {
 		}
 		year := job.CreatedAt.Format("2006")
 		month := job.CreatedAt.Format("01")
-		baseDir = filepath.Join(activeVault.Path, "Transcripts", year, month, fmt.Sprintf("%s-%s", sanitizeSlug(title), shortID(job.ID)))
+		baseDir = filepath.Join(activeVault.Path, "Transcripts", year, month, fmt.Sprintf("%s-%s", slug.Sanitize(title, "transcript"), shortID(job.ID)))
 		job.VaultID = &activeVault.ID
 	} else {
 		baseDir = filepath.Join("data", "transcripts", job.ID)
@@ -818,6 +794,8 @@ func (h *Handler) CompleteSetup(c *gin.Context) {
 		recoveredJobs = count
 	}
 
+	h.syncContactManager(c.Request.Context(), vault.ID, vault.Path)
+
 	resp := gin.H{
 		"message":   "Setup completed",
 		"auth_mode": authMode,
@@ -962,6 +940,10 @@ func (h *Handler) CreateVault(c *gin.Context) {
 		}
 	}
 
+	if req.Activate != nil && *req.Activate {
+		h.syncContactManager(c.Request.Context(), vault.ID, vault.Path)
+	}
+
 	c.JSON(http.StatusCreated, vault)
 }
 
@@ -1006,6 +988,10 @@ func (h *Handler) UpdateVault(c *gin.Context) {
 	if err := database.DB.Save(&vault).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update vault"})
 		return
+	}
+
+	if vault.IsActive {
+		h.syncContactManager(c.Request.Context(), vault.ID, vault.Path)
 	}
 
 	c.JSON(http.StatusOK, vault)
@@ -1072,6 +1058,8 @@ func (h *Handler) ActivateVault(c *gin.Context) {
 		return
 	}
 
+	h.syncContactManager(c.Request.Context(), vault.ID, vault.Path)
+
 	c.JSON(http.StatusOK, vault)
 }
 
@@ -1093,6 +1081,8 @@ func (h *Handler) RehydrateVault(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to recover vault data"})
 		return
 	}
+
+	h.reindexContactManager(c.Request.Context(), vault.ID, vault.Path)
 
 	c.JSON(http.StatusOK, gin.H{
 		"vault_id":       vault.ID,
@@ -1243,7 +1233,7 @@ func (h *Handler) SyncTranscriptToObsidian(c *gin.Context) {
 	if job.Title != nil && strings.TrimSpace(*job.Title) != "" {
 		title = strings.TrimSpace(*job.Title)
 	}
-	filename := fmt.Sprintf("%s-%s.md", sanitizeSlug(title), job.ID)
+	filename := fmt.Sprintf("%s-%s.md", slug.Sanitize(title, "transcript"), job.ID)
 	targetDir := filepath.Join(*setup.ObsidianVaultDir, "Quill")
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create Obsidian target directory"})
@@ -1522,15 +1512,28 @@ func (h *Handler) GetOpenClawJobTranscriptMarkdown(c *gin.Context) {
 }
 
 func (h *Handler) ListContacts(c *gin.Context) {
-	var contacts []models.Contact
-	if err := database.DB.Order("name ASC").Find(&contacts).Error; err != nil {
+	vault, err := getActiveVault()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No active vault configured"})
+		return
+	}
+
+	query := strings.TrimSpace(c.Query("q"))
+	contacts, err := h.contactRepo.Search(c.Request.Context(), vault.ID, query)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list contacts"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"contacts": contacts})
+	c.JSON(http.StatusOK, gin.H{"contacts": contacts, "vault_id": vault.ID})
 }
 
 func (h *Handler) CreateContact(c *gin.Context) {
+	vault, err := getActiveVault()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No active vault configured"})
+		return
+	}
+
 	var req ContactRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
@@ -1538,6 +1541,9 @@ func (h *Handler) CreateContact(c *gin.Context) {
 	}
 
 	contact := models.Contact{
+		VaultID:         vault.ID,
+		ContactUID:      uuid.NewString(),
+		Slug:            slug.Sanitize(strings.TrimSpace(req.Name), "contact"),
 		Name:            strings.TrimSpace(req.Name),
 		Phone:           req.Phone,
 		Email:           req.Email,
@@ -1549,22 +1555,35 @@ func (h *Handler) CreateContact(c *gin.Context) {
 		return
 	}
 
-	if err := database.DB.Create(&contact).Error; err != nil {
+	if err := h.contactRepo.Create(c.Request.Context(), &contact); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create contact"})
 		return
 	}
+
+	if err := h.persistContactFile(c.Request.Context(), &contact); err != nil {
+		_ = h.contactRepo.Delete(c.Request.Context(), contact.ID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create contact file artifacts"})
+		return
+	}
+
 	c.JSON(http.StatusCreated, contact)
 }
 
 func (h *Handler) GetContact(c *gin.Context) {
+	vault, err := getActiveVault()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No active vault configured"})
+		return
+	}
+
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid contact ID"})
 		return
 	}
 
-	var contact models.Contact
-	if err := database.DB.First(&contact, uint(id)).Error; err != nil {
+	contact, err := h.contactRepo.GetByIDInVault(c.Request.Context(), vault.ID, uint(id))
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Contact not found"})
 		return
 	}
@@ -1572,14 +1591,20 @@ func (h *Handler) GetContact(c *gin.Context) {
 }
 
 func (h *Handler) UpdateContact(c *gin.Context) {
+	vault, err := getActiveVault()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No active vault configured"})
+		return
+	}
+
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid contact ID"})
 		return
 	}
 
-	var contact models.Contact
-	if err := database.DB.First(&contact, uint(id)).Error; err != nil {
+	contact, err := h.contactRepo.GetByIDInVault(c.Request.Context(), vault.ID, uint(id))
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Contact not found"})
 		return
 	}
@@ -1597,11 +1622,12 @@ func (h *Handler) UpdateContact(c *gin.Context) {
 	}
 
 	contact.Name = trimmed
+	contact.Slug = slug.Sanitize(trimmed, "contact")
 	contact.Phone = req.Phone
 	contact.Email = req.Email
 	contact.Notes = req.Notes
 
-	if err := database.DB.Save(&contact).Error; err != nil {
+	if err := h.persistContactFile(c.Request.Context(), contact); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update contact"})
 		return
 	}
@@ -1609,13 +1635,29 @@ func (h *Handler) UpdateContact(c *gin.Context) {
 }
 
 func (h *Handler) DeleteContact(c *gin.Context) {
+	vault, err := getActiveVault()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No active vault configured"})
+		return
+	}
+
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid contact ID"})
 		return
 	}
 
-	if err := database.DB.Delete(&models.Contact{}, uint(id)).Error; err != nil {
+	contact, err := h.contactRepo.GetByIDInVault(c.Request.Context(), vault.ID, uint(id))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Contact not found"})
+		return
+	}
+
+	if err := h.deleteContactFiles(c.Request.Context(), contact); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete contact artifacts"})
+		return
+	}
+	if err := h.contactRepo.Delete(c.Request.Context(), uint(id)); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete contact"})
 		return
 	}
@@ -1639,14 +1681,20 @@ func getActiveVaultPath() (string, error) {
 }
 
 func (h *Handler) UploadContactSnippet(c *gin.Context) {
+	vault, err := getActiveVault()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No active vault configured"})
+		return
+	}
+
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid contact ID"})
 		return
 	}
 
-	var contact models.Contact
-	if err := database.DB.First(&contact, uint(id)).Error; err != nil {
+	contact, err := h.contactRepo.GetByIDInVault(c.Request.Context(), vault.ID, uint(id))
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Contact not found"})
 		return
 	}
@@ -1657,15 +1705,9 @@ func (h *Handler) UploadContactSnippet(c *gin.Context) {
 		return
 	}
 
-	vaultPath, vaultErr := getActiveVaultPath()
-	if vaultErr != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "No active vault configured"})
-		return
-	}
-
-	snippetDir := filepath.Join(vaultPath, "Contacts", "Snippets")
-	if err := os.MkdirAll(snippetDir, 0755); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to prepare snippet directory"})
+	fileService := contacts.NewFileService(vault.Path)
+	if err := h.persistContactFile(c.Request.Context(), contact); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to prepare contact folder"})
 		return
 	}
 
@@ -1680,7 +1722,15 @@ func (h *Handler) UploadContactSnippet(c *gin.Context) {
 	if ext == "" {
 		ext = ".wav"
 	}
-	targetPath := filepath.Join(snippetDir, fmt.Sprintf("contact-%d-%s%s", contact.ID, uuid.NewString(), ext))
+
+	folderRel := filepath.ToSlash(filepath.Dir(contact.NotePath))
+	targetRel := filepath.ToSlash(filepath.Join(folderRel, "voice-snippet"+ext))
+	targetPath := fileService.ResolveAbsPath(targetRel)
+	if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to prepare contact snippet path"})
+		return
+	}
+
 	dst, err := os.Create(targetPath)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to store snippet file"})
@@ -1693,23 +1743,220 @@ func (h *Handler) UploadContactSnippet(c *gin.Context) {
 		return
 	}
 
-	contact.VoiceSnippetPath = &targetPath
+	contact.VoiceSnippetPath = &targetRel
 	contact.SignatureStatus = "processing"
-	now := time.Now().Format(time.RFC3339)
-	signatureMeta := map[string]string{
-		"last_updated": now,
-		"status":       "processing",
-	}
-	payload, _ := json.Marshal(signatureMeta)
-	payloadStr := string(payload)
-	contact.SignatureData = &payloadStr
+	contact.SyncError = nil
+	contact.SignatureEmbeddingPath = nil
 
-	if err := database.DB.Save(&contact).Error; err != nil {
+	if err := h.persistContactFile(c.Request.Context(), contact); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update contact"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"contact_id": contact.ID, "snippet_path": targetPath, "signature_status": contact.SignatureStatus})
+	if h.contactManager != nil {
+		h.contactManager.EnqueueEmbedding(contact.ID)
+	} else {
+		errMsg := "contact embedding worker is unavailable"
+		contact.SignatureStatus = "failed"
+		contact.SyncError = &errMsg
+		_ = h.persistContactFile(c.Request.Context(), contact)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"contact_id":               contact.ID,
+		"snippet_path":             contact.VoiceSnippetPath,
+		"signature_status":         contact.SignatureStatus,
+		"signature_embedding_path": contact.SignatureEmbeddingPath,
+	})
+}
+
+func (h *Handler) GetContactSnippet(c *gin.Context) {
+	vault, err := getActiveVault()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No active vault configured"})
+		return
+	}
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid contact ID"})
+		return
+	}
+	contact, err := h.contactRepo.GetByIDInVault(c.Request.Context(), vault.ID, uint(id))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Contact not found"})
+		return
+	}
+	if contact.VoiceSnippetPath == nil || strings.TrimSpace(*contact.VoiceSnippetPath) == "" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Voice snippet not found"})
+		return
+	}
+	fileService := contacts.NewFileService(vault.Path)
+	snippetAbs, ok := fileService.ResolveAndValidate(*contact.VoiceSnippetPath)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid snippet path"})
+		return
+	}
+	if _, statErr := os.Stat(snippetAbs); statErr != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Voice snippet not found"})
+		return
+	}
+	c.File(snippetAbs)
+}
+
+func (h *Handler) DeleteContactSnippet(c *gin.Context) {
+	vault, err := getActiveVault()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No active vault configured"})
+		return
+	}
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid contact ID"})
+		return
+	}
+	contact, err := h.contactRepo.GetByIDInVault(c.Request.Context(), vault.ID, uint(id))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Contact not found"})
+		return
+	}
+
+	fileService := contacts.NewFileService(vault.Path)
+	if contact.VoiceSnippetPath != nil {
+		if abs, ok := fileService.ResolveAndValidate(*contact.VoiceSnippetPath); ok {
+			_ = os.Remove(abs)
+		}
+	}
+	if contact.SignatureEmbeddingPath != nil {
+		if abs, ok := fileService.ResolveAndValidate(*contact.SignatureEmbeddingPath); ok {
+			_ = os.Remove(abs)
+		}
+	}
+
+	contact.VoiceSnippetPath = nil
+	contact.SignatureEmbeddingPath = nil
+	contact.SignatureStatus = "none"
+	contact.SyncError = nil
+	if err := h.persistContactFile(c.Request.Context(), contact); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update contact"})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (h *Handler) GetContactFiles(c *gin.Context) {
+	vault, err := getActiveVault()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No active vault configured"})
+		return
+	}
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid contact ID"})
+		return
+	}
+	contact, err := h.contactRepo.GetByIDInVault(c.Request.Context(), vault.ID, uint(id))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Contact not found"})
+		return
+	}
+	fileService := contacts.NewFileService(vault.Path)
+	c.JSON(http.StatusOK, gin.H{
+		"contact_id":                   contact.ID,
+		"vault_id":                     contact.VaultID,
+		"note_path":                    contact.NotePath,
+		"note_abs_path":                fileService.ResolveAbsPath(contact.NotePath),
+		"voice_snippet_path":           contact.VoiceSnippetPath,
+		"signature_embedding_path":     contact.SignatureEmbeddingPath,
+		"signature_status":             contact.SignatureStatus,
+		"sync_error":                   contact.SyncError,
+		"file_mtime_ns":                contact.FileMtimeNS,
+		"voice_snippet_abs_path":       absFromOptional(fileService, contact.VoiceSnippetPath),
+		"signature_embedding_abs_path": absFromOptional(fileService, contact.SignatureEmbeddingPath),
+	})
+}
+
+func (h *Handler) ReindexContacts(c *gin.Context) {
+	vault, err := getActiveVault()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No active vault configured"})
+		return
+	}
+
+	if h.contactManager != nil {
+		result, reindexErr := h.contactManager.ReindexActiveVault(c.Request.Context())
+		if reindexErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reindex contacts"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"vault_id": vault.ID, "result": result})
+		return
+	}
+
+	fileService := contacts.NewFileService(vault.Path)
+	syncService := contacts.NewSyncService(fileService, h.contactRepo, vault.ID)
+	result, reindexErr := syncService.SyncFromFilesystem(c.Request.Context())
+	if reindexErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reindex contacts"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"vault_id": vault.ID, "result": result})
+}
+
+func (h *Handler) persistContactFile(ctx context.Context, contact *models.Contact) error {
+	if h.contactManager != nil {
+		return h.contactManager.WriteContact(ctx, contact)
+	}
+	var vault models.Vault
+	if err := database.DB.WithContext(ctx).First(&vault, contact.VaultID).Error; err != nil {
+		return err
+	}
+	fileService := contacts.NewFileService(vault.Path)
+	if err := fileService.WriteContact(contact); err != nil {
+		return err
+	}
+	return h.contactRepo.Update(ctx, contact)
+}
+
+func (h *Handler) deleteContactFiles(ctx context.Context, contact *models.Contact) error {
+	if h.contactManager != nil {
+		return h.contactManager.DeleteContactFiles(ctx, contact)
+	}
+	var vault models.Vault
+	if err := database.DB.WithContext(ctx).First(&vault, contact.VaultID).Error; err != nil {
+		return err
+	}
+	fileService := contacts.NewFileService(vault.Path)
+	return fileService.DeleteContactFolder(contact)
+}
+
+func absFromOptional(fileService *contacts.FileService, value *string) string {
+	if value == nil || strings.TrimSpace(*value) == "" {
+		return ""
+	}
+	return fileService.ResolveAbsPath(*value)
+}
+
+func (h *Handler) syncContactManager(ctx context.Context, vaultID uint, vaultPath string) {
+	if h.contactManager == nil {
+		return
+	}
+	if activeID, activePath, ok := h.contactManager.ActiveVault(); ok &&
+		activeID == vaultID &&
+		filepath.Clean(activePath) == filepath.Clean(vaultPath) {
+		return
+	}
+	if err := h.contactManager.SwitchVault(ctx, vaultID, vaultPath); err != nil {
+		logger.Warn("failed to switch contact manager vault", "vault_id", vaultID, "error", err)
+	}
+}
+
+func (h *Handler) reindexContactManager(ctx context.Context, vaultID uint, vaultPath string) {
+	if h.contactManager == nil {
+		return
+	}
+	if _, err := h.contactManager.ReindexVault(ctx, vaultID, vaultPath); err != nil {
+		logger.Warn("failed to reindex contacts for vault", "vault_id", vaultID, "error", err)
+	}
 }
 
 func (h *Handler) MaterializeTranscriptArtifacts(c *gin.Context) {

@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 
 	"quill/internal/database"
 	"quill/internal/models"
@@ -22,6 +21,7 @@ import (
 	"quill/internal/webhook"
 	"quill/pkg/binaries"
 	"quill/pkg/logger"
+	"quill/pkg/slug"
 )
 
 const (
@@ -983,32 +983,6 @@ func shortID(value string) string {
 	return value[:8]
 }
 
-func sanitizeSlug(value string) string {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return "transcript"
-	}
-	var b strings.Builder
-	lastDash := false
-	for _, r := range strings.ToLower(trimmed) {
-		switch {
-		case unicode.IsLetter(r) || unicode.IsDigit(r):
-			b.WriteRune(r)
-			lastDash = false
-		case unicode.IsSpace(r) || r == '-' || r == '_' || r == '.':
-			if !lastDash {
-				b.WriteRune('-')
-				lastDash = true
-			}
-		}
-	}
-	result := strings.Trim(b.String(), "-")
-	if result == "" {
-		return "transcript"
-	}
-	return result
-}
-
 func formatMMSS(seconds float64) string {
 	if seconds < 0 {
 		seconds = 0
@@ -1074,7 +1048,7 @@ func (u *UnifiedTranscriptionService) materializeTranscriptArtifacts(ctx context
 			"Transcripts",
 			job.CreatedAt.Format("2006"),
 			job.CreatedAt.Format("01"),
-			fmt.Sprintf("%s-%s", sanitizeSlug(title), shortID(job.ID)),
+			fmt.Sprintf("%s-%s", slug.Sanitize(title, "transcript"), shortID(job.ID)),
 		)
 		job.VaultID = &activeVault.ID
 	} else {

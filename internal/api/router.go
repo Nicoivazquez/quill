@@ -239,11 +239,15 @@ func SetupRoutes(handler *Handler, authService *auth.AuthService) *gin.Engine {
 		contacts.Use(middleware.AuthMiddleware(authService))
 		{
 			contacts.GET("", handler.ListContacts)
+			contacts.POST("/reindex", handler.ReindexContacts)
 			contacts.POST("", handler.CreateContact)
 			contacts.GET("/:id", handler.GetContact)
+			contacts.GET("/:id/files", handler.GetContactFiles)
 			contacts.PUT("/:id", handler.UpdateContact)
 			contacts.DELETE("/:id", handler.DeleteContact)
+			contacts.GET("/:id/snippet", handler.GetContactSnippet)
 			contacts.POST("/:id/snippet", handler.UploadContactSnippet)
+			contacts.DELETE("/:id/snippet", handler.DeleteContactSnippet)
 		}
 
 		// Admin routes (require authentication)

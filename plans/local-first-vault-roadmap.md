@@ -77,7 +77,7 @@
 - OpenClaw can submit/drop recordings and fetch artifacts/status end-to-end.
 - Obsidian note publish can create and deterministically update existing notes.
 
-## Phase 5: Contacts + Voice Signature Scaffold
+## Phase 5A: Contacts + Voice Signature Scaffold (Completed)
 - Contact CRUD fields:
   - name
   - phone
@@ -87,11 +87,38 @@
 - Signature metadata scaffold:
   - status lifecycle: `none` -> `processing` -> `ready|failed`
   - signature metadata payload slot for later matcher pipeline
-- Full voice matching deferred to a later phase.
 
 ### Completion Criteria
 - Contacts and snippets are persisted.
 - Signature status can be tracked independently of matching.
+
+## Phase 5B: Contacts File-First + Vault Sync (In Progress)
+- Filesystem-first contacts contract:
+  - canonical note per contact: `Contacts/People/<slug>--<uid>/contact.md`
+  - DB retained as cache/index (`vault_id` scoped)
+- Vault-scoped contact APIs and diagnostics:
+  - list/get/update/delete scoped to active vault
+  - `POST /api/v1/contacts/reindex`
+  - `GET /api/v1/contacts/:id/files`
+  - snippet get/delete endpoints
+- Bidirectional sync + watcher:
+  - startup backfill for legacy contacts
+  - reindex service and watcher lifecycle wiring during vault setup/activation/rehydration
+  - hard-delete semantics remove folder + DB row
+- Voice signature artifacts:
+  - snippet artifact: `voice-snippet.<ext>`
+  - embedding artifact: `voice-signature.embedding.json`
+  - async NeMo TitaNet extraction worker with graceful failure path when runtime is unavailable
+
+### Completion Criteria
+- Contact markdown is the canonical metadata source.
+- Vault switches keep contact sync runtime isolated.
+- Snippet upload transitions signature lifecycle asynchronously and persists artifact paths.
+
+## Phase 6: Speaker Matching Pipeline (Deferred)
+- Build embedding comparison/matching against contact signatures.
+- Map diarization speakers to contacts using configurable thresholds and confidence tracking.
+- Add review and correction workflow for match decisions.
 
 ## Public Interfaces / Contracts
 - Setup APIs:
@@ -110,7 +137,10 @@
   - fetch transcript Markdown
 - Contact APIs:
   - CRUD
+  - reindex
+  - file diagnostics
   - snippet upload
+  - snippet fetch/delete
   - signature status scaffolding
 
 ## Test Plan
@@ -126,11 +156,14 @@
   - process
   - retrieve status + JSON + Markdown
 - Contact scaffold:
-  - CRUD works
-  - snippets stored in vault paths
-  - status transitions validated
+  - migration/backfill is idempotent
+  - DB <-> file roundtrip works (including external note edits)
+  - watcher sync/debounce and self-write suppression work
+  - hard-delete removes DB row and contact folder
+  - snippets and embedding status transitions are persisted
 
 ## Implementation Notes
 - Keep JSON as source-of-truth for diarization and AI workflows.
 - Keep Markdown predictable and plugin-friendly for Obsidian integration.
-- Phase 5 intentionally stays one-way for Obsidian sync (no bi-directional merge logic yet).
+- Phase 5B keeps `contact.md` as the only canonical contact metadata file (no parallel `contact.json`).
+- Phase 6 remains deferred for actual speaker-to-contact matching logic.

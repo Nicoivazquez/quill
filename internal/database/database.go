@@ -1,12 +1,14 @@
 package database
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
+	"quill/internal/contacts"
 	"quill/internal/models"
 
 	"github.com/glebarez/sqlite"
@@ -82,6 +84,10 @@ func Initialize(dbPath string) error {
 		&models.Contact{},
 	); err != nil {
 		return fmt.Errorf("failed to auto migrate: %v", err)
+	}
+
+	if err := contacts.BackfillContactsFileFirst(context.Background(), DB); err != nil {
+		return fmt.Errorf("failed to backfill contacts file-first schema: %v", err)
 	}
 
 	// Cleanup duplicate speaker mappings before creating unique index (for backward compatibility)

@@ -15,6 +15,7 @@ import (
 	"quill/internal/api"
 	"quill/internal/auth"
 	"quill/internal/config"
+	"quill/internal/contacts"
 	"quill/internal/database"
 	"quill/internal/folderwatch"
 	"quill/internal/models"
@@ -111,6 +112,7 @@ func main() {
 	chatRepo := repository.NewChatRepository(database.DB)
 	noteRepo := repository.NewNoteRepository(database.DB)
 	speakerMappingRepo := repository.NewSpeakerMappingRepository(database.DB)
+	contactRepo := repository.NewContactRepository(database.DB)
 	refreshTokenRepo := repository.NewRefreshTokenRepository(database.DB)
 	watchedFolderRepo := repository.NewWatchedFolderRepository(database.DB)
 
@@ -165,6 +167,12 @@ func main() {
 	}
 	defer folderWatchService.Stop()
 
+	contactManager := contacts.NewManager(database.DB, contactRepo, cfg.WhisperXEnv)
+	if err := contactManager.Start(context.Background()); err != nil {
+		logger.Warn("Contact file-sync manager failed to initialize", "error", err)
+	}
+	defer contactManager.Stop()
+
 	// Initialize multi-track processor
 	multiTrackProcessor := processing.NewMultiTrackProcessor(database.DB, jobRepo)
 
@@ -183,6 +191,7 @@ func main() {
 		chatRepo,
 		noteRepo,
 		speakerMappingRepo,
+		contactRepo,
 		refreshTokenRepo,
 		taskQueue,
 		unifiedProcessor,
@@ -191,6 +200,7 @@ func main() {
 		broadcaster,
 	)
 	handler.SetFolderWatchService(folderWatchService)
+	handler.SetContactManager(contactManager)
 	taskQueue.SetOnJobCompleted(func(jobID string) {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()

@@ -21,6 +21,7 @@ import (
 
 	"quill/internal/auth"
 	"quill/internal/config"
+	"quill/internal/contacts"
 	"quill/internal/folderwatch"
 	"quill/internal/llm"
 	"quill/internal/models"
@@ -53,12 +54,14 @@ type Handler struct {
 	chatRepo            repository.ChatRepository
 	noteRepo            repository.NoteRepository
 	speakerMappingRepo  repository.SpeakerMappingRepository
+	contactRepo         repository.ContactRepository
 	refreshTokenRepo    repository.RefreshTokenRepository
 	taskQueue           *queue.TaskQueue
 	unifiedProcessor    *transcription.UnifiedJobProcessor
 	quickTranscription  *transcription.QuickTranscriptionService
 	multiTrackProcessor *processing.MultiTrackProcessor
 	folderWatchService  *folderwatch.Service
+	contactManager      *contacts.Manager
 	broadcaster         *sse.Broadcaster
 }
 
@@ -77,6 +80,7 @@ func NewHandler(
 	chatRepo repository.ChatRepository,
 	noteRepo repository.NoteRepository,
 	speakerMappingRepo repository.SpeakerMappingRepository,
+	contactRepo repository.ContactRepository,
 	refreshTokenRepo repository.RefreshTokenRepository,
 	taskQueue *queue.TaskQueue,
 	unifiedProcessor *transcription.UnifiedJobProcessor,
@@ -98,6 +102,7 @@ func NewHandler(
 		chatRepo:            chatRepo,
 		noteRepo:            noteRepo,
 		speakerMappingRepo:  speakerMappingRepo,
+		contactRepo:         contactRepo,
 		refreshTokenRepo:    refreshTokenRepo,
 		taskQueue:           taskQueue,
 		unifiedProcessor:    unifiedProcessor,
@@ -110,6 +115,11 @@ func NewHandler(
 // SetFolderWatchService wires optional desktop auto-import functionality.
 func (h *Handler) SetFolderWatchService(folderWatchService *folderwatch.Service) {
 	h.folderWatchService = folderWatchService
+}
+
+// SetContactManager wires optional file-first contact synchronization.
+func (h *Handler) SetContactManager(contactManager *contacts.Manager) {
+	h.contactManager = contactManager
 }
 
 // SubmitJobRequest represents the submit job request

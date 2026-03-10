@@ -26,14 +26,21 @@ type AppSetup struct {
 
 // Contact stores contact and voice snippet/signature scaffold data.
 type Contact struct {
-	ID               uint      `json:"id" gorm:"primaryKey"`
-	Name             string    `json:"name" gorm:"type:varchar(255);not null"`
-	Phone            *string   `json:"phone,omitempty" gorm:"type:varchar(64)"`
-	Email            *string   `json:"email,omitempty" gorm:"type:varchar(255)"`
-	Notes            *string   `json:"notes,omitempty" gorm:"type:text"`
-	VoiceSnippetPath *string   `json:"voice_snippet_path,omitempty" gorm:"type:text"`
-	SignatureStatus  string    `json:"signature_status" gorm:"type:varchar(32);not null;default:'none'"`
-	SignatureData    *string   `json:"signature_data,omitempty" gorm:"type:text"`
-	CreatedAt        time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt        time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                     uint      `json:"id" gorm:"primaryKey"`
+	VaultID                uint      `json:"vault_id" gorm:"not null;index"`
+	ContactUID             string    `json:"contact_uid" gorm:"type:varchar(36);not null;uniqueIndex"`
+	Slug                   string    `json:"slug" gorm:"type:varchar(255);not null"`
+	Name                   string    `json:"name" gorm:"type:varchar(255);not null"`
+	Phone                  *string   `json:"phone,omitempty" gorm:"type:varchar(64)"`
+	Email                  *string   `json:"email,omitempty" gorm:"type:varchar(255)"`
+	Notes                  *string   `json:"notes,omitempty" gorm:"type:text"`
+	NotePath               string    `json:"note_path" gorm:"type:text"`
+	FileMtimeNS            int64     `json:"file_mtime_ns" gorm:"not null;default:0"`
+	SyncError              *string   `json:"sync_error,omitempty" gorm:"type:text"`
+	VoiceSnippetPath       *string   `json:"voice_snippet_path,omitempty" gorm:"type:text"`
+	SignatureEmbeddingPath *string   `json:"signature_embedding_path,omitempty" gorm:"type:text"`
+	SignatureStatus        string    `json:"signature_status" gorm:"type:varchar(32);not null;default:'none'"`
+	SignatureData          *string   `json:"signature_data,omitempty" gorm:"type:text"`
+	CreatedAt              time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt              time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }

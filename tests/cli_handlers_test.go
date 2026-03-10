@@ -45,6 +45,7 @@ func (suite *CLIHandlerTestSuite) SetupSuite() {
 	chatRepo := repository.NewChatRepository(suite.helper.DB)
 	noteRepo := repository.NewNoteRepository(suite.helper.DB)
 	speakerMappingRepo := repository.NewSpeakerMappingRepository(suite.helper.DB)
+	contactRepo := repository.NewContactRepository(suite.helper.DB)
 	refreshTokenRepo := repository.NewRefreshTokenRepository(suite.helper.DB)
 
 	// Initialize services
@@ -77,6 +78,7 @@ func (suite *CLIHandlerTestSuite) SetupSuite() {
 		chatRepo,
 		noteRepo,
 		speakerMappingRepo,
+		contactRepo,
 		refreshTokenRepo,
 		suite.taskQueue,
 		suite.unifiedProcessor,
