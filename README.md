@@ -5,7 +5,7 @@
 </br>
 </br>
 <p align="center">
-Quill is an open-source, and completely offline audio transcription application designed for self-hosters who value privacy and performance.
+Desktop-first, local-first, privacy-focused audio transcription. Your recordings never leave your machine.
 </p>
 
 <p align="center">
@@ -22,38 +22,275 @@ Quill is an open-source, and completely offline audio transcription application 
   <img src="screenshots/hero.png" alt="Quill Desktop App" width="800" />
 </div>
 
-## Sponsors
-
-![recall.ai-logo](https://cdn.prod.website-files.com/620d732b1f1f7b244ac89f0e/66b294e51ee15f18dd2b171e_recall-logo.svg) Meeting Transcription API   
-If you're looking for a transcription API for meetings, consider checking out [Recall.ai](https://www.recall.ai/?utm_source=github&utm_medium=sponsorship&utm_campaign=rishikanthc-quill), an API that works with Zoom, Google Meet, Microsoft Teams, and more.
-Recall.ai diarizes by pulling the speaker data and seperate audio streams from the meeting platforms, which means 100% accurate speaker diarization with actual speaker names.
-
 ## Introduction
 
-At its core, Quill allows you to transcribe audio and video locally on your machine, ensuring no data is ever sent to a third-party cloud provider.
-Leveraging state-of-the-art machine learning models (such as **NVIDIA Parakeet**, and **Canary**) or the older more popular **Whisper** models, it delivers high-accuracy text with word-level timing.
+Quill is an open-source audio transcription app that runs entirely on your machine. It ships as a **native desktop app** built on a local-first vault architecture — your recordings, transcripts, and contacts live as plain files in folders you own, much like Obsidian. The database is just a cache; delete it and Quill rebuilds it from your files.
 
-Quill goes beyond simple transcription and provides various advanced capabilities.
-It combines powerful under-the-hood AI with a polished, fluid user interface that makes managing your recordings feel effortless. Whether you are sorting through voice notes or analyzing long meetings, Quill provides a beautiful environment to get work done:
+A Docker/server deployment is available for power users who want to self-host on dedicated hardware.
 
-- **Smart Speaker Detection**: Quill automatically detects different speakers (Diarization) and labels exactly who said what.
-- **Chat with your Audio**: Connect seamlessly with Ollama or OpenAI API compatible providers. You can generate summaries, ask questions, or have a full conversation with your transcripts right inside the app.
-- **Built for your Workflow**: With extensive APIs and Folder Watcher that automatically processes new files in a folder, Quill fits right into your existing automations (like n8n).
-- **Capture & Organize**: Use the built-in audio recorder to capture thoughts on the fly, and the integrated note-taking features to annotate your transcripts as you listen.
-- **Native Experience everywhere**: Quill supports PWA (Progressive Web App) installation, giving you a native app experience on your desktop or mobile device.
-- **A Polished UI**: I’ve focused on the little UI niceties that make the app feel responsive and satisfying to use.
+- **Offline transcription** — WhisperX, NVIDIA Parakeet, and Canary models run locally with no cloud dependency
+- **Smart speaker detection** — automatic diarization labels who said what
+- **Chat with your audio** — connect Ollama or any OpenAI-compatible provider to summarize, ask questions, or converse with your transcripts
+- **Vault-based file organization** — Obsidian-like plain Markdown + JSON in folders on your machine
+- **Contacts with voice signatures** — associate voice snippets with contacts using NeMo TitaNet embeddings for automatic speaker identification
+- **Auto-import folder watching** — drop files into a watched folder and Quill transcribes them automatically
+- **Built-in audio recorder & notes** — capture thoughts on the fly and annotate transcripts as you listen
+- **PWA + native desktop app** — install as a Progressive Web App on any device, or use the native macOS app
 
 [View full list of features →](https://quill.app/docs/features)
 
-### Why I built this
+## Philosophy: Your Data, Your Files
 
-The inspiration for Quill was born out of privacy paranoia and not wanting to pay for subscription.
-About a year ago, I purchased a [Plaud Note](https://www.plaud.ai/) for recording voice memos. I loved the device itself; the form factor, microphone quality, and workflow were excellent.
+Quill follows the same principle as Obsidian: everything is stored as plain Markdown and JSON in folders you control. The SQLite database is a read cache — you can delete it and Quill will rehydrate from your vault files on next launch.
 
-However, transcription was done on their cloud servers. As someone who is paranoid about privacy I wasn't comfortable with uploading my recordings to a third party provider.
-Moreover I was hit with subscription costs: $100 a year for 20 hours of transcription per month, or $240 a year for unlimited access. As an avid self-hoster with a background in ML and AI, it felt wrong to pay such a premium for a service I knew I could engineer myself.
+```
+MyVault/
+├── .quill/                                    # Vault metadata
+├── Inbox/Media/                               # Uploaded/recorded audio
+├── Transcripts/YYYY/MM/<title>-<id>/
+│   ├── transcript.md                          # Human-readable transcript
+│   └── transcript.json                        # Structured data (timestamps, speakers)
+└── Contacts/People/<name>--<uid>/
+    ├── contact.md                             # YAML frontmatter + notes
+    └── voice-snippet.wav                      # Voice sample for speaker ID
+```
 
-I decided to build Quill to bridge that gap, creating a powerful, private, and free alternative for everyone.
+You can create multiple vaults and switch between them. Each vault is a self-contained folder that can be moved, backed up, or synced however you like.
+
+## Contacts & Voice Signatures
+
+Quill stores contacts as folder-per-person structures inside your vault. Each contact has a Markdown file with YAML frontmatter (name, email, organization, tags) and an optional voice snippet.
+
+**How voice signatures work:**
+
+1. Upload a short audio clip of someone speaking to their contact profile
+2. Quill extracts a voice embedding using NVIDIA NeMo TitaNet
+3. When transcribing new audio, Quill compares speaker segments against known voice embeddings
+4. Matched speakers are automatically labeled with contact names in the transcript
+
+Contacts sync bidirectionally — edit the Markdown files directly or use the app UI. Changes are picked up automatically via filesystem watching.
+
+## Installation
+
+### Desktop App (Recommended)
+
+Download the latest macOS DMG from [GitHub Releases](https://github.com/rishikanthc/quill/releases).
+
+On first launch, Quill will:
+1. Initialize a Python environment for ML models
+2. Download transcription models (WhisperX, PyAnnote, NVIDIA NeMo)
+3. Set up the database
+
+This initial setup requires an internet connection. Subsequent launches are fast and fully offline.
+
+The desktop app bundles **ffmpeg**, **uv** (Python package manager), and **yt-dlp**.
+
+### Homebrew (macOS & Linux)
+
+```bash
+# Add the Quill tap
+brew tap rishikanthc/quill
+
+# Install Quill (automatically installs uv and ffmpeg)
+brew install quill
+
+# Start the server
+quill
+```
+
+Open [http://localhost:8080](http://localhost:8080) in your browser.
+
+### Docker (Advanced)
+
+For a containerized setup on dedicated hardware. We provide images for CPU, CUDA GPUs, and Blackwell-generation GPUs.
+
+> [!IMPORTANT]
+> **Permissions:** Set `PUID` and `PGID` to your host user's UID/GID (typically `1000` on Linux) to avoid SQLite permission errors. Run `id` on your host to check.
+>
+> **HTTP vs HTTPS:** Quill enables Secure Cookies in production by default. If accessing via plain HTTP, set `SECURE_COOKIES=false` or you will get "Unable to load audio stream" errors.
+
+#### CPU
+
+```yaml
+services:
+  quill:
+    image: ghcr.io/rishikanthc/quill:v1.2.0
+    ports:
+      - "8080:8080"
+    volumes:
+      - quill_data:/app/data
+      - env_data:/app/whisperx-env
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - APP_ENV=production
+      # - ALLOWED_ORIGINS=https://your-domain.com
+      # - SECURE_COOKIES=false  # Uncomment for HTTP-only access
+    restart: unless-stopped
+
+volumes:
+  quill_data: {}
+  env_data: {}
+```
+
+```bash
+docker compose up -d
+```
+
+#### NVIDIA GPU (CUDA)
+
+Requires the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html).
+
+```yaml
+services:
+  quill:
+    image: ghcr.io/rishikanthc/quill-cuda:v1.2.0
+    ports:
+      - "8080:8080"
+    volumes:
+      - quill_data:/app/data
+      - env_data:/app/whisperx-env
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities:
+                - gpu
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - APP_ENV=production
+      # - ALLOWED_ORIGINS=https://your-domain.com
+      # - SECURE_COOKIES=false  # Uncomment for HTTP-only access
+
+volumes:
+  quill_data: {}
+  env_data: {}
+```
+
+```bash
+docker compose -f docker-compose.cuda.yml up -d
+```
+
+#### Blackwell (RTX 50-series)
+
+RTX 5080/5090 users must use the Blackwell-specific image due to CUDA/PyTorch compatibility:
+
+```bash
+docker compose -f docker-compose.blackwell.yml up -d
+```
+
+#### GPU Compatibility
+
+| GPU Generation | Compute Capability | Docker Image | Docker Compose File |
+|:---|:---|:---|:---|
+| GTX 10-series (Pascal) | sm_61 | `quill-cuda` | `docker-compose.cuda.yml` |
+| RTX 20-series (Turing) | sm_75 | `quill-cuda` | `docker-compose.cuda.yml` |
+| RTX 30-series (Ampere) | sm_86 | `quill-cuda` | `docker-compose.cuda.yml` |
+| RTX 40-series (Ada Lovelace) | sm_89 | `quill-cuda` | `docker-compose.cuda.yml` |
+| **RTX 50-series (Blackwell)** | sm_120 | `quill-cuda-blackwell` | `docker-compose.blackwell.yml` |
+
+### First Run
+
+When you run Quill for the first time, it needs to initialize Python environments and download ML models. You will know it's ready when you see:
+
+```
+msg="Quill is ready" url=http://0.0.0.0:8080
+```
+
+Subsequent launches are fast because models and environments are persisted.
+
+## Configuration
+
+Quill works out of the box. For Homebrew or manual installations, you can customize behavior with environment variables or a `.env` file in the working directory.
+
+Docker users can set these in the `environment` section of their compose file.
+
+| Variable | Default | Description |
+|:---|:---|:---|
+| `PORT` | `8080` | Server port |
+| `HOST` | `0.0.0.0` | Bind address |
+| `APP_ENV` | `development` | Environment (`development` or `production`) |
+| `ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:8080` | CORS allowed origins (comma-separated) |
+| `DATABASE_PATH` | `data/quill.db` | SQLite database path |
+| `JWT_SECRET` | Auto-generated | JWT signing secret (auto-generated and persisted if not set) |
+| `JWT_SECRET_FILE` | `data/jwt_secret` | Path to persist the auto-generated JWT secret |
+| `UPLOAD_DIR` | `data/uploads` | Upload storage directory |
+| `TRANSCRIPTS_DIR` | `data/transcripts` | Transcript output directory |
+| `TEMP_DIR` | `data/temp` | Temporary processing files |
+| `WHISPERX_ENV` | `data/whisperx-env` | Python environment path for ML models |
+| `QUILL_WHISPERX_ZIP_URL` | GitHub release URL | WhisperX source archive URL |
+| `QUILL_WHISPERX_ZIP_SHA256` | `""` | Optional SHA-256 checksum for the archive |
+| `SECURE_COOKIES` | `true` in production | Set `false` for HTTP-only deployments |
+| `AUTH_MODE` | `local` | Authentication mode (`local` for single-user) |
+| `OPENAI_API_KEY` | `""` | OpenAI API key for LLM features |
+| `HF_TOKEN` | `""` | HuggingFace token for model downloads |
+| `QUILL_DEFER_MODEL_INIT` | `false` | Defer ML model download to first use (desktop builds) |
+
+For packaged desktop builds, `QUILL_WHISPERX_ZIP_URL` is automatically overridden to a bundled local archive when available.
+
+## Setting Up Ollama (Local LLMs)
+
+Quill can use local LLMs through [Ollama](https://ollama.com) for chat, summaries, and Q&A over your transcripts.
+
+**Setup:**
+
+1. Install Ollama: `brew install ollama` or download from [ollama.com](https://ollama.com)
+2. Pull a model: `ollama pull qwen2.5:7b`
+3. In Quill, go to **Settings > LLMs > Ollama** and set the base URL to `http://localhost:11434`
+
+### Recommended Models by Mac
+
+Pick a model that fits comfortably in your available RAM. Use `Q4_K_M` quantization for the best speed/quality balance.
+
+| Mac | RAM | Recommended Model | Notes |
+|:---|:---|:---|:---|
+| M1 / M2 (base) | 8 GB | `llama3.2:3b` or `qwen2.5:1.5b` | Lightweight only; ~18–22 tok/s |
+| M1/M2 Pro | 16 GB | `qwen2.5:7b` or `llama3.1:8b` | Best balance of quality and speed |
+| M1/M2 Max | 32–64 GB | `qwen2.5:14b` or `llama3.3:70b` (64 GB) | Larger models viable |
+| M3 (base) | 8–16 GB | `qwen2.5:7b` (16 GB) or `llama3.2:3b` (8 GB) | ~25 tok/s at 7B |
+| M3 Pro | 18–36 GB | `qwen2.5:14b` or `mistral-nemo:12b` | Sweet spot for 14B |
+| M3 Max | 36–128 GB | `llama3.3:70b` or `qwen2.5:14b` | 70B comfortable at 64 GB+ |
+| M4 (base) | 16–32 GB | `qwen2.5:7b` or `gemma2:9b` | ~30 tok/s at 7B |
+| M4 Pro | 24–48 GB | `qwen2.5:14b` or `phi4:14b` | Great 14B performance |
+| M4 Max | 36–128 GB | `llama3.3:70b` | 70B runs well |
+| M5 (base) | 16–32 GB | `qwen2.5:7b` or `gemma2:9b` | ~30% faster than M4 |
+| M5 Pro | 24–64 GB | `qwen2.5:14b` or `phi4:14b` | Up to 307 GB/s bandwidth |
+| M5 Max | 36–128 GB | `llama3.3:70b` | Up to 614 GB/s bandwidth |
+
+## HuggingFace Token (Speaker Diarization)
+
+Speaker diarization (detecting who said what) uses PyAnnote models hosted on HuggingFace. These require a free access token.
+
+**How to get a token:**
+
+1. Sign up at [huggingface.co](https://huggingface.co)
+2. Create a read token at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
+3. Accept the model license agreements:
+   - [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1)
+   - [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0)
+
+**How to provide the token:**
+
+- **Desktop app:** Enter it per-job in **Settings > Transcription**
+- **Docker:** Set `HF_TOKEN` in your docker-compose environment
+
+**Alternative:** Use NVIDIA NeMo Sortformer diarization, which does not require a HuggingFace token (though PyAnnote generally provides higher accuracy).
+
+## App Settings Overview
+
+- **Transcription** — Transcription profiles, auto-transcribe on upload, auto-summary generation, auto-title extraction
+- **Account** — User management
+- **API Keys** — Create and revoke programmatic access keys for the REST API
+- **LLMs** — Configure Ollama or OpenAI-compatible provider (base URL, API key, model selection)
+- **Summary Templates** — Custom summary prompts, per-template model selection, speaker info toggle
+- **Auto Import** *(Desktop)* — Watch folders for automatic file ingestion and transcription
+- **Vaults** *(Desktop)* — Create, connect, and switch vaults; rehydrate database from vault files
 
 ## Screenshots
 
@@ -63,7 +300,7 @@ I decided to build Quill to bridge that gap, creating a powerful, private, and f
   <p align="center">
     <img alt="Transcript view" src="screenshots/transcript-light.png" width="720" />
   </p>
-  <p align="center"><em>Transcript reader with playback follow‑along and seek‑from‑text.</em></p>
+  <p align="center"><em>Transcript reader with playback follow-along and seek-from-text.</em></p>
 
   <p align="center">
     <img alt="Chat with Audio" src="screenshots/chat.png" width="720" />
@@ -110,255 +347,21 @@ I decided to build Quill to bridge that gap, creating a powerful, private, and f
 
 </details>
 
-## Installation
+## Why I Built This
 
-Get Quill running on your system in a few minutes.
+The inspiration for Quill was born out of privacy paranoia and not wanting to pay for a subscription.
+About a year ago, I purchased a [Plaud Note](https://www.plaud.ai/) for recording voice memos. I loved the device itself; the form factor, microphone quality, and workflow were excellent.
 
-### Migrating from v1.1.0
+However, transcription was done on their cloud servers. As someone who is paranoid about privacy I wasn't comfortable with uploading my recordings to a third party provider.
+Moreover I was hit with subscription costs: $100 a year for 20 hours of transcription per month, or $240 a year for unlimited access. As an avid self-hoster with a background in ML and AI, it felt wrong to pay such a premium for a service I knew I could engineer myself.
 
-If you are upgrading from v1.1.0, please follow these steps to ensure a smooth transition. Version 1.2.0 introduces a separation between application data (database, uploads) and model data (Python environments).
+I decided to build Quill to bridge that gap, creating a powerful, private, and free alternative for everyone.
 
-#### 1. Update Volume Mounts
+## Sponsors
 
-You will need to update your Docker volume configuration to split your data:
-
-*   **Application Data:** Bind your existing data folder (containing `quill.db`, `jwt_secret`, `transcripts/`, and `uploads/`) to `/app/data`.
-*   **Model Environment:** Create a **new, empty folder** and bind it to `/app/whisperx-env`.
-
-#### 2. Clean Up Old Environments
-
-> **CRITICAL:** You must delete any existing `whisperx-env` folder from your previous installation.
-
-The Python environment and models need to be reinitialized for v1.2.0. If the application detects an old environment, it may attempt to use it, leading to compatibility errors. Starting with a fresh `/app/whisperx-env` volume ensures the correct dependencies are installed.
-
-### Install with Homebrew (macOS & Linux)
-
-The easiest way to install Quill is using Homebrew. If you don’t have Homebrew installed, [get it here first](https://brew.sh/).
-
-```bash
-# Add the Quill tap
-brew tap rishikanthc/quill
-
-# Install Quill (automatically installs UV dependency)
-brew install quill
-
-# Start the server
-quill
-```
-
-Open [http://localhost:8080](http://localhost:8080) in your browser.
-
-### Configuration
-
-Quill works out of the box. However, for Homebrew or manual installations, you can customize the application behavior using environment variables or a `.env` file placed in the same directory as the binary (or where you run the command from).
-
-> **Docker Users:** You can ignore this section if you are using `docker-compose.yml`, as these values are already configured with sane defaults.
-
-#### Environment Variables
-
-| Variable | Description | Default |
-| :--- | :--- | :--- |
-| `PORT` | The port the server listens on. | `8080` |
-| `HOST` | The interface to bind to. | `0.0.0.0` |
-| `APP_ENV` | Application environment (`development` or `production`). | `development` |
-| `ALLOWED_ORIGINS` | CORS allowed origins (comma separated). | `http://localhost:5173,http://localhost:8080` |
-| `DATABASE_PATH` | Path to the SQLite database file. | `data/quill.db` |
-| `UPLOAD_DIR` | Directory for storing uploaded files. | `data/uploads` |
-| `TRANSCRIPTS_DIR` | Directory for storing transcripts. | `data/transcripts` |
-| `WHISPERX_ENV` | Path to the managed Python environment for models. | `data/whisperx-env` |
-| `QUILL_WHISPERX_ZIP_URL` | WhisperX source archive URL/path used to initialize `WHISPERX_ENV`. | `https://github.com/m-bain/WhisperX/archive/refs/tags/v3.8.0.zip` |
-| `QUILL_WHISPERX_ZIP_SHA256` | Optional SHA-256 checksum to verify the WhisperX source archive. | `""` |
-| `OPENAI_API_KEY` | API Key for OpenAI (optional). | `""` |
-| `JWT_SECRET` | Secret for signing JWTs. Auto-generated if not set. | Auto-generated |
-
-For packaged desktop builds, Quill can override `QUILL_WHISPERX_ZIP_URL` automatically to a bundled local archive under app resources when available.
-
-**Example `.env` file:**
-
-```bash
-# Server settings
-HOST=localhost
-PORT=8080
-APP_ENV=production
-
-# Paths
-DATABASE_PATH=/var/lib/quill/data/quill.db
-UPLOAD_DIR=/var/lib/quill/data/uploads
-
-# Security
-JWT_SECRET=your-super-secret-key-change-this
-```
-
-### Docker Deployment
-
-For a containerized setup, you can use Docker. We provide two configurations: one for standard CPU usage and one optimized for NVIDIA GPUs (CUDA).
-
-> [!IMPORTANT]
-> **Permissions:** Ensure you set the `PUID` and `PGID` environment variables to your host user's UID and GID (typically `1000` on Linux) to avoid permission issues with the SQLite database. You can find your UID/GID by running `id` on your host.
->
-> **HTTP vs HTTPS:** By default, Quill enables **Secure Cookies** in production. If you are accessing the app via plain HTTP (not HTTPS), you MUST set `SECURE_COOKIES=false` in your environment variables, otherwise you will encounter "Unable to load audio stream" errors.
-
-#### Standard Deployment (CPU)
-
-Use this configuration for running Quill on any machine without a dedicated NVIDIA GPU.
-
-1.  Create a file named `docker-compose.yml`:
-
-```yaml
-services:
-  quill:
-    image: ghcr.io/rishikanthc/quill:v1.2.0
-    ports:
-      - "8080:8080"
-    volumes:
-      - quill_data:/app/data # volume for data
-      - env_data:/app/whisperx-env # volume for models and python envs
-    environment:
-      - PUID=${PUID:-1000}
-      - PGID=${PGID:-1000}
-      - APP_ENV=production # DO NOT CHANGE THIS
-      # CORS: comma-separated list of allowed origins for production
-      # - ALLOWED_ORIGINS=https://your-domain.com
-      # - SECURE_COOKIES=false # Uncomment this ONLY if you are not using SSL
-    restart: unless-stopped
-
-volumes:
-  quill_data: {}
-  env_data: {}
-```
-
-2.  Run the container:
-
-```bash
-docker compose up -d
-```
-
-#### NVIDIA GPU Deployment (CUDA)
-
-If you have a compatible NVIDIA GPU, this configuration enables hardware acceleration for significantly faster transcription.
-
-1.  Ensure you have the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) installed.
-2.  Create a file named `docker-compose.cuda.yml`:
-
-```yaml
-services:
-  quill:
-    image: ghcr.io/rishikanthc/quill-cuda:v1.2.0
-    ports:
-      - "8080:8080"
-    volumes:
-      - quill_data:/app/data # volume for data
-      - env_data:/app/whisperx-env # volume for models and python envs
-    restart: unless-stopped
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities:
-                - gpu
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-      - PUID=${PUID:-1000}
-      - PGID=${PGID:-1000}
-      - APP_ENV=production # DO NOT CHANGE THIS
-      # CORS: comma-separated list of allowed origins for production
-      # - ALLOWED_ORIGINS=https://your-domain.com
-      # - SECURE_COOKIES=false # Uncomment this ONLY if you are not using SSL
-
-volumes:
-  quill_data: {}
-  env_data: {}
-```
-
-3.  Run the container with the CUDA configuration:
-
-```bash
-docker compose -f docker-compose.cuda.yml up -d
-```
-
-#### GPU Compatibility
-
-Quill provides separate Docker images for different NVIDIA GPU generations due to CUDA/PyTorch compatibility requirements:
-
-| GPU Generation | Compute Capability | Docker Image | Docker Compose File |
-|:---|:---|:---|:---|
-| GTX 10-series (Pascal) | sm_61 | `quill-cuda` | `docker-compose.cuda.yml` |
-| RTX 20-series (Turing) | sm_75 | `quill-cuda` | `docker-compose.cuda.yml` |
-| RTX 30-series (Ampere) | sm_86 | `quill-cuda` | `docker-compose.cuda.yml` |
-| RTX 40-series (Ada Lovelace) | sm_89 | `quill-cuda` | `docker-compose.cuda.yml` |
-| **RTX 50-series (Blackwell)** | sm_120 | `quill-cuda-blackwell` | `docker-compose.blackwell.yml` |
-
-**RTX 50-series users (RTX 5080, 5090, etc.):** You must use the Blackwell-specific image. The standard CUDA image will not work due to PyTorch CUDA compatibility requirements. Use:
-
-```bash
-docker compose -f docker-compose.blackwell.yml up -d
-```
-
-Or for local builds:
-
-```bash
-docker compose -f docker-compose.build.blackwell.yml up -d
-```
-
-### App Startup
-
-When you run Quill for the first time, it may take several minutes to start. This is normal!
-
-The application needs to:
-1.  Initialize the Python environments.
-2.  Download the necessary machine learning models (Whisper, PyAnnote, NVIDIA NeMo).
-3.  Configure the database.
-
-**Subsequent runs will be much faster** because all models and environments are persisted to the `env_data` volume (or your local mapped folders).
-
-You will know the application is ready when you see the line: `msg="Quill is ready" url=http://0.0.0.0:8080`.
-
-### Troubleshooting
-
-#### 1. SQLite OOM Error (out of memory)
-
-If you see an "out of memory (14)" error from SQLite (specifically `SQLITE_CANTOPEN`), it usually means a permissions issue. The database engine cannot create temporary files in the data directory.
-
-You can fix this by setting the `PUID` and `PGID` in your `docker-compose.yml` to match your host user's UID and GID, or by manually changing the ownership of the mapped folders on your host:
-
-```bash
-# If you used a named volume (e.g., 'quill_quill_data'):
-sudo chown -R 1000:1000 /var/lib/docker/volumes/quill_quill_data/_data
-
-# If you mapped a specific host folder (e.g., ./quill_data):
-sudo chown -R 1000:1000 ./quill_data
-sudo chown -R 1000:1000 ./env_data
-```
-
-Replace `1000` with the value you set for `PUID`/`PGID` (default is `1000`).
-
-#### 2. "Unable to load audio stream"
-
-If the application loads but you cannot play or see the audio waveform (receiving "Unable to load audio stream"), this is often due to the **Secure Cookies** security flag.
-
-By default, when `APP_ENV=production`, Quill enables `SECURE_COOKIES=true`. This prevents cookies from being sent over insecure (HTTP) connections.
-
-**Solutions:**
-- **Recommended:** Deploy Quill behind a Reverse Proxy (like Nginx, Caddy, or Traefik) and use SSL/TLS (HTTPS).
-- **Alternative:** If you must access over plain HTTP, set the following environment variable in your `docker-compose.yml`:
-  ```yaml
-  environment:
-    - SECURE_COOKIES=false
-  ```
-
-## Post installation
-
-Once you have Quill up and running:
-
-- **Configure Diarization**: To enable speaker identification, visit the [Configuration page](https://quill.app/docs/configuration).
-- **Usage Guide**: For a detailed usage guide, visit [https://quill.app/docs/usage](https://quill.app/docs/usage).
-
-## LLM Disclosure
-
-This project was developed using AI agents as pair programmer. It was NOT vibe coded. For context I’m a ML/AI researcher by profession and I have been programming for over a decade now. The codebase follows software engineering best practices and principles and all architecture decisions were made by me. All code generated by LLMs was reviewed and tested to the best of my abilities.
+![recall.ai-logo](https://cdn.prod.website-files.com/620d732b1f1f7b244ac89f0e/66b294e51ee15f18dd2b171e_recall-logo.svg) Meeting Transcription API
+If you're looking for a transcription API for meetings, consider checking out [Recall.ai](https://www.recall.ai/?utm_source=github&utm_medium=sponsorship&utm_campaign=rishikanthc-quill), an API that works with Zoom, Google Meet, Microsoft Teams, and more.
+Recall.ai diarizes by pulling the speaker data and separate audio streams from the meeting platforms, which means 100% accurate speaker diarization with actual speaker names.
 
 ## Donating
 
