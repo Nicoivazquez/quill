@@ -248,6 +248,9 @@ func SetupRoutes(handler *Handler, authService *auth.AuthService) *gin.Engine {
 			contacts.GET("/:id/snippet", handler.GetContactSnippet)
 			contacts.POST("/:id/snippet", handler.UploadContactSnippet)
 			contacts.DELETE("/:id/snippet", handler.DeleteContactSnippet)
+			contacts.POST("/:id/signature", handler.UploadContactSignature)
+			contacts.DELETE("/:id/signature", handler.DeleteContactSignature)
+			contacts.POST("/:id/signature/extract", handler.ExtractContactSignature)
 		}
 
 		// Admin routes (require authentication)

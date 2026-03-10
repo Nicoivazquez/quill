@@ -3,6 +3,7 @@ package contacts
 import (
 	"context"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -125,6 +126,14 @@ func (w *EmbeddingWorker) process(contactID uint) {
 	contact.SignatureEmbeddingPath = &embeddingRel
 	contact.SignatureStatus = "ready"
 	contact.SyncError = nil
+	metadata, metadataErr := json.Marshal(map[string]string{
+		"source":     "extracted",
+		"updated_at": time.Now().UTC().Format(time.RFC3339),
+	})
+	if metadataErr == nil {
+		value := string(metadata)
+		contact.SignatureData = &value
+	}
 	if err := fileService.WriteContact(contact); err != nil {
 		msg := "embedding extracted, but failed to update contact markdown"
 		w.markFailed(ctx, contact, msg+": "+err.Error())
@@ -139,6 +148,14 @@ func (w *EmbeddingWorker) markFailed(ctx context.Context, contact *models.Contac
 	trimmed := strings.TrimSpace(message)
 	contact.SignatureStatus = "failed"
 	contact.SyncError = &trimmed
+	metadata, metadataErr := json.Marshal(map[string]string{
+		"source":     "extracted",
+		"updated_at": time.Now().UTC().Format(time.RFC3339),
+	})
+	if metadataErr == nil {
+		value := string(metadata)
+		contact.SignatureData = &value
+	}
 
 	var vault models.Vault
 	if err := w.db.WithContext(ctx).First(&vault, contact.VaultID).Error; err == nil {

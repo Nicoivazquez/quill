@@ -43,8 +43,10 @@ export function useUpdateSpeaker(audioId: string) {
                     ...getAuthHeaders(),
                 },
                 body: JSON.stringify({
-                    original_speaker: originalSpeaker,
-                    custom_name: customName,
+                    mappings: [{
+                        original_speaker: originalSpeaker,
+                        custom_name: customName,
+                    }],
                 }),
             });
             if (!response.ok) throw new Error("Failed to update speaker name");

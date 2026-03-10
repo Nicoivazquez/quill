@@ -43,21 +43,13 @@ type SpeakerMappingResponse struct {
 func (h *Handler) GetSpeakerMappings(c *gin.Context) {
 	jobID := c.Param("id")
 
-	// Verify the transcription job exists and has diarization enabled
-	job, err := h.jobRepo.FindByID(c.Request.Context(), jobID)
-	if err != nil {
+	// Verify the transcription job exists
+	if _, err := h.jobRepo.FindByID(c.Request.Context(), jobID); err != nil {
 		if err == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Transcription job not found"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get transcription job"})
-		return
-	}
-
-	// Check if diarization was enabled or if this is a multi-track job (which also has speakers)
-	// If no speaker info available, return empty array instead of error for graceful frontend handling
-	if !job.Diarization && !job.Parameters.Diarize && !job.IsMultiTrack {
-		c.JSON(http.StatusOK, []SpeakerMappingResponse{})
 		return
 	}
 
@@ -105,20 +97,13 @@ func (h *Handler) UpdateSpeakerMappings(c *gin.Context) {
 		return
 	}
 
-	// Verify the transcription job exists and has diarization enabled
-	job, err := h.jobRepo.FindByID(c.Request.Context(), jobID)
-	if err != nil {
+	// Verify the transcription job exists
+	if _, err := h.jobRepo.FindByID(c.Request.Context(), jobID); err != nil {
 		if err == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Transcription job not found"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get transcription job"})
-		return
-	}
-
-	// Check if diarization was enabled or if this is a multi-track job (which also has speakers)
-	if !job.Diarization && !job.Parameters.Diarize && !job.IsMultiTrack {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "No speaker information available for this transcription"})
 		return
 	}
 

@@ -79,6 +79,10 @@ export function Header({ onFileSelect, onMultiTrackClick, onDownloadComplete }: 
 		navigate("/settings");
 	};
 
+	const handleContactsClick = () => {
+		navigate("/contacts");
+	};
+
 	const handleLogout = () => {
 		logout();
 	};
@@ -280,6 +284,10 @@ export function Header({ onFileSelect, onMultiTrackClick, onDownloadComplete }: 
 							<DropdownMenuItem onClick={handleSettingsClick} className="cursor-pointer rounded-[var(--radius-btn)] focus:bg-[var(--bg-muted-pane)] py-2.5">
 								<Settings className="h-4 w-4 mr-2" />
 								Settings
+							</DropdownMenuItem>
+							<DropdownMenuItem onClick={handleContactsClick} className="cursor-pointer rounded-[var(--radius-btn)] focus:bg-[var(--bg-muted-pane)] py-2.5">
+								<Users className="h-4 w-4 mr-2" />
+								Contacts
 							</DropdownMenuItem>
 							{!isLocalMode && (
 								<DropdownMenuItem onClick={handleLogout} className="cursor-pointer rounded-[var(--radius-btn)] focus:bg-[var(--error)]/10 text-[var(--error)] py-2.5">

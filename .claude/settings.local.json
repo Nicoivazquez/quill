@@ -10,7 +10,10 @@
       "Bash(go vet:*)",
       "Bash(deadcode:*)",
       "Bash(git add:*)",
-      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: add contacts system with voice signatures and vault-scoped repository layer\n\nIntroduce file-first contacts package with folder-per-contact structure,\nYAML frontmatter Markdown files, fsnotify watcher, bidirectional sync,\nand NeMo TitaNet embedding worker for voice signature matching.\n\nAdd repository pattern \\(contact, watched-folder repositories\\) and slug\nutility package. Wire contacts manager into server startup and API\nrouter. Expand vault setup handlers with contact CRUD endpoints. Fix\npath traversal and duplicate contactRepo issues. Update tests and\nroadmap.\nEOF\n\\)\")"
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: add contacts system with voice signatures and vault-scoped repository layer\n\nIntroduce file-first contacts package with folder-per-contact structure,\nYAML frontmatter Markdown files, fsnotify watcher, bidirectional sync,\nand NeMo TitaNet embedding worker for voice signature matching.\n\nAdd repository pattern \\(contact, watched-folder repositories\\) and slug\nutility package. Wire contacts manager into server startup and API\nrouter. Expand vault setup handlers with contact CRUD endpoints. Fix\npath traversal and duplicate contactRepo issues. Update tests and\nroadmap.\nEOF\n\\)\")",
+      "Bash(make dev:*)",
+      "Bash(find:*)",
+      "Bash(make:*)"
     ]
   }
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -74,6 +75,26 @@ type ContactRequest struct {
 	Phone *string `json:"phone,omitempty"`
 	Email *string `json:"email,omitempty"`
 	Notes *string `json:"notes,omitempty"`
+}
+
+const (
+	maxSignatureUploadBytes   int64 = 10 << 20
+	signatureArtifactFileName       = "voice-signature.embedding.json"
+	signatureSourceManual           = "manual"
+	signatureSourceExtracted        = "extracted"
+)
+
+type contactSignatureMetadata struct {
+	Source    string `json:"source"`
+	Model     string `json:"model,omitempty"`
+	UpdatedAt string `json:"updated_at,omitempty"`
+}
+
+type voiceSignaturePayload struct {
+	Version   int       `json:"version"`
+	Model     string    `json:"model"`
+	Dimension int       `json:"dimension"`
+	Vector    []float64 `json:"vector"`
 }
 
 type transcriptSegment struct {
@@ -1511,6 +1532,91 @@ func (h *Handler) GetOpenClawJobTranscriptMarkdown(c *gin.Context) {
 	c.JSON(http.StatusNotFound, gin.H{"error": "Transcript markdown is not available"})
 }
 
+func parseSignatureSource(signatureData *string) string {
+	if signatureData == nil || strings.TrimSpace(*signatureData) == "" {
+		return ""
+	}
+	var metadata contactSignatureMetadata
+	if err := json.Unmarshal([]byte(strings.TrimSpace(*signatureData)), &metadata); err != nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(metadata.Source))
+}
+
+func setSignatureMetadata(contact *models.Contact, source string, model string) {
+	trimmedSource := strings.TrimSpace(source)
+	if trimmedSource == "" {
+		contact.SignatureData = nil
+		return
+	}
+	metadata := contactSignatureMetadata{
+		Source:    trimmedSource,
+		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
+	}
+	if strings.TrimSpace(model) != "" {
+		metadata.Model = strings.TrimSpace(model)
+	}
+	payload, err := json.Marshal(metadata)
+	if err != nil {
+		contact.SignatureData = nil
+		return
+	}
+	value := string(payload)
+	contact.SignatureData = &value
+}
+
+func hasManualSignature(contact *models.Contact) bool {
+	if contact == nil {
+		return false
+	}
+	if contact.SignatureEmbeddingPath == nil || strings.TrimSpace(*contact.SignatureEmbeddingPath) == "" {
+		return false
+	}
+	return parseSignatureSource(contact.SignatureData) == signatureSourceManual
+}
+
+func validateSignaturePayload(raw []byte) (*voiceSignaturePayload, []byte, error) {
+	var payload voiceSignaturePayload
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, nil, fmt.Errorf("signature must be valid JSON")
+	}
+
+	if payload.Version <= 0 {
+		return nil, nil, fmt.Errorf("signature.version is required and must be > 0")
+	}
+	if strings.TrimSpace(payload.Model) == "" {
+		return nil, nil, fmt.Errorf("signature.model is required")
+	}
+	if payload.Dimension <= 0 {
+		return nil, nil, fmt.Errorf("signature.dimension is required and must be > 0")
+	}
+	if len(payload.Vector) == 0 {
+		return nil, nil, fmt.Errorf("signature.vector is required and must be a non-empty array")
+	}
+	if payload.Dimension != len(payload.Vector) {
+		return nil, nil, fmt.Errorf("signature.dimension must match len(signature.vector)")
+	}
+	for _, value := range payload.Vector {
+		if math.IsNaN(value) || math.IsInf(value, 0) {
+			return nil, nil, fmt.Errorf("signature.vector must contain only finite numbers")
+		}
+	}
+
+	var payloadAny map[string]any
+	if err := json.Unmarshal(raw, &payloadAny); err == nil {
+		normalized, marshalErr := json.MarshalIndent(payloadAny, "", "  ")
+		if marshalErr == nil {
+			return &payload, normalized, nil
+		}
+	}
+
+	normalized, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to normalize signature payload")
+	}
+	return &payload, normalized, nil
+}
+
 func (h *Handler) ListContacts(c *gin.Context) {
 	vault, err := getActiveVault()
 	if err != nil {
@@ -1744,9 +1850,28 @@ func (h *Handler) UploadContactSnippet(c *gin.Context) {
 	}
 
 	contact.VoiceSnippetPath = &targetRel
-	contact.SignatureStatus = "processing"
 	contact.SyncError = nil
+
+	manualLocked := hasManualSignature(contact)
+	if manualLocked {
+		contact.SignatureStatus = "ready"
+		if err := h.persistContactFile(c.Request.Context(), contact); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update contact"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"contact_id":               contact.ID,
+			"snippet_path":             contact.VoiceSnippetPath,
+			"signature_status":         contact.SignatureStatus,
+			"signature_embedding_path": contact.SignatureEmbeddingPath,
+			"manual_signature_locked":  true,
+		})
+		return
+	}
+
+	contact.SignatureStatus = "processing"
 	contact.SignatureEmbeddingPath = nil
+	setSignatureMetadata(contact, signatureSourceExtracted, "")
 
 	if err := h.persistContactFile(c.Request.Context(), contact); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update contact"})
@@ -1826,21 +1951,201 @@ func (h *Handler) DeleteContactSnippet(c *gin.Context) {
 			_ = os.Remove(abs)
 		}
 	}
+
+	contact.VoiceSnippetPath = nil
+	contact.SyncError = nil
+	if contact.SignatureEmbeddingPath == nil || strings.TrimSpace(*contact.SignatureEmbeddingPath) == "" {
+		contact.SignatureStatus = "none"
+		setSignatureMetadata(contact, "", "")
+	} else if strings.TrimSpace(contact.SignatureStatus) == "" || strings.EqualFold(contact.SignatureStatus, "none") {
+		contact.SignatureStatus = "ready"
+	}
+	if err := h.persistContactFile(c.Request.Context(), contact); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update contact"})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (h *Handler) UploadContactSignature(c *gin.Context) {
+	vault, err := getActiveVault()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No active vault configured"})
+		return
+	}
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid contact ID"})
+		return
+	}
+	contact, err := h.contactRepo.GetByIDInVault(c.Request.Context(), vault.ID, uint(id))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Contact not found"})
+		return
+	}
+
+	header, err := c.FormFile("signature")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Signature file is required (field: signature)"})
+		return
+	}
+
+	if err := h.persistContactFile(c.Request.Context(), contact); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to prepare contact folder"})
+		return
+	}
+
+	src, err := header.Open()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to open signature file"})
+		return
+	}
+	defer src.Close()
+
+	raw, err := io.ReadAll(io.LimitReader(src, maxSignatureUploadBytes+1))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read signature file"})
+		return
+	}
+	if int64(len(raw)) > maxSignatureUploadBytes {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Signature file exceeds maximum size"})
+		return
+	}
+
+	payload, normalized, err := validateSignaturePayload(raw)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	fileService := contacts.NewFileService(vault.Path)
+	folderRel := filepath.ToSlash(filepath.Dir(contact.NotePath))
+	if folderRel == "" || folderRel == "." {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to resolve contact folder"})
+		return
+	}
+	targetRel := filepath.ToSlash(filepath.Join(folderRel, signatureArtifactFileName))
+	targetAbs, ok := fileService.ResolveAndValidate(targetRel)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid signature target path"})
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(targetAbs), 0o755); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to prepare signature path"})
+		return
+	}
+	if err := os.WriteFile(targetAbs, normalized, 0o644); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to store signature file"})
+		return
+	}
+
+	contact.SignatureEmbeddingPath = &targetRel
+	contact.SignatureStatus = "ready"
+	contact.SyncError = nil
+	setSignatureMetadata(contact, signatureSourceManual, payload.Model)
+	if err := h.persistContactFile(c.Request.Context(), contact); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update contact"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"contact_id":               contact.ID,
+		"signature_status":         contact.SignatureStatus,
+		"signature_embedding_path": contact.SignatureEmbeddingPath,
+		"signature_source":         signatureSourceManual,
+	})
+}
+
+func (h *Handler) DeleteContactSignature(c *gin.Context) {
+	vault, err := getActiveVault()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No active vault configured"})
+		return
+	}
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid contact ID"})
+		return
+	}
+	contact, err := h.contactRepo.GetByIDInVault(c.Request.Context(), vault.ID, uint(id))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Contact not found"})
+		return
+	}
+
+	fileService := contacts.NewFileService(vault.Path)
 	if contact.SignatureEmbeddingPath != nil {
 		if abs, ok := fileService.ResolveAndValidate(*contact.SignatureEmbeddingPath); ok {
 			_ = os.Remove(abs)
 		}
 	}
 
-	contact.VoiceSnippetPath = nil
 	contact.SignatureEmbeddingPath = nil
 	contact.SignatureStatus = "none"
 	contact.SyncError = nil
+	setSignatureMetadata(contact, "", "")
+
 	if err := h.persistContactFile(c.Request.Context(), contact); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update contact"})
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+func (h *Handler) ExtractContactSignature(c *gin.Context) {
+	vault, err := getActiveVault()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No active vault configured"})
+		return
+	}
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid contact ID"})
+		return
+	}
+	contact, err := h.contactRepo.GetByIDInVault(c.Request.Context(), vault.ID, uint(id))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Contact not found"})
+		return
+	}
+	if contact.VoiceSnippetPath == nil || strings.TrimSpace(*contact.VoiceSnippetPath) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Voice snippet is required before extraction"})
+		return
+	}
+
+	fileService := contacts.NewFileService(vault.Path)
+	snippetAbs, ok := fileService.ResolveAndValidate(*contact.VoiceSnippetPath)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid snippet path"})
+		return
+	}
+	if _, statErr := os.Stat(snippetAbs); statErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Voice snippet is required before extraction"})
+		return
+	}
+
+	contact.SignatureStatus = "processing"
+	contact.SyncError = nil
+	setSignatureMetadata(contact, signatureSourceExtracted, "")
+	if err := h.persistContactFile(c.Request.Context(), contact); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update contact"})
+		return
+	}
+
+	if h.contactManager != nil {
+		h.contactManager.EnqueueEmbedding(contact.ID)
+	} else {
+		errMsg := "contact embedding worker is unavailable"
+		contact.SignatureStatus = "failed"
+		contact.SyncError = &errMsg
+		_ = h.persistContactFile(c.Request.Context(), contact)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"contact_id":               contact.ID,
+		"signature_status":         contact.SignatureStatus,
+		"signature_embedding_path": contact.SignatureEmbeddingPath,
+	})
 }
 
 func (h *Handler) GetContactFiles(c *gin.Context) {
@@ -1860,11 +2165,15 @@ func (h *Handler) GetContactFiles(c *gin.Context) {
 		return
 	}
 	fileService := contacts.NewFileService(vault.Path)
+	noteAbs := ""
+	if abs, ok := fileService.ResolveAndValidate(contact.NotePath); ok {
+		noteAbs = abs
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"contact_id":                   contact.ID,
 		"vault_id":                     contact.VaultID,
 		"note_path":                    contact.NotePath,
-		"note_abs_path":                fileService.ResolveAbsPath(contact.NotePath),
+		"note_abs_path":                noteAbs,
 		"voice_snippet_path":           contact.VoiceSnippetPath,
 		"signature_embedding_path":     contact.SignatureEmbeddingPath,
 		"signature_status":             contact.SignatureStatus,
@@ -1933,7 +2242,11 @@ func absFromOptional(fileService *contacts.FileService, value *string) string {
 	if value == nil || strings.TrimSpace(*value) == "" {
 		return ""
 	}
-	return fileService.ResolveAbsPath(*value)
+	abs, ok := fileService.ResolveAndValidate(*value)
+	if !ok {
+		return ""
+	}
+	return abs
 }
 
 func (h *Handler) syncContactManager(ctx context.Context, vaultID uint, vaultPath string) {
