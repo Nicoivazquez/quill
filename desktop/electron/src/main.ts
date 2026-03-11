@@ -11,6 +11,14 @@ const STARTUP_LOG_UPDATE_MS = 1_000;
 const DEFAULT_WHISPERX_ZIP_URL = "https://github.com/m-bain/WhisperX/archive/refs/tags/v3.8.0.zip";
 const BUNDLED_WHISPERX_ZIP_RELATIVE_PATH = path.join("whisperx", "whisperx.zip");
 const BUNDLED_WHISPERX_ZIP_SHA_RELATIVE_PATH = path.join("whisperx", "whisperx.zip.sha256");
+const RUNTIME_SEED_MANIFEST_NAME = ".quill-runtime-seed.json";
+
+type RuntimeSeedManifest = {
+  version: number;
+  seed_id: string;
+  prepared_at?: string;
+  whisper_models?: string[];
+};
 
 let mainWindow: BrowserWindow | null = null;
 let backendProcess: ChildProcessByStdio<null, Readable, Readable> | null = null;
@@ -133,6 +141,13 @@ function resolveBundledToolPath(toolName: string): string {
   return path.resolve(__dirname, `../../../dist/desktop-tools/${toolName}`);
 }
 
+function resolveBundledRuntimeSeedPath(): string {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, "runtime-seed");
+  }
+  return path.resolve(__dirname, "../../../dist/desktop-runtime-seed");
+}
+
 function getMissingBundledTools(): string[] {
   const toolNames = ["uv", "ffmpeg", "ffprobe", "yt-dlp", BUNDLED_WHISPERX_ZIP_RELATIVE_PATH];
   const missing: string[] = [];
@@ -161,6 +176,17 @@ function readBundledWhisperXChecksum(): string | undefined {
     return firstToken || undefined;
   } catch {
     return undefined;
+  }
+}
+
+function platformToolDirs(): string[] {
+  switch (process.platform) {
+    case "darwin":
+      return ["/opt/homebrew/bin", "/usr/local/bin"];
+    case "linux":
+      return ["/usr/local/bin"];
+    default:
+      return [];
   }
 }
 
@@ -202,6 +228,7 @@ function buildBackendEnv(port: number): NodeJS.ProcessEnv {
   const bundledWhisperxZipExists = fs.existsSync(bundledWhisperxZipPath);
   const bundledToolPaths = [uvPath, ffmpegPath, ffprobePath, ytDlpPath].filter((toolPath) => fs.existsSync(toolPath));
   const bundledToolDirs = Array.from(new Set(bundledToolPaths.map((toolPath) => path.dirname(toolPath))));
+  const cacheRoot = path.join(paths.whisperxEnv, "cache");
   const whisperxZipURL =
     process.env.QUILL_WHISPERX_ZIP_URL ||
     (bundledWhisperxZipExists ? bundledWhisperxZipPath : DEFAULT_WHISPERX_ZIP_URL);
@@ -223,8 +250,15 @@ function buildBackendEnv(port: number): NodeJS.ProcessEnv {
     QUILL_DEFER_MODEL_INIT: "true",
     QUILL_WHISPERX_ZIP_URL: whisperxZipURL,
     QUILL_WHISPERX_ZIP_SHA256: whisperxZipSHA256,
+    HF_HOME: path.join(cacheRoot, "huggingface"),
+    HUGGINGFACE_HUB_CACHE: path.join(cacheRoot, "huggingface", "hub"),
+    TRANSFORMERS_CACHE: path.join(cacheRoot, "huggingface", "transformers"),
+    XDG_CACHE_HOME: path.join(cacheRoot, "xdg"),
+    TORCH_HOME: path.join(cacheRoot, "torch"),
+    NEMO_HOME: path.join(cacheRoot, "nemo"),
+    HF_HUB_DISABLE_SYMLINKS_WARNING: "1",
     UV_PYTHON: "3.11",
-    PATH: buildPathValue([...bundledToolDirs, "/opt/homebrew/bin", "/usr/local/bin"], process.env.PATH),
+    PATH: buildPathValue([...bundledToolDirs, ...platformToolDirs()], process.env.PATH),
   };
 
   if (fs.existsSync(bundledLibPath)) {
@@ -246,6 +280,56 @@ function buildBackendEnv(port: number): NodeJS.ProcessEnv {
   }
 
   return env;
+}
+
+function readRuntimeSeedManifest(rootPath: string): RuntimeSeedManifest | null {
+  const manifestPath = path.join(rootPath, RUNTIME_SEED_MANIFEST_NAME);
+  if (!fs.existsSync(manifestPath)) {
+    return null;
+  }
+
+  try {
+    const raw = fs.readFileSync(manifestPath, "utf8");
+    const parsed = JSON.parse(raw) as Partial<RuntimeSeedManifest>;
+    if (typeof parsed?.seed_id !== "string" || !parsed.seed_id) {
+      return null;
+    }
+    return parsed as RuntimeSeedManifest;
+  } catch {
+    return null;
+  }
+}
+
+async function copyDirectoryContents(sourceRoot: string, targetRoot: string): Promise<void> {
+  ensureDir(targetRoot);
+  const entries = fs.readdirSync(sourceRoot, { withFileTypes: true });
+  for (const entry of entries) {
+    const sourcePath = path.join(sourceRoot, entry.name);
+    const targetPath = path.join(targetRoot, entry.name);
+    await fs.promises.cp(sourcePath, targetPath, {
+      recursive: true,
+      force: true,
+      dereference: false,
+      preserveTimestamps: true,
+    });
+  }
+}
+
+async function installBundledRuntimeSeed(): Promise<void> {
+  const sourceRoot = resolveBundledRuntimeSeedPath();
+  const bundledManifest = readRuntimeSeedManifest(sourceRoot);
+  if (!bundledManifest) {
+    return;
+  }
+
+  const destinationRoot = getDataPaths().whisperxEnv;
+  const installedManifest = readRuntimeSeedManifest(destinationRoot);
+  if (installedManifest?.seed_id === bundledManifest.seed_id) {
+    return;
+  }
+
+  ensureDir(destinationRoot);
+  await copyDirectoryContents(sourceRoot, destinationRoot);
 }
 
 function inferStartupStatus(logTail: string): { title: string; detail: string } {
@@ -576,6 +660,10 @@ async function boot(): Promise<void> {
     if (missingTools.length > 0) {
       throw new Error(`Packaged tool bundle is incomplete. Missing: ${missingTools.join(", ")}`);
     }
+
+    await loadStartupScreen(mainWindow, "Installing Bundled Runtime", "Seeding packaged AI environments and model caches...");
+    await installBundledRuntimeSeed();
+    await loadStartupScreen(mainWindow, "Starting Quill", "Preparing local services...");
   }
 
   const port = await getFreePort();

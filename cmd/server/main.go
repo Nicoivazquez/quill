@@ -173,6 +173,9 @@ func main() {
 	}
 	defer contactManager.Stop()
 
+	runtimeWarmup := transcription.NewDesktopRuntimeWarmupManager(deferModelInit, "small")
+	defer runtimeWarmup.Stop()
+
 	// Initialize multi-track processor
 	multiTrackProcessor := processing.NewMultiTrackProcessor(database.DB, jobRepo)
 
@@ -201,6 +204,7 @@ func main() {
 	)
 	handler.SetFolderWatchService(folderWatchService)
 	handler.SetContactManager(contactManager)
+	handler.SetRuntimeWarmupManager(runtimeWarmup)
 	taskQueue.SetOnJobCompleted(func(jobID string) {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
@@ -233,6 +237,10 @@ func main() {
 	logger.Info("Quill is ready",
 		"url", fmt.Sprintf("http://%s:%s", cfg.Host, cfg.Port))
 	logger.Debug("API documentation available at /swagger/index.html")
+
+	if deferModelInit {
+		runtimeWarmup.Start(context.Background())
+	}
 
 	// Wait for interrupt signal to gracefully shutdown the server
 	quit := make(chan os.Signal, 1)

@@ -151,43 +151,40 @@ func (s *SortformerAdapter) GetMinSpeakers() int {
 
 // PrepareEnvironment sets up the Sortformer environment (shared with NVIDIA models)
 func (s *SortformerAdapter) PrepareEnvironment(ctx context.Context) error {
-	logger.Info("Preparing NVIDIA Sortformer environment", "env_path", s.envPath)
+	return RunPrepareOnce("sortformer-model:"+s.envPath, func() error {
+		logger.Info("Preparing NVIDIA Sortformer environment", "env_path", s.envPath)
 
-	// Copy diarization script
-	if err := s.copyDiarizationScript(); err != nil {
-		return fmt.Errorf("failed to copy diarization script: %w", err)
-	}
+		// Copy diarization script
+		if err := s.copyDiarizationScript(); err != nil {
+			return fmt.Errorf("failed to copy diarization script: %w", err)
+		}
 
-	// Check if environment is already ready (using cache to speed up repeated checks)
-	if CheckEnvironmentReady(s.envPath, "from nemo.collections.asr.models import SortformerEncLabelModel") {
-		modelPath := filepath.Join(s.envPath, "diar_streaming_sortformer_4spk-v2.nemo")
-		if stat, err := os.Stat(modelPath); err == nil && stat.Size() > 1024*1024 {
-			scriptPath := filepath.Join(s.envPath, "sortformer_diarize.py")
-			if _, err := os.Stat(scriptPath); err == nil {
-				logger.Info("Sortformer environment already ready")
-				s.initialized = true
-				return nil
+		// Check if environment is already ready (using cache to speed up repeated checks)
+		if CheckEnvironmentReady(s.envPath, "from nemo.collections.asr.models import SortformerEncLabelModel") {
+			modelPath := filepath.Join(s.envPath, "diar_streaming_sortformer_4spk-v2.nemo")
+			if stat, err := os.Stat(modelPath); err == nil && stat.Size() > 1024*1024 {
+				scriptPath := filepath.Join(s.envPath, "sortformer_diarize.py")
+				if _, err := os.Stat(scriptPath); err == nil {
+					logger.Info("Sortformer environment already ready")
+					s.initialized = true
+					return nil
+				}
 			}
 		}
-	}
 
-	// Check if the shared environment exists (created by other NVIDIA adapters)
-	pyprojectPath := filepath.Join(s.envPath, "pyproject.toml")
-	if _, err := os.Stat(pyprojectPath); err != nil {
-		// Create environment if it doesn't exist
-		if err := s.setupSortformerEnvironment(); err != nil {
+		if err := PrepareSharedNVIDIAEnv(ctx, s.envPath); err != nil {
 			return fmt.Errorf("failed to setup Sortformer environment: %w", err)
 		}
-	}
 
-	// Download model
-	if err := s.downloadSortformerModel(); err != nil {
-		return fmt.Errorf("failed to download Sortformer model: %w", err)
-	}
+		// Download model
+		if err := s.downloadSortformerModel(); err != nil {
+			return fmt.Errorf("failed to download Sortformer model: %w", err)
+		}
 
-	s.initialized = true
-	logger.Info("Sortformer environment prepared successfully")
-	return nil
+		s.initialized = true
+		logger.Info("Sortformer environment prepared successfully")
+		return nil
+	})
 }
 
 // setupSortformerEnvironment creates the Python environment if it doesn't exist

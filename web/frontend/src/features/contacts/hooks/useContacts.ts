@@ -22,10 +22,11 @@ async function parseError(response: Response, fallback: string): Promise<never> 
   throw new Error(message);
 }
 
-export function useContacts(query: string) {
+export function useContacts(query: string, enabled = true) {
   const { getAuthHeaders } = useAuth();
 
   return useQuery({
+    enabled,
     queryKey: contactsKeys.list(query),
     queryFn: async () => {
       const params = new URLSearchParams();

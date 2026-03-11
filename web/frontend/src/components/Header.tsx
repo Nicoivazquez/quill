@@ -13,6 +13,7 @@ import { AudioRecorder } from "./AudioRecorder";
 import { SystemAudioRecorder } from "./SystemAudioRecorder";
 import { QuickTranscriptionDialog } from "@/features/transcription/components/QuickTranscriptionDialog";
 import { YouTubeDownloadDialog } from "@/features/transcription/components/YouTubeDownloadDialog";
+import { RuntimeWarmupBanner } from "@/features/runtime/components/RuntimeWarmupBanner";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { isVideoFile, isAudioFile } from "../utils/fileProcessor";
@@ -322,6 +323,8 @@ export function Header({ onFileSelect, onMultiTrackClick, onDownloadComplete }: 
 					/>
 				</div>
 			</div>
+
+			<RuntimeWarmupBanner />
 
 			{/* Audio Recorder Dialog */}
 			<AudioRecorder

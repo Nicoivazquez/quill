@@ -31,6 +31,7 @@ import {
   useUploadSignature,
   useUploadSnippet,
 } from "@/features/contacts/hooks/useContacts";
+import { useRetryRuntimeWarmup, useRuntimeWarmup } from "@/features/runtime/hooks/useRuntimeWarmup";
 
 type BannerState = {
   type: "success" | "error";
@@ -97,10 +98,21 @@ export function ContactsPage() {
 
   const selectedContactQuery = useContact(selectedContactID);
   const selectedContact = selectedContactQuery.data;
+  const runtimeWarmupQuery = useRuntimeWarmup();
+  const retryRuntimeWarmup = useRetryRuntimeWarmup();
+  const runtimeWarmup = runtimeWarmupQuery.data;
   const signatureSource = useMemo(
     () => parseSignatureSource(selectedContact?.signature_data),
     [selectedContact?.signature_data],
   );
+  const voiceSignatureRuntimePending =
+    !!runtimeWarmup?.enabled &&
+    !runtimeWarmup.voice_signatures_ready &&
+    runtimeWarmup.state === "running";
+  const voiceSignatureRuntimeFailed =
+    !!runtimeWarmup?.enabled &&
+    !runtimeWarmup.voice_signatures_ready &&
+    runtimeWarmup.state === "failed";
 
   useEffect(() => {
     setShowFilesPanel(false);
@@ -484,6 +496,35 @@ export function ContactsPage() {
                       <p className="text-xs text-[var(--text-secondary)]">
                         Manual signature is authoritative until you run "Generate from Snippet".
                       </p>
+                    )}
+                    {voiceSignatureRuntimePending && (
+                      <div className="rounded-[var(--radius-btn)] border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-sm text-sky-800">
+                        Quill is still preparing the local voice-signature runtime.
+                        <div className="mt-1 text-xs text-sky-700">
+                          {runtimeWarmup?.current_step_detail || "The default TitaNet model is downloading in the background."}
+                        </div>
+                      </div>
+                    )}
+                    {voiceSignatureRuntimeFailed && (
+                      <div className="rounded-[var(--radius-btn)] border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-800">
+                        Voice-signature tools are not ready yet.
+                        <div className="mt-1 text-xs text-amber-700">
+                          {runtimeWarmup?.last_error || "Retry the local runtime warmup, then try extraction again."}
+                        </div>
+                        <div className="mt-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => retryRuntimeWarmup.mutate(undefined, {
+                              onError: () => { /* handled by banner */ },
+                            })}
+                            disabled={retryRuntimeWarmup.isPending}
+                          >
+                            <RefreshCcw className={`h-4 w-4 ${retryRuntimeWarmup.isPending ? "animate-spin" : ""}`} />
+                            {retryRuntimeWarmup.isPending ? "Retrying..." : "Retry Runtime Setup"}
+                          </Button>
+                        </div>
+                      </div>
                     )}
                     <div className="flex flex-wrap gap-2">
                       <Button

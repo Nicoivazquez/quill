@@ -167,36 +167,38 @@ func (c *CanaryAdapter) GetSupportedModels() []string {
 
 // PrepareEnvironment sets up the Canary environment (shared with Parakeet)
 func (c *CanaryAdapter) PrepareEnvironment(ctx context.Context) error {
-	logger.Info("Preparing NVIDIA Canary environment", "env_path", c.envPath)
+	return RunPrepareOnce("canary-model:"+c.envPath, func() error {
+		logger.Info("Preparing NVIDIA Canary environment", "env_path", c.envPath)
 
-	// Copy transcription script
-	if err := c.copyTranscriptionScript(); err != nil {
-		return fmt.Errorf("failed to copy transcription script: %w", err)
-	}
-
-	// Check if environment is already ready (using cache to speed up repeated checks)
-	if CheckEnvironmentReady(c.envPath, "import nemo.collections.asr") {
-		modelPath := filepath.Join(c.envPath, "canary-1b-v2.nemo")
-		if stat, err := os.Stat(modelPath); err == nil && stat.Size() > 1024*1024 {
-			logger.Info("Canary environment already ready")
-			c.initialized = true
-			return nil
+		// Copy transcription script
+		if err := c.copyTranscriptionScript(); err != nil {
+			return fmt.Errorf("failed to copy transcription script: %w", err)
 		}
-	}
 
-	// Setup environment (reuse Parakeet setup since they share the same environment)
-	if err := c.setupCanaryEnvironment(); err != nil {
-		return fmt.Errorf("failed to setup Canary environment: %w", err)
-	}
+		// Check if environment is already ready (using cache to speed up repeated checks)
+		if CheckEnvironmentReady(c.envPath, nvidiaASRImportStatement) {
+			modelPath := filepath.Join(c.envPath, "canary-1b-v2.nemo")
+			if stat, err := os.Stat(modelPath); err == nil && stat.Size() > 1024*1024 {
+				logger.Info("Canary environment already ready")
+				c.initialized = true
+				return nil
+			}
+		}
 
-	// Download model
-	if err := c.downloadCanaryModel(); err != nil {
-		return fmt.Errorf("failed to download Canary model: %w", err)
-	}
+		// Setup environment (reuse shared NVIDIA setup)
+		if err := PrepareSharedNVIDIAEnv(ctx, c.envPath); err != nil {
+			return fmt.Errorf("failed to setup Canary environment: %w", err)
+		}
 
-	c.initialized = true
-	logger.Info("Canary environment prepared successfully")
-	return nil
+		// Download model
+		if err := c.downloadCanaryModel(); err != nil {
+			return fmt.Errorf("failed to download Canary model: %w", err)
+		}
+
+		c.initialized = true
+		logger.Info("Canary environment prepared successfully")
+		return nil
+	})
 }
 
 // setupCanaryEnvironment creates the Python environment (shared with Parakeet)

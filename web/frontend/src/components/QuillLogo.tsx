@@ -23,7 +23,7 @@ export function QuillLogo({ className = "", onClick }: { className?: string; onC
   );
 }
 
-export function QuillIcon({ className = "" }: { className?: string }) {
+function QuillIcon({ className = "" }: { className?: string }) {
   return (
     <span className={className} aria-hidden="true">
       🪶

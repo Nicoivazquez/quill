@@ -5,12 +5,29 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"time"
 
 	"quill/internal/models"
 	"quill/internal/repository"
+	"quill/pkg/logger"
 
 	"gorm.io/gorm"
 )
+
+const signatureRetryScanInterval = 2 * time.Minute
+
+type embeddingRunner interface {
+	Start()
+	Stop()
+	Enqueue(contactID uint)
+}
+
+type RetryScanResult struct {
+	Queued          int `json:"queued"`
+	FailedDue       int `json:"failed_due"`
+	StaleProcessing int `json:"stale_processing"`
+	Skipped         int `json:"skipped"`
+}
 
 // Manager coordinates contact sync, watcher lifecycle, and embedding jobs.
 type Manager struct {
@@ -25,8 +42,11 @@ type Manager struct {
 	syncService   *SyncService
 	watcher       *Watcher
 
-	embeddingWorker *EmbeddingWorker
+	embeddingWorker embeddingRunner
 	workerStarted   bool
+	retryStop       chan struct{}
+	retryWG         sync.WaitGroup
+	retryStarted    bool
 }
 
 func NewManager(db *gorm.DB, repo repository.ContactRepository, whisperXEnv string) *Manager {
@@ -44,6 +64,12 @@ func (m *Manager) Start(ctx context.Context) error {
 		m.embeddingWorker.Start()
 		m.workerStarted = true
 	}
+	if !m.retryStarted {
+		m.retryStop = make(chan struct{})
+		m.retryWG.Add(1)
+		go m.retryLoop(m.retryStop)
+		m.retryStarted = true
+	}
 	m.mu.Unlock()
 
 	return m.HandleActiveVaultChange(ctx)
@@ -60,10 +86,18 @@ func (m *Manager) Stop() {
 	worker := m.embeddingWorker
 	started := m.workerStarted
 	m.workerStarted = false
+	retryStop := m.retryStop
+	retryStarted := m.retryStarted
+	m.retryStop = nil
+	m.retryStarted = false
 	m.mu.Unlock()
 
 	if watcher != nil {
 		_ = watcher.Stop()
+	}
+	if retryStarted && retryStop != nil {
+		close(retryStop)
+		m.retryWG.Wait()
 	}
 	if started && worker != nil {
 		worker.Stop()
@@ -106,6 +140,9 @@ func (m *Manager) SwitchVault(ctx context.Context, vaultID uint, vaultPath strin
 
 	if oldWatcher != nil {
 		_ = oldWatcher.Stop()
+	}
+	if _, err := m.RetryDueEmbeddings(ctx); err != nil {
+		logger.Warn("contact retry scan after vault switch failed", "vault_id", vaultID, "error", err)
 	}
 	return nil
 }
@@ -161,6 +198,52 @@ func (m *Manager) EnqueueEmbedding(contactID uint) {
 	}
 }
 
+func (m *Manager) RetryDueEmbeddings(ctx context.Context) (RetryScanResult, error) {
+	result := RetryScanResult{}
+
+	m.mu.RLock()
+	vaultID := m.activeVaultID
+	m.mu.RUnlock()
+	if vaultID == 0 {
+		return result, nil
+	}
+
+	now := time.Now().UTC()
+	statuses := []string{"failed", "processing"}
+	seen := make(map[uint]struct{})
+
+	for _, status := range statuses {
+		contacts, err := m.repo.ListBySignatureStatus(ctx, vaultID, status)
+		if err != nil {
+			return result, err
+		}
+		for i := range contacts {
+			contact := contacts[i]
+			if _, exists := seen[contact.ID]; exists {
+				continue
+			}
+			seen[contact.ID] = struct{}{}
+
+			state, _, due := RetryState(&contact, now)
+			if !due {
+				result.Skipped++
+				continue
+			}
+
+			m.EnqueueEmbedding(contact.ID)
+			result.Queued++
+			if state == "failed" {
+				result.FailedDue++
+			}
+			if state == "processing" {
+				result.StaleProcessing++
+			}
+		}
+	}
+
+	return result, nil
+}
+
 // WriteContact persists a contact markdown artifact and updates DB cache fields.
 func (m *Manager) WriteContact(ctx context.Context, contact *models.Contact) error {
 	m.mu.RLock()
@@ -213,5 +296,29 @@ func (m *Manager) clearWatcher() {
 
 	if oldWatcher != nil {
 		_ = oldWatcher.Stop()
+	}
+}
+
+func (m *Manager) retryLoop(stop <-chan struct{}) {
+	defer m.retryWG.Done()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-stop
+		cancel()
+	}()
+
+	ticker := time.NewTicker(signatureRetryScanInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+			if _, err := m.RetryDueEmbeddings(ctx); err != nil {
+				logger.Warn("contact retry scan failed", "error", err)
+			}
+		}
 	}
 }

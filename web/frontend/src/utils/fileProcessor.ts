@@ -158,22 +158,6 @@ export const getFileDescription = (fileGroup: FileGroup): string => {
 };
 
 /**
- * Gets the appropriate icon name for the file group type
- */
-export const getFileGroupIcon = (fileGroup: FileGroup): string => {
-	switch (fileGroup.type) {
-		case 'multitrack':
-			return 'Users'; // Multiple people icon for multi-track
-		case 'video':
-			return 'Video';
-		case 'single':
-			return 'FileAudio';
-		default:
-			return 'File';
-	}
-};
-
-/**
  * Checks if the file group contains any supported files
  */
 export const hasValidFiles = (fileGroup: FileGroup): boolean => {

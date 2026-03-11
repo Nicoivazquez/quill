@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient, keepPreviousData, useInfiniteQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import { useAuth } from '@/features/auth/hooks/useAuth';
 
 export interface AudioFile {
@@ -34,36 +34,16 @@ interface AudioListParams {
     sortOrder?: 'asc' | 'desc';
 }
 
-export function useAudioList(params: AudioListParams) {
-    const { getAuthHeaders } = useAuth();
+function getListRefetchInterval(data: AudioFilesResponse | undefined) {
+    if (!data) {
+        return 5000;
+    }
 
-    return useQuery({
-        queryKey: ['audioFiles', params],
-        queryFn: async () => {
-            const searchParams = new URLSearchParams({
-                page: params.page.toString(),
-                limit: params.limit.toString(),
-            });
+    const hasActiveJobs = data.jobs.some(
+        (job) => job.status === "pending" || job.status === "processing"
+    );
 
-            if (params.search) searchParams.set('q', params.search);
-            if (params.sortBy) {
-                searchParams.set('sort_by', params.sortBy);
-                searchParams.set('sort_order', params.sortOrder || 'desc');
-            }
-
-            const response = await fetch(`/api/v1/transcription/list?${searchParams}`, {
-                headers: getAuthHeaders(),
-            });
-
-            if (!response.ok) {
-                throw new Error('Failed to fetch audio files');
-            }
-
-            return response.json() as Promise<AudioFilesResponse>;
-        },
-        placeholderData: keepPreviousData,
-        refetchInterval: false
-    });
+    return hasActiveJobs ? 3000 : 5000;
 }
 
 export function useAudioListInfinite(params: Omit<AudioListParams, 'page'>) {
@@ -100,7 +80,10 @@ export function useAudioListInfinite(params: Omit<AudioListParams, 'page'>) {
             return undefined;
         },
         initialPageParam: 1,
-        refetchInterval: false
+        refetchInterval: (query) => {
+            const latestPage = query.state.data?.pages?.[0];
+            return getListRefetchInterval(latestPage);
+        }
     });
 }
 

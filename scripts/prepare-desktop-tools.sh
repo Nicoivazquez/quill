@@ -64,10 +64,35 @@ verify_checksum() {
   fi
 }
 
+download_pinned_ytdlp() {
+  local yt_dlp_url="${QUILL_YTDLP_DOWNLOAD_URL:-https://github.com/yt-dlp/yt-dlp/releases/download/${QUILL_YTDLP_VERSION}/yt-dlp_macos}"
+
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "curl is required to download pinned yt-dlp. Set QUILL_YTDLP_SOURCE to a matching local binary path." >&2
+    exit 1
+  fi
+
+  echo "Downloading pinned yt-dlp from $yt_dlp_url" >&2
+  if ! curl -fsSL "$yt_dlp_url" -o "$OUT_DIR/yt-dlp"; then
+    echo "Failed to download pinned yt-dlp automatically. Set QUILL_YTDLP_SOURCE to a local yt-dlp binary path." >&2
+    exit 1
+  fi
+
+  chmod +x "$OUT_DIR/yt-dlp"
+  verify_checksum "yt-dlp" "$OUT_DIR/yt-dlp" "${QUILL_YTDLP_SHA256:-}"
+  echo "Bundled pinned yt-dlp from $yt_dlp_url" >&2
+  echo "$OUT_DIR/yt-dlp"
+}
+
 resolve_tool_path() {
   local tool_name="$1"
   local env_var_name="$2"
   local source_path="${!env_var_name:-}"
+  local source_from_env="false"
+
+  if [[ -n "$source_path" ]]; then
+    source_from_env="true"
+  fi
 
   if [[ -z "$source_path" ]]; then
     source_path="$(command -v "$tool_name" || true)"
@@ -75,19 +100,8 @@ resolve_tool_path() {
 
   if [[ -z "$source_path" ]]; then
     if [[ "$tool_name" == "yt-dlp" ]]; then
-      local yt_dlp_url="${QUILL_YTDLP_DOWNLOAD_URL:-https://github.com/yt-dlp/yt-dlp/releases/download/${QUILL_YTDLP_VERSION}/yt-dlp_macos}"
-      if command -v curl >/dev/null 2>&1; then
-        echo "yt-dlp not found in PATH; downloading from $yt_dlp_url" >&2
-        if ! curl -fsSL "$yt_dlp_url" -o "$OUT_DIR/yt-dlp"; then
-          echo "Failed to download yt-dlp automatically. Set QUILL_YTDLP_SOURCE to a local yt-dlp binary path." >&2
-          exit 1
-        fi
-        chmod +x "$OUT_DIR/yt-dlp"
-        verify_checksum "yt-dlp" "$OUT_DIR/yt-dlp" "${QUILL_YTDLP_SHA256:-}"
-        echo "Bundled yt-dlp from $yt_dlp_url" >&2
-        echo "$OUT_DIR/yt-dlp"
-        return
-      fi
+      download_pinned_ytdlp
+      return
     fi
 
     echo "Missing required tool '$tool_name'. Install it or set $env_var_name to an absolute path." >&2
@@ -97,6 +111,16 @@ resolve_tool_path() {
   if [[ ! -f "$source_path" ]]; then
     echo "Tool path for '$tool_name' is not a file: $source_path" >&2
     exit 1
+  fi
+
+  if [[ "$tool_name" == "yt-dlp" && "$source_from_env" != "true" && -n "${QUILL_YTDLP_SHA256:-}" ]]; then
+    local actual_checksum
+    actual_checksum="$(sha256_file "$source_path")"
+    if [[ "$actual_checksum" != "${QUILL_YTDLP_SHA256:-}" ]]; then
+      echo "Local yt-dlp does not match pinned checksum; ignoring $source_path and downloading pinned release instead." >&2
+      download_pinned_ytdlp
+      return
+    fi
   fi
 
   echo "$source_path"

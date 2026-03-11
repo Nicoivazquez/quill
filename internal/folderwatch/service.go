@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"quill/internal/config"
+	"quill/internal/database"
 	"quill/internal/models"
 	"quill/internal/repository"
 
@@ -642,9 +643,20 @@ func (s *Service) importFile(ctx context.Context, userID uint, sourcePath string
 	}
 
 	title := filepath.Base(sourcePath)
+	var vaultID *uint
+	if database.DB != nil {
+		var activeVault models.Vault
+		// Assign the current active vault immediately so imported jobs remain visible
+		// in vault-scoped lists even before transcription finishes.
+		if err := database.DB.WithContext(ctx).Where("is_active = ?", true).First(&activeVault).Error; err == nil {
+			vaultID = &activeVault.ID
+		}
+	}
+
 	job := models.TranscriptionJob{
 		ID:        jobID,
 		AudioPath: destPath,
+		VaultID:   vaultID,
 		Status:    models.StatusUploaded,
 		Title:     &title,
 	}

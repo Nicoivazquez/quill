@@ -9,6 +9,7 @@
     "dev": "npm run build && electron .",
     "prepare:backend": "cd ../.. && ./scripts/build-desktop-backend.sh",
     "prepare:tools": "cd ../.. && ./scripts/prepare-desktop-tools.sh",
+    "prepare:runtime-seed": "cd ../.. && ./scripts/prepare-desktop-runtime-seed.sh",
     "dist:mac": "npm run build && npm run prepare:backend && npm run prepare:tools && electron-builder --mac dmg"
   },
   "build": {

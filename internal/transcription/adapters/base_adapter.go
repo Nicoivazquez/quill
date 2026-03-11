@@ -23,9 +23,13 @@ import (
 
 // Environment readiness cache to avoid repeated expensive UV checks
 var (
-	envCacheMutex sync.RWMutex
-	envCache      = make(map[string]bool)
-	requestGroup  singleflight.Group
+	envCacheMutex  sync.RWMutex
+	envCache       = make(map[string]bool)
+	requestGroup   singleflight.Group
+	prepareGroup   singleflight.Group
+	modelWarmMu    sync.RWMutex
+	modelWarmCache = make(map[string]bool)
+	modelWarmGroup singleflight.Group
 )
 
 // GetPyTorchCUDAVersion returns the PyTorch CUDA wheel version to use.
@@ -79,6 +83,36 @@ func CheckEnvironmentReady(envPath, importStatement string) bool {
 	})
 
 	return result.(bool)
+}
+
+// RunPrepareOnce deduplicates concurrent environment preparation for the same key.
+func RunPrepareOnce(key string, fn func() error) error {
+	_, err, _ := prepareGroup.Do(key, func() (interface{}, error) {
+		return nil, fn()
+	})
+	return err
+}
+
+// IsModelWarm reports whether a specific model preload has already completed.
+func IsModelWarm(key string) bool {
+	modelWarmMu.RLock()
+	defer modelWarmMu.RUnlock()
+	return modelWarmCache[key]
+}
+
+// MarkModelWarm caches successful model preload state.
+func MarkModelWarm(key string) {
+	modelWarmMu.Lock()
+	defer modelWarmMu.Unlock()
+	modelWarmCache[key] = true
+}
+
+// RunModelWarmOnce deduplicates concurrent model preload work for the same key.
+func RunModelWarmOnce(key string, fn func() error) error {
+	_, err, _ := modelWarmGroup.Do(key, func() (interface{}, error) {
+		return nil, fn()
+	})
+	return err
 }
 
 // BaseAdapter provides common functionality for all model adapters

@@ -81,6 +81,8 @@ func (w *EmbeddingWorker) process(contactID uint) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
+	attemptedAt := time.Now().UTC()
+
 	contact, err := w.repo.GetByID(ctx, contactID)
 	if err != nil {
 		logger.Warn("contact embedding worker: contact not found", "contact_id", contactID, "error", err)
@@ -94,12 +96,22 @@ func (w *EmbeddingWorker) process(contactID uint) {
 		return
 	}
 
+	PrepareRetryAttempt(contact, attemptedAt)
+	contact.SignatureStatus = "processing"
+	contact.SyncError = nil
+	if err := w.repo.Update(ctx, contact); err != nil {
+		logger.Warn("contact embedding worker: failed to persist retry attempt", "contact_id", contact.ID, "error", err)
+	}
+
 	if contact.VoiceSnippetPath == nil || strings.TrimSpace(*contact.VoiceSnippetPath) == "" {
 		w.markFailed(ctx, contact, "voice snippet is missing")
 		return
 	}
 
 	fileService := NewFileService(vault.Path)
+	if err := fileService.WriteContact(contact); err != nil {
+		logger.Warn("contact embedding worker: failed to persist processing state to markdown", "contact_id", contact.ID, "error", err)
+	}
 	snippetAbs := fileService.ResolveAbsPath(*contact.VoiceSnippetPath)
 	if _, err := os.Stat(snippetAbs); err != nil {
 		w.markFailed(ctx, contact, "voice snippet file is not accessible")
@@ -126,10 +138,7 @@ func (w *EmbeddingWorker) process(contactID uint) {
 	contact.SignatureEmbeddingPath = &embeddingRel
 	contact.SignatureStatus = "ready"
 	contact.SyncError = nil
-	metadata, metadataErr := json.Marshal(map[string]string{
-		"source":     "extracted",
-		"updated_at": time.Now().UTC().Format(time.RFC3339),
-	})
+	metadata, metadataErr := json.Marshal(MarkRetryReady(contact, "", time.Now().UTC()))
 	if metadataErr == nil {
 		value := string(metadata)
 		contact.SignatureData = &value
@@ -148,10 +157,7 @@ func (w *EmbeddingWorker) markFailed(ctx context.Context, contact *models.Contac
 	trimmed := strings.TrimSpace(message)
 	contact.SignatureStatus = "failed"
 	contact.SyncError = &trimmed
-	metadata, metadataErr := json.Marshal(map[string]string{
-		"source":     "extracted",
-		"updated_at": time.Now().UTC().Format(time.RFC3339),
-	})
+	metadata, metadataErr := json.Marshal(MarkRetryFailure(contact, trimmed, time.Now().UTC()))
 	if metadataErr == nil {
 		value := string(metadata)
 		contact.SignatureData = &value
@@ -172,6 +178,10 @@ func (w *EmbeddingWorker) markFailed(ctx context.Context, contact *models.Contac
 
 func (w *EmbeddingWorker) extractEmbedding(ctx context.Context, inputPath string, outputPath string) error {
 	envPath := filepath.Join(w.whisperXEnv, "parakeet")
+	if err := PrepareTitaNetRuntime(ctx, envPath); err != nil {
+		return err
+	}
+
 	if err := os.MkdirAll(envPath, 0o755); err != nil {
 		return fmt.Errorf("failed to prepare NeMo environment path: %w", err)
 	}
@@ -194,7 +204,7 @@ func (w *EmbeddingWorker) extractEmbedding(ctx context.Context, inputPath string
 			trimmed = err.Error()
 		}
 		if strings.Contains(trimmed, "No module named") || strings.Contains(trimmed, "not found") {
-			return fmt.Errorf("NeMo embedding runtime is not available yet. Run one transcription with NVIDIA models first to initialize env, then retry")
+			return fmt.Errorf("voice-signature runtime is not ready yet. Quill is still preparing the local NeMo/TitaNet tools. Wait for the runtime status banner to finish, then retry extraction")
 		}
 		return fmt.Errorf("embedding extraction failed: %s", trimmed)
 	}

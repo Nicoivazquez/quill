@@ -1,4 +1,4 @@
-.PHONY: help docs docs-serve docs-clean website website-dev website-build dev desktop-backend desktop-tools desktop-dev desktop-dist-mac
+.PHONY: help docs docs-serve docs-clean website website-dev website-build dev desktop-backend desktop-tools desktop-runtime-seed desktop-dev desktop-dist-mac
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -121,6 +121,9 @@ desktop-backend: ## Build backend artifact used by Electron packaging
 
 desktop-tools: ## Bundle external tool binaries for Electron packaging
 	@./scripts/prepare-desktop-tools.sh
+
+desktop-runtime-seed: ## Prepare prewarmed AI runtime assets for Electron packaging
+	@./scripts/prepare-desktop-runtime-seed.sh
 
 desktop-dev: ## Run Electron shell against local backend binary
 	@go build -o quill cmd/server/main.go

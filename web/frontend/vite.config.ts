@@ -56,7 +56,6 @@ export default defineConfig({
           'react-vendor': ['react', 'react-dom'],
           'ui-vendor': ['@radix-ui/react-dialog', '@radix-ui/react-popover', '@radix-ui/react-tooltip'],
           'markdown-vendor': ['react-markdown', 'remark-math', 'rehype-katex', 'rehype-raw', 'rehype-highlight'],
-          'table-vendor': ['@tanstack/react-table'],
           'lucide-vendor': ['lucide-react'],
         },
       },

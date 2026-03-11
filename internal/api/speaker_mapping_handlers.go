@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"quill/internal/models"
+	"quill/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -25,6 +26,11 @@ type SpeakerMappingResponse struct {
 	ID              uint   `json:"id"`
 	OriginalSpeaker string `json:"original_speaker"`
 	CustomName      string `json:"custom_name"`
+}
+
+type SpeakerMappingsUpdateResponse struct {
+	Mappings         []SpeakerMappingResponse       `json:"mappings"`
+	ContactBootstrap speakerContactBootstrapSummary `json:"contact_bootstrap"`
 }
 
 // GetSpeakerMappings retrieves all speaker mappings for a transcription
@@ -98,7 +104,8 @@ func (h *Handler) UpdateSpeakerMappings(c *gin.Context) {
 	}
 
 	// Verify the transcription job exists
-	if _, err := h.jobRepo.FindByID(c.Request.Context(), jobID); err != nil {
+	job, err := h.jobRepo.FindByID(c.Request.Context(), jobID)
+	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Transcription job not found"})
 			return
@@ -130,6 +137,15 @@ func (h *Handler) UpdateSpeakerMappings(c *gin.Context) {
 		return
 	}
 
+	// Best-effort bootstrap: when a speaker is renamed to a real contact name,
+	// auto-create/fill contact voice artifacts once from transcript timestamps.
+	bootstrapSummary, bootstrapErr := h.bootstrapContactsFromSpeakerMappings(c.Request.Context(), job, updatedMappings)
+	if bootstrapErr != nil {
+		// Do not fail rename flow on background-contact bootstrap issues.
+		// The user can still manage contacts manually.
+		logger.Warn("speaker->contact bootstrap failed", "job_id", jobID, "error", bootstrapErr)
+	}
+
 	// Convert to response format
 	response := make([]SpeakerMappingResponse, len(updatedMappings))
 	for i, mapping := range updatedMappings {
@@ -140,5 +156,8 @@ func (h *Handler) UpdateSpeakerMappings(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, response)
+	c.JSON(http.StatusOK, SpeakerMappingsUpdateResponse{
+		Mappings:         response,
+		ContactBootstrap: bootstrapSummary,
+	})
 }

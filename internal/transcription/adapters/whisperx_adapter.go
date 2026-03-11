@@ -30,6 +30,15 @@ type WhisperXAdapter struct {
 
 const defaultWhisperXZipURL = "https://github.com/m-bain/WhisperX/archive/refs/tags/v3.8.0.zip"
 
+func whisperXReadinessImportStatement() string {
+	return strings.Join([]string{
+		"import importlib",
+		"import whisperx",
+		`importlib.import_module("scipy.special._gufuncs")`,
+		"from transformers import Pipeline",
+	}, "; ")
+}
+
 // NewWhisperXAdapter creates a new WhisperX adapter
 func NewWhisperXAdapter(envPath string) *WhisperXAdapter {
 	capabilities := interfaces.ModelCapabilities{
@@ -302,40 +311,98 @@ func (w *WhisperXAdapter) GetSupportedModels() []string {
 
 // PrepareEnvironment sets up the WhisperX environment
 func (w *WhisperXAdapter) PrepareEnvironment(ctx context.Context) error {
-	logger.Info("Preparing WhisperX environment", "env_path", w.envPath)
+	return RunPrepareOnce("whisperx-env:"+w.envPath, func() error {
+		logger.Info("Preparing WhisperX environment", "env_path", w.envPath)
 
-	whisperxPath := filepath.Join(w.envPath, "WhisperX")
+		whisperxPath := filepath.Join(w.envPath, "WhisperX")
 
-	// Check if WhisperX is already set up and working (using cache to speed up repeated checks)
-	if CheckEnvironmentReady(whisperxPath, "import whisperx") {
-		logger.Info("WhisperX environment already ready")
+		// WhisperX can pass a shallow import while deeper runtime dependencies are still broken.
+		// Probe the same dependency chain used during model warmup so packaged apps can self-heal.
+		if CheckEnvironmentReady(whisperxPath, whisperXReadinessImportStatement()) {
+			logger.Info("WhisperX environment already ready")
+			w.initialized = true
+			return nil
+		}
+
+		// Ensure base directory exists
+		if err := os.MkdirAll(w.envPath, 0755); err != nil {
+			return fmt.Errorf("failed to create environment directory: %w", err)
+		}
+
+		// Clone WhisperX
+		if err := w.cloneWhisperX(); err != nil {
+			return fmt.Errorf("failed to clone WhisperX: %w", err)
+		}
+
+		// Update dependencies
+		if err := w.updateWhisperXDependencies(whisperxPath); err != nil {
+			return fmt.Errorf("failed to update WhisperX dependencies: %w", err)
+		}
+
+		// Install dependencies
+		if err := w.uvSyncWhisperX(whisperxPath); err != nil {
+			return fmt.Errorf("failed to sync WhisperX: %w", err)
+		}
+
 		w.initialized = true
+		logger.Info("WhisperX environment prepared successfully")
+		return nil
+	})
+}
+
+// WarmModel ensures the requested Whisper model is cached before transcription starts.
+func (w *WhisperXAdapter) WarmModel(ctx context.Context, modelName string, device string, computeType string) error {
+	if strings.TrimSpace(modelName) == "" {
+		modelName = "small"
+	}
+	if strings.TrimSpace(device) == "" {
+		device = "cpu"
+	}
+	if strings.TrimSpace(computeType) == "" {
+		computeType = "float32"
+	}
+
+	if err := w.PrepareEnvironment(ctx); err != nil {
+		return err
+	}
+
+	warmKey := fmt.Sprintf("whisperx-model:%s:%s:%s:%s", w.envPath, modelName, device, computeType)
+	if IsModelWarm(warmKey) {
 		return nil
 	}
 
-	// Ensure base directory exists
-	if err := os.MkdirAll(w.envPath, 0755); err != nil {
-		return fmt.Errorf("failed to create environment directory: %w", err)
-	}
+	return RunModelWarmOnce(warmKey, func() error {
+		if IsModelWarm(warmKey) {
+			return nil
+		}
 
-	// Clone WhisperX
-	if err := w.cloneWhisperX(); err != nil {
-		return fmt.Errorf("failed to clone WhisperX: %w", err)
-	}
+		whisperxPath := filepath.Join(w.envPath, "WhisperX")
+		logger.Info("Warming WhisperX model cache", "model", modelName, "device", device, "compute_type", computeType)
 
-	// Update dependencies
-	if err := w.updateWhisperXDependencies(whisperxPath); err != nil {
-		return fmt.Errorf("failed to update WhisperX dependencies: %w", err)
-	}
+		cmd := exec.CommandContext(
+			ctx,
+			binaries.UV(),
+			"run", "--native-tls", "--project", whisperxPath,
+			"python", "-c",
+			"import sys, whisperx; whisperx.load_model(sys.argv[1], sys.argv[2], compute_type=sys.argv[3])",
+			modelName,
+			device,
+			computeType,
+		)
+		cmd.Env = append(os.Environ(), "PYTHONUNBUFFERED=1")
 
-	// Install dependencies
-	if err := w.uvSyncWhisperX(whisperxPath); err != nil {
-		return fmt.Errorf("failed to sync WhisperX: %w", err)
-	}
+		if output, err := cmd.CombinedOutput(); err != nil {
+			trimmed := strings.TrimSpace(string(output))
+			if trimmed == "" {
+				trimmed = err.Error()
+			}
+			return fmt.Errorf("failed to warm WhisperX model %s: %s", modelName, trimmed)
+		}
 
-	w.initialized = true
-	logger.Info("WhisperX environment prepared successfully")
-	return nil
+		MarkModelWarm(warmKey)
+		logger.Info("WhisperX model cache ready", "model", modelName)
+		return nil
+	})
 }
 
 // cloneWhisperX clones the WhisperX repository
@@ -574,6 +641,15 @@ func (w *WhisperXAdapter) Transcribe(ctx context.Context, input interfaces.Audio
 	// Validate parameters
 	if err := w.ValidateParameters(params); err != nil {
 		return nil, fmt.Errorf("invalid parameters: %w", err)
+	}
+
+	if err := w.WarmModel(
+		ctx,
+		w.GetStringParameter(params, "model"),
+		w.GetStringParameter(params, "device"),
+		w.GetStringParameter(params, "compute_type"),
+	); err != nil {
+		return nil, err
 	}
 
 	// Create temporary directory

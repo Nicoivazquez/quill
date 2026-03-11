@@ -124,54 +124,55 @@ func (p *ParakeetAdapter) GetSupportedModels() []string {
 
 // PrepareEnvironment sets up the Parakeet environment
 func (p *ParakeetAdapter) PrepareEnvironment(ctx context.Context) error {
-	logger.Info("Preparing NVIDIA Parakeet environment", "env_path", p.envPath)
+	return RunPrepareOnce("parakeet-model:"+p.envPath, func() error {
+		logger.Info("Preparing NVIDIA Parakeet environment", "env_path", p.envPath)
 
-	// Copy transcription scripts (standard and buffered)
-	if err := p.copyTranscriptionScript(); err != nil {
-		return fmt.Errorf("failed to copy transcription script: %w", err)
-	}
-
-	if err := p.copyBufferedScript(); err != nil {
-		return fmt.Errorf("failed to create buffered script: %w", err)
-	}
-
-	// Check if environment is already ready (using cache to speed up repeated checks)
-	if CheckEnvironmentReady(p.envPath, "import nemo.collections.asr") {
-		modelPath := filepath.Join(p.envPath, "parakeet-tdt-0.6b-v3.nemo")
-		scriptPath := filepath.Join(p.envPath, "parakeet_transcribe.py")
-		bufferedScriptPath := filepath.Join(p.envPath, "parakeet_transcribe_buffered.py")
-
-		// Check model, standard script, and buffered script all exist
-		if stat, err := os.Stat(modelPath); err == nil && stat.Size() > 1024*1024 {
-			_, scriptErr := os.Stat(scriptPath)
-			_, bufferedErr := os.Stat(bufferedScriptPath)
-
-			if scriptErr == nil && bufferedErr == nil {
-				logger.Info("Parakeet environment already ready")
-				p.initialized = true
-				return nil
-			}
-			logger.Info("Parakeet model exists but scripts missing, recreating scripts")
-		} else {
-			logger.Info("Parakeet model file missing or incomplete, redownloading")
+		// Copy transcription scripts (standard and buffered)
+		if err := p.copyTranscriptionScript(); err != nil {
+			return fmt.Errorf("failed to copy transcription script: %w", err)
 		}
-	} else {
-		logger.Info("Parakeet environment not ready, setting up")
-	}
 
-	// Setup environment
-	if err := p.setupParakeetEnvironment(); err != nil {
-		return fmt.Errorf("failed to setup Parakeet environment: %w", err)
-	}
+		if err := p.copyBufferedScript(); err != nil {
+			return fmt.Errorf("failed to create buffered script: %w", err)
+		}
 
-	// Download model
-	if err := p.downloadParakeetModel(); err != nil {
-		return fmt.Errorf("failed to download Parakeet model: %w", err)
-	}
+		// Check if environment is already ready (using cache to speed up repeated checks)
+		if CheckEnvironmentReady(p.envPath, nvidiaASRImportStatement) {
+			modelPath := filepath.Join(p.envPath, "parakeet-tdt-0.6b-v3.nemo")
+			scriptPath := filepath.Join(p.envPath, "parakeet_transcribe.py")
+			bufferedScriptPath := filepath.Join(p.envPath, "parakeet_transcribe_buffered.py")
 
-	p.initialized = true
-	logger.Info("Parakeet environment prepared successfully")
-	return nil
+			// Check model, standard script, and buffered script all exist
+			if stat, err := os.Stat(modelPath); err == nil && stat.Size() > 1024*1024 {
+				_, scriptErr := os.Stat(scriptPath)
+				_, bufferedErr := os.Stat(bufferedScriptPath)
+
+				if scriptErr == nil && bufferedErr == nil {
+					logger.Info("Parakeet environment already ready")
+					p.initialized = true
+					return nil
+				}
+				logger.Info("Parakeet model exists but scripts missing, recreating scripts")
+			} else {
+				logger.Info("Parakeet model file missing or incomplete, redownloading")
+			}
+		} else {
+			logger.Info("Parakeet environment not ready, setting up")
+		}
+
+		if err := PrepareSharedNVIDIAEnv(ctx, p.envPath); err != nil {
+			return fmt.Errorf("failed to setup Parakeet environment: %w", err)
+		}
+
+		// Download model
+		if err := p.downloadParakeetModel(); err != nil {
+			return fmt.Errorf("failed to download Parakeet model: %w", err)
+		}
+
+		p.initialized = true
+		logger.Info("Parakeet environment prepared successfully")
+		return nil
+	})
 }
 
 // setupParakeetEnvironment creates the Python environment for Parakeet

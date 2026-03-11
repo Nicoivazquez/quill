@@ -189,6 +189,14 @@ func SetupRoutes(handler *Handler, authService *auth.AuthService) *gin.Engine {
 			user.PUT("/settings", handler.UpdateUserSettings)
 		}
 
+		// Desktop runtime warmup routes
+		runtime := v1.Group("/runtime")
+		runtime.Use(middleware.AuthMiddleware(authService))
+		{
+			runtime.GET("/warmup", handler.GetRuntimeWarmupStatus)
+			runtime.POST("/warmup/retry", handler.RetryRuntimeWarmup)
+		}
+
 		// Desktop auto-import folder watcher routes (require JWT user context)
 		watchFolders := v1.Group("/watch-folders")
 		watchFolders.Use(middleware.JWTOnlyMiddleware(authService))

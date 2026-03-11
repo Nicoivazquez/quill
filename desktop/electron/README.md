@@ -18,7 +18,7 @@ npm install
 npm run dev
 ```
 
-During startup, Electron shows a built-in initialization screen while the backend prepares model environments.
+During startup, Electron shows a built-in initialization screen while the backend starts. In packaged builds, Quill now keeps the DMG small and downloads the local model/runtime assets after launch, with in-app progress surfaced in the header for transcription, diarization, and voice-signature runtime setup.
 
 By default dev mode looks for backend binary at:
 
@@ -53,7 +53,7 @@ This runs:
 
 `scripts/desktop-tools.lock.env`
 
-If `yt-dlp` is not found, the script downloads a pinned release (`QUILL_YTDLP_VERSION`) and verifies its SHA-256 before bundling.
+If `yt-dlp` is not found, or the copy found on `PATH` does not match the pinned checksum, the script downloads the pinned release (`QUILL_YTDLP_VERSION`) and verifies its SHA-256 before bundling.
 If `QUILL_WHISPERX_ZIP_SOURCE` is not set, the script downloads WhisperX source from `QUILL_WHISPERX_ZIP_URL` (or the versioned default URL) and bundles it as `tools/whisperx/whisperx.zip`.
 
 You can override source paths when building:
@@ -79,3 +79,7 @@ QUILL_WHISPERX_VERSION=<release-tag> \
 QUILL_WHISPERX_ZIP_SHA256=<sha256> \
 npm run dist:mac
 ```
+
+## Runtime seed tooling
+
+The runtime seed helper remains available in the repo for future offline-first packaging work, but it is not part of the default `npm run dist:mac` path anymore. The default DMG is intentionally smaller and relies on post-launch runtime/model installation with visible in-app status.

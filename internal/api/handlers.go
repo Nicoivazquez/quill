@@ -62,6 +62,7 @@ type Handler struct {
 	multiTrackProcessor *processing.MultiTrackProcessor
 	folderWatchService  *folderwatch.Service
 	contactManager      *contacts.Manager
+	runtimeWarmup       *transcription.RuntimeWarmupManager
 	broadcaster         *sse.Broadcaster
 }
 
@@ -120,6 +121,11 @@ func (h *Handler) SetFolderWatchService(folderWatchService *folderwatch.Service)
 // SetContactManager wires optional file-first contact synchronization.
 func (h *Handler) SetContactManager(contactManager *contacts.Manager) {
 	h.contactManager = contactManager
+}
+
+// SetRuntimeWarmupManager wires desktop runtime warmup state and controls.
+func (h *Handler) SetRuntimeWarmupManager(runtimeWarmup *transcription.RuntimeWarmupManager) {
+	h.runtimeWarmup = runtimeWarmup
 }
 
 // SubmitJobRequest represents the submit job request

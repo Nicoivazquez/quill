@@ -1,10 +1,21 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 
 export interface SpeakerMapping {
     id?: number;
     original_speaker: string;
     custom_name: string;
+}
+
+export interface SpeakerContactBootstrapSummary {
+    started_count: number;
+    created_count: number;
+    skipped_existing_count: number;
+}
+
+export interface SpeakerMappingsUpdateResponse {
+    mappings: SpeakerMapping[];
+    contact_bootstrap: SpeakerContactBootstrapSummary;
 }
 
 export function useSpeakerMappings(audioId: string, enabled: boolean) {
@@ -30,31 +41,3 @@ export function useSpeakerMappings(audioId: string, enabled: boolean) {
     });
 }
 
-export function useUpdateSpeaker(audioId: string) {
-    const { getAuthHeaders } = useAuth();
-    const queryClient = useQueryClient();
-
-    return useMutation({
-        mutationFn: async ({ originalSpeaker, customName }: { originalSpeaker: string, customName: string }) => {
-            const response = await fetch(`/api/v1/transcription/${audioId}/speakers`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    ...getAuthHeaders(),
-                },
-                body: JSON.stringify({
-                    mappings: [{
-                        original_speaker: originalSpeaker,
-                        custom_name: customName,
-                    }],
-                }),
-            });
-            if (!response.ok) throw new Error("Failed to update speaker name");
-            return response.json();
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["speakerMappings", audioId] });
-            // Also invalidate transcript if it embeds speaker names (though currently we derive it)
-        },
-    });
-}
