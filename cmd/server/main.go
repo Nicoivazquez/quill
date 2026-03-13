@@ -114,7 +114,11 @@ func main() {
 	speakerMappingRepo := repository.NewSpeakerMappingRepository(database.DB)
 	contactRepo := repository.NewContactRepository(database.DB)
 	refreshTokenRepo := repository.NewRefreshTokenRepository(database.DB)
+	cloudProviderRepo := repository.NewCloudProviderConfigRepository(database.DB)
 	watchedFolderRepo := repository.NewWatchedFolderRepository(database.DB)
+
+	// Register cloud adapters now that repositories are available.
+	registerCloudAdapters(cloudProviderRepo)
 
 	// Initialize services
 	logger.Startup("service", "Initializing services")
@@ -196,6 +200,7 @@ func main() {
 		speakerMappingRepo,
 		contactRepo,
 		refreshTokenRepo,
+		cloudProviderRepo,
 		taskQueue,
 		unifiedProcessor,
 		quickTranscriptionService,
@@ -211,6 +216,13 @@ func main() {
 
 		if err := handler.AutoGenerateTranscriptionTitleForJob(ctx, jobID); err != nil {
 			logger.Warn("Auto title generation after transcription completion failed", "job_id", jobID, "error", err)
+		}
+
+		// Run speaker auto-identification using voice signatures from contacts.
+		labelCtx, labelCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer labelCancel()
+		if err := handler.AutoLabelSpeakersForJob(labelCtx, jobID); err != nil {
+			logger.Warn("Auto speaker identification after transcription completion failed", "job_id", jobID, "error", err)
 		}
 	})
 
@@ -331,4 +343,23 @@ func registerAdapters(cfg *config.Config) {
 		adapters.NewSortformerAdapter(nvidiaEnvPath)) // Shares with Parakeet
 
 	logger.Info("Adapter registration complete")
+}
+
+// registerCloudAdapters registers cloud-based adapters that require repository access for API keys.
+// Called after the database and repositories are initialized.
+func registerCloudAdapters(cloudProviderRepo repository.CloudProviderConfigRepository) {
+	assemblyAIAdapter := adapters.NewAssemblyAIAdapter(cloudProviderRepo)
+	registry.RegisterTranscriptionAdapter("assemblyai", assemblyAIAdapter)
+	registry.RegisterTranscriptionAdapter("assemblyai-best", assemblyAIAdapter)
+	registry.RegisterTranscriptionAdapter("assemblyai-nano", assemblyAIAdapter)
+	registry.RegisterDiarizationAdapter("assemblyai", assemblyAIAdapter)
+	logger.Info("Cloud adapter registration complete", "provider", "assemblyai")
+
+	deepgramAdapter := adapters.NewDeepgramAdapter(cloudProviderRepo)
+	registry.RegisterTranscriptionAdapter("deepgram", deepgramAdapter)
+	registry.RegisterTranscriptionAdapter("deepgram-nova-3", deepgramAdapter)
+	registry.RegisterTranscriptionAdapter("deepgram-nova-2", deepgramAdapter)
+	registry.RegisterTranscriptionAdapter("deepgram-whisper", deepgramAdapter)
+	registry.RegisterDiarizationAdapter("deepgram", deepgramAdapter)
+	logger.Info("Cloud adapter registration complete", "provider", "deepgram")
 }

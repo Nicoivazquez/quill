@@ -54,6 +54,7 @@ func (suite *APIHandlerTestSuite) SetupSuite() {
 	speakerMappingRepo := repository.NewSpeakerMappingRepository(suite.helper.DB)
 	contactRepo := repository.NewContactRepository(suite.helper.DB)
 	refreshTokenRepo := repository.NewRefreshTokenRepository(suite.helper.DB)
+	cloudProviderRepo := repository.NewCloudProviderConfigRepository(suite.helper.DB)
 
 	// Initialize services
 	userService := service.NewUserService(userRepo, suite.helper.AuthService)
@@ -87,6 +88,7 @@ func (suite *APIHandlerTestSuite) SetupSuite() {
 		speakerMappingRepo,
 		contactRepo,
 		refreshTokenRepo,
+		cloudProviderRepo,
 		suite.taskQueue,
 		suite.unifiedProcessor,
 		suite.quickTranscription,

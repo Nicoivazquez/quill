@@ -354,7 +354,10 @@ func (m *RuntimeWarmupManager) markStepFailedFatal(index int, err error) {
 	m.status.CompletedAt = &now
 	m.status.UpdatedAt = now
 	m.running = false
-	m.cancel = nil
+	if m.cancel != nil {
+		m.cancel()
+		m.cancel = nil
+	}
 
 	logger.Warn("Desktop runtime warmup failed", "step", step.ID, "error", step.Error)
 }
@@ -373,7 +376,10 @@ func (m *RuntimeWarmupManager) markReady() {
 	m.status.CompletedAt = &now
 	m.status.UpdatedAt = now
 	m.running = false
-	m.cancel = nil
+	if m.cancel != nil {
+		m.cancel()
+		m.cancel = nil
+	}
 
 	logger.Info("Desktop runtime warmup completed")
 }
