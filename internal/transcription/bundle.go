@@ -59,6 +59,77 @@ func MoveAudioToBundle(audioPath, bundleDir string) (string, error) {
 	return targetPath, nil
 }
 
+// BundleRenameResult holds the updated paths after a bundle directory rename.
+type BundleRenameResult struct {
+	NewDir       string
+	AudioPath    string
+	JSONPath     string
+	MarkdownPath string
+}
+
+// RenameBundleDir renames a transcript bundle directory to reflect a new title.
+// It extracts the shortID from the current directory name, computes the new name,
+// and renames the directory on disk. Returns updated paths for all bundle files.
+// If the new name matches the old name, it's a no-op.
+func RenameBundleDir(currentDir, newTitle, jobID string) (BundleRenameResult, error) {
+	// Verify directory exists
+	if _, err := os.Stat(currentDir); err != nil {
+		return BundleRenameResult{}, fmt.Errorf("bundle directory not found: %w", err)
+	}
+
+	parentDir := filepath.Dir(currentDir)
+	sid := shortID(jobID)
+	newSlug := slug.Sanitize(strings.TrimSpace(newTitle), "transcript")
+	newDirName := fmt.Sprintf("%s-%s", newSlug, sid)
+	newDir := filepath.Join(parentDir, newDirName)
+
+	// No-op if names match (clean both paths for robustness)
+	if filepath.Clean(currentDir) == filepath.Clean(newDir) {
+		return buildRenameResult(currentDir)
+	}
+
+	// Guard: fail if destination already exists to prevent data loss
+	if _, err := os.Stat(newDir); err == nil {
+		return BundleRenameResult{}, fmt.Errorf("destination directory already exists: %s", newDir)
+	}
+
+	// Rename directory
+	if err := os.Rename(currentDir, newDir); err != nil {
+		return BundleRenameResult{}, fmt.Errorf("renaming bundle dir: %w", err)
+	}
+
+	return buildRenameResult(newDir)
+}
+
+// buildRenameResult scans a bundle directory and returns paths for known files.
+func buildRenameResult(dir string) (BundleRenameResult, error) {
+	result := BundleRenameResult{NewDir: dir}
+
+	// Find audio file (audio.*)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return result, fmt.Errorf("reading bundle dir: %w", err)
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if strings.HasPrefix(name, "audio.") {
+			result.AudioPath = filepath.Join(dir, name)
+		}
+	}
+
+	// JSON and markdown use canonical names
+	jsonPath := filepath.Join(dir, "transcript.json")
+	if _, err := os.Stat(jsonPath); err == nil {
+		result.JSONPath = jsonPath
+	}
+	mdPath := filepath.Join(dir, "transcript.md")
+	if _, err := os.Stat(mdPath); err == nil {
+		result.MarkdownPath = mdPath
+	}
+
+	return result, nil
+}
+
 func copyFile(src, dst string) error {
 	in, err := os.Open(src)
 	if err != nil {

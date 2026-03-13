@@ -148,6 +148,205 @@ func TestMoveAudioToBundle_SourceNotExist(t *testing.T) {
 	}
 }
 
+// ---------- RenameBundleDir tests ----------
+
+// mustSetup creates a directory and writes files into it, failing the test on error.
+func mustSetup(t *testing.T, dir string, files map[string]string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestRenameBundleDir_RenamesDirectory(t *testing.T) {
+	vaultDir := t.TempDir()
+	transcriptsDir := filepath.Join(vaultDir, "Transcripts")
+	oldDir := filepath.Join(transcriptsDir, "old-title-abcdefgh")
+
+	mustSetup(t, oldDir, map[string]string{
+		"audio.mp3":       "audio",
+		"transcript.json": "{}",
+		"transcript.md":   "# md",
+	})
+
+	result, err := RenameBundleDir(oldDir, "New Title", "abcdefgh-1234-5678")
+	if err != nil {
+		t.Fatalf("RenameBundleDir error: %v", err)
+	}
+
+	// Old dir should not exist
+	if _, err := os.Stat(oldDir); !os.IsNotExist(err) {
+		t.Error("old directory still exists")
+	}
+
+	// New dir should exist
+	if _, err := os.Stat(result.NewDir); err != nil {
+		t.Errorf("new directory not found: %v", err)
+	}
+
+	// Files should exist in new dir
+	for _, name := range []string{"audio.mp3", "transcript.json", "transcript.md"} {
+		if _, err := os.Stat(filepath.Join(result.NewDir, name)); err != nil {
+			t.Errorf("file %q not found in new dir: %v", name, err)
+		}
+	}
+
+	// NewDir should contain new-title slug
+	if base := filepath.Base(result.NewDir); base != "new-title-abcdefgh" {
+		t.Errorf("new dir base = %q, want %q", base, "new-title-abcdefgh")
+	}
+}
+
+func TestRenameBundleDir_UpdatesPaths(t *testing.T) {
+	vaultDir := t.TempDir()
+	transcriptsDir := filepath.Join(vaultDir, "Transcripts")
+	oldDir := filepath.Join(transcriptsDir, "old-title-abcd1234")
+
+	mustSetup(t, oldDir, map[string]string{
+		"audio.wav":       "wav",
+		"transcript.json": "{}",
+		"transcript.md":   "md",
+	})
+
+	result, err := RenameBundleDir(oldDir, "Updated Title", "abcd1234-5678")
+	if err != nil {
+		t.Fatalf("RenameBundleDir error: %v", err)
+	}
+
+	expectedDir := filepath.Join(transcriptsDir, "updated-title-abcd1234")
+	if result.NewDir != expectedDir {
+		t.Errorf("NewDir = %q, want %q", result.NewDir, expectedDir)
+	}
+
+	// Verify paths are under new dir
+	if filepath.Dir(result.AudioPath) != result.NewDir {
+		t.Errorf("AudioPath %q not under NewDir %q", result.AudioPath, result.NewDir)
+	}
+	if filepath.Dir(result.JSONPath) != result.NewDir {
+		t.Errorf("JSONPath %q not under NewDir %q", result.JSONPath, result.NewDir)
+	}
+	if filepath.Dir(result.MarkdownPath) != result.NewDir {
+		t.Errorf("MarkdownPath %q not under NewDir %q", result.MarkdownPath, result.NewDir)
+	}
+}
+
+func TestRenameBundleDir_SameTitle_NoOp(t *testing.T) {
+	vaultDir := t.TempDir()
+	transcriptsDir := filepath.Join(vaultDir, "Transcripts")
+	dir := filepath.Join(transcriptsDir, "my-title-abcdefgh")
+
+	mustSetup(t, dir, map[string]string{"audio.mp3": "data"})
+
+	result, err := RenameBundleDir(dir, "My Title", "abcdefgh-1234")
+	if err != nil {
+		t.Fatalf("RenameBundleDir error: %v", err)
+	}
+
+	if result.NewDir != dir {
+		t.Errorf("expected no-op, got NewDir = %q, want %q", result.NewDir, dir)
+	}
+
+	// Original dir should still exist
+	if _, err := os.Stat(dir); err != nil {
+		t.Errorf("directory should still exist: %v", err)
+	}
+}
+
+func TestRenameBundleDir_PreservesAllFiles(t *testing.T) {
+	vaultDir := t.TempDir()
+	transcriptsDir := filepath.Join(vaultDir, "Transcripts")
+	oldDir := filepath.Join(transcriptsDir, "old-abcdefgh")
+
+	files := map[string]string{
+		"audio.m4a":       "audio content",
+		"transcript.json": `{"segments":[]}`,
+		"transcript.md":   "# Transcript",
+		"extra-file.txt":  "extra data",
+	}
+	mustSetup(t, oldDir, files)
+
+	result, err := RenameBundleDir(oldDir, "New Name", "abcdefgh")
+	if err != nil {
+		t.Fatalf("RenameBundleDir error: %v", err)
+	}
+
+	// All files should be preserved
+	for name, expectedContent := range files {
+		data, err := os.ReadFile(filepath.Join(result.NewDir, name))
+		if err != nil {
+			t.Errorf("file %q not found in new dir: %v", name, err)
+			continue
+		}
+		if string(data) != expectedContent {
+			t.Errorf("file %q content mismatch: got %q, want %q", name, string(data), expectedContent)
+		}
+	}
+}
+
+func TestRenameBundleDir_DestinationExists(t *testing.T) {
+	vaultDir := t.TempDir()
+	transcriptsDir := filepath.Join(vaultDir, "Transcripts")
+	oldDir := filepath.Join(transcriptsDir, "old-title-abcdefgh")
+	conflictDir := filepath.Join(transcriptsDir, "new-title-abcdefgh")
+
+	// Create both directories
+	if err := os.MkdirAll(oldDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(conflictDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(oldDir, "audio.mp3"), []byte("data"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(conflictDir, "audio.mp3"), []byte("other"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := RenameBundleDir(oldDir, "New Title", "abcdefgh-1234")
+	if err == nil {
+		t.Fatal("expected error when destination exists, got nil")
+	}
+
+	// Original dir should still exist (no data loss)
+	if _, statErr := os.Stat(oldDir); statErr != nil {
+		t.Errorf("original directory should still exist: %v", statErr)
+	}
+}
+
+func TestRenameBundleDir_NonExistentDir(t *testing.T) {
+	_, err := RenameBundleDir("/nonexistent/dir", "Title", "abc")
+	if err == nil {
+		t.Fatal("expected error for nonexistent directory, got nil")
+	}
+}
+
+func TestRenameBundleDir_DiscoverAudioExtension(t *testing.T) {
+	vaultDir := t.TempDir()
+	transcriptsDir := filepath.Join(vaultDir, "Transcripts")
+	oldDir := filepath.Join(transcriptsDir, "old-abc12345")
+
+	mustSetup(t, oldDir, map[string]string{
+		"audio.ogg":       "ogg",
+		"transcript.json": "{}",
+		"transcript.md":   "md",
+	})
+
+	result, err := RenameBundleDir(oldDir, "New", "abc12345")
+	if err != nil {
+		t.Fatalf("RenameBundleDir error: %v", err)
+	}
+
+	if filepath.Base(result.AudioPath) != "audio.ogg" {
+		t.Errorf("AudioPath base = %q, want audio.ogg", filepath.Base(result.AudioPath))
+	}
+}
+
 func TestMoveAudioToBundle_AlreadyInBundle(t *testing.T) {
 	bundleDir := t.TempDir()
 

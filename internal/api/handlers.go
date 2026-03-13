@@ -1288,7 +1288,53 @@ func (h *Handler) UpdateTranscriptionTitle(c *gin.Context) {
 	}
 
 	job.Title = &body.Title
+
+	// Capture original paths for rollback on DB failure
+	originalArtifactDir := ""
+	if job.ArtifactDir != nil {
+		originalArtifactDir = *job.ArtifactDir
+	}
+	originalAudioPath := job.AudioPath
+	var originalJSONPath, originalMDPath *string
+	if job.TranscriptJSONPath != nil {
+		v := *job.TranscriptJSONPath
+		originalJSONPath = &v
+	}
+	if job.TranscriptMarkdownPath != nil {
+		v := *job.TranscriptMarkdownPath
+		originalMDPath = &v
+	}
+
+	// Rename bundle directory on disk to reflect the new title
+	bundleRenamed := false
+	if job.ArtifactDir != nil && *job.ArtifactDir != "" {
+		if result, renameErr := transcription.RenameBundleDir(*job.ArtifactDir, body.Title, job.ID); renameErr != nil {
+			logger.Warn("Failed to rename bundle dir for title update",
+				"job_id", job.ID, "error", renameErr)
+		} else if result.NewDir != originalArtifactDir {
+			bundleRenamed = true
+			job.ArtifactDir = &result.NewDir
+			if result.AudioPath != "" {
+				job.AudioPath = result.AudioPath
+			}
+			if result.JSONPath != "" {
+				job.TranscriptJSONPath = &result.JSONPath
+			}
+			if result.MarkdownPath != "" {
+				job.TranscriptMarkdownPath = &result.MarkdownPath
+			}
+		}
+	}
+
 	if err := h.jobRepo.Update(c.Request.Context(), job); err != nil {
+		// Rollback filesystem rename on DB failure
+		if bundleRenamed {
+			_ = os.Rename(*job.ArtifactDir, originalArtifactDir)
+			job.ArtifactDir = &originalArtifactDir
+			job.AudioPath = originalAudioPath
+			job.TranscriptJSONPath = originalJSONPath
+			job.TranscriptMarkdownPath = originalMDPath
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update title"})
 		return
 	}
@@ -1647,11 +1693,55 @@ func (h *Handler) generateAndPersistTranscriptionTitle(
 
 	job.Title = &title
 	job.AudioPath = renamedAudioPath
+
+	// Capture original paths for rollback on DB failure
+	originalArtifactDir := ""
+	if job.ArtifactDir != nil {
+		originalArtifactDir = *job.ArtifactDir
+	}
+	var originalJSONPath, originalMDPath *string
+	if job.TranscriptJSONPath != nil {
+		v := *job.TranscriptJSONPath
+		originalJSONPath = &v
+	}
+	if job.TranscriptMarkdownPath != nil {
+		v := *job.TranscriptMarkdownPath
+		originalMDPath = &v
+	}
+
+	// Rename bundle directory on disk to reflect the auto-generated title
+	bundleRenamed := false
+	if job.ArtifactDir != nil && *job.ArtifactDir != "" {
+		if result, renameErr := transcription.RenameBundleDir(*job.ArtifactDir, title, job.ID); renameErr != nil {
+			logger.Warn("Failed to rename bundle dir for auto title",
+				"job_id", job.ID, "error", renameErr)
+		} else if result.NewDir != originalArtifactDir {
+			bundleRenamed = true
+			job.ArtifactDir = &result.NewDir
+			if result.AudioPath != "" {
+				job.AudioPath = result.AudioPath
+			}
+			if result.JSONPath != "" {
+				job.TranscriptJSONPath = &result.JSONPath
+			}
+			if result.MarkdownPath != "" {
+				job.TranscriptMarkdownPath = &result.MarkdownPath
+			}
+		}
+	}
+
 	if err := h.jobRepo.Update(ctx, job); err != nil {
+		// Rollback filesystem changes on DB failure
+		if bundleRenamed {
+			_ = os.Rename(*job.ArtifactDir, originalArtifactDir)
+			job.ArtifactDir = &originalArtifactDir
+			job.TranscriptJSONPath = originalJSONPath
+			job.TranscriptMarkdownPath = originalMDPath
+		}
 		if originalAudioPath != renamedAudioPath {
 			_ = os.Rename(renamedAudioPath, originalAudioPath)
-			job.AudioPath = originalAudioPath
 		}
+		job.AudioPath = originalAudioPath
 		return "", "", err
 	}
 
