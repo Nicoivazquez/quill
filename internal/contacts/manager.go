@@ -182,12 +182,6 @@ func (m *Manager) ActiveVault() (uint, string, bool) {
 	return m.activeVaultID, m.activePath, true
 }
 
-func (m *Manager) FileService() *FileService {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.fileService
-}
-
 func (m *Manager) EnqueueEmbedding(contactID uint) {
 	m.mu.RLock()
 	worker := m.embeddingWorker

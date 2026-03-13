@@ -582,11 +582,13 @@ async function waitForBackendHealthy(url: string): Promise<void> {
 }
 
 function createMainWindow(): BrowserWindow {
+  const iconPath = path.join(__dirname, "..", "build", "icon.png");
   const window = new BrowserWindow({
     width: 1360,
     height: 900,
     minWidth: 1080,
     minHeight: 760,
+    icon: iconPath,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,

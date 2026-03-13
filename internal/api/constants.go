@@ -5,5 +5,4 @@ const (
 	paramJobID = "job_id"
 	paramTitle = "title"
 	paramAudio = "audio"
-	paramVideo = "video"
 )

@@ -5,12 +5,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
-import { Loader2, Users, Save, X } from 'lucide-react';
+import { Loader2, Users, Save, X, Sparkles } from 'lucide-react';
 import { useToast } from '@/components/ui/toast';
 import { useAuth } from "@/features/auth/hooks/useAuth";
+import { useQueryClient } from "@tanstack/react-query";
 import { useContacts } from "@/features/contacts/hooks/useContacts";
 import type { Contact } from "@/features/contacts/types";
 import type { SpeakerMapping, SpeakerMappingsUpdateResponse } from "@/features/transcription/hooks/useTranscriptionSpeakers";
+import type { SpeakerIdentificationEvent, SpeakerSuggestion } from "@/features/transcription/hooks/useTranscriptionEvents";
 
 interface SpeakerRenameDialogProps {
   open: boolean;
@@ -35,6 +37,7 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
 }) => {
   const { getAuthHeaders } = useAuth();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [speakerMappings, setSpeakerMappings] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -43,6 +46,22 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
   const [highlightedSuggestionIndex, setHighlightedSuggestionIndex] = useState(0);
   const contactsQuery = useContacts("", open);
   const contacts = useMemo(() => contactsQuery.data?.contacts ?? [], [contactsQuery.data?.contacts]);
+
+  // Read auto-label suggestions from React Query cache (populated by SSE)
+  const autoLabelData = queryClient.getQueryData<SpeakerIdentificationEvent>(
+    ['speakerSuggestions', transcriptionId],
+  );
+
+  // Build a lookup: speaker label -> best suggestion
+  const voiceSuggestions = useMemo(() => {
+    const map = new Map<string, SpeakerSuggestion>();
+    if (!autoLabelData) return map;
+    // Suggestions (tier="suggest") are the ones we show as actionable chips
+    for (const s of autoLabelData.suggestions) {
+      map.set(s.speaker, s);
+    }
+    return map;
+  }, [autoLabelData]);
   const topContacts = useMemo(
     () => [...contacts].sort((a, b) => a.name.localeCompare(b.name)).slice(0, MAX_CONTACT_SUGGESTIONS),
     [contacts],
@@ -296,15 +315,34 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
               <div className="space-y-3 max-h-60 overflow-y-auto">
                 {speakers.map((speaker) => {
                   const suggestions = getContactSuggestions(speakerMappings[speaker] ?? "", speaker);
+                  const voiceSuggestion = voiceSuggestions.get(speaker);
 
                   return (
                     <div
                       key={speaker}
                       className="space-y-1"
                     >
-                      <Label htmlFor={`speaker-${speaker}`} className="text-xs font-medium text-muted-foreground">
-                        {speaker}
-                      </Label>
+                      <div className="flex items-center gap-2">
+                        <Label htmlFor={`speaker-${speaker}`} className="text-xs font-medium text-muted-foreground">
+                          {speaker}
+                        </Label>
+                        {voiceSuggestion && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSpeakerMappings((prev) => ({
+                                ...prev,
+                                [speaker]: voiceSuggestion.contact_name,
+                              }));
+                            }}
+                            className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-[var(--brand-solid)]/10 text-[var(--brand-solid)] hover:bg-[var(--brand-solid)]/20 transition-colors"
+                            title={`Voice match: ${Math.round(voiceSuggestion.score * 100)}% confidence`}
+                          >
+                            <Sparkles className="h-3 w-3" />
+                            {voiceSuggestion.contact_name} ({Math.round(voiceSuggestion.score * 100)}%)
+                          </button>
+                        )}
+                      </div>
                       <Popover
                         open={activeSpeaker === speaker}
                         onOpenChange={(nextOpen) => {

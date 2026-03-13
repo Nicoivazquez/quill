@@ -275,12 +275,9 @@ func resolveJobAudioPath(job *models.TranscriptionJob, vaultPath string) (string
 			continue
 		}
 
-		if isRegularFile(candidate) {
-			return candidate, nil
-		}
-
-		vaultCandidate := filepath.Join(vaultPath, filepath.FromSlash(candidate))
-		if isRegularFile(vaultCandidate) {
+		// Resolve relative paths against vault first, then validate boundary.
+		vaultCandidate := filepath.Clean(filepath.Join(vaultPath, filepath.FromSlash(candidate)))
+		if isWithinBoundary(vaultCandidate, allowedRoots) && isRegularFile(vaultCandidate) {
 			return vaultCandidate, nil
 		}
 	}

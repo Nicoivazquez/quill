@@ -54,8 +54,9 @@ type Handler struct {
 	chatRepo            repository.ChatRepository
 	noteRepo            repository.NoteRepository
 	speakerMappingRepo  repository.SpeakerMappingRepository
-	contactRepo         repository.ContactRepository
-	refreshTokenRepo    repository.RefreshTokenRepository
+	contactRepo           repository.ContactRepository
+	refreshTokenRepo      repository.RefreshTokenRepository
+	cloudProviderRepo     repository.CloudProviderConfigRepository
 	taskQueue           *queue.TaskQueue
 	unifiedProcessor    *transcription.UnifiedJobProcessor
 	quickTranscription  *transcription.QuickTranscriptionService
@@ -83,6 +84,7 @@ func NewHandler(
 	speakerMappingRepo repository.SpeakerMappingRepository,
 	contactRepo repository.ContactRepository,
 	refreshTokenRepo repository.RefreshTokenRepository,
+	cloudProviderRepo repository.CloudProviderConfigRepository,
 	taskQueue *queue.TaskQueue,
 	unifiedProcessor *transcription.UnifiedJobProcessor,
 	quickTranscription *transcription.QuickTranscriptionService,
@@ -103,9 +105,10 @@ func NewHandler(
 		chatRepo:            chatRepo,
 		noteRepo:            noteRepo,
 		speakerMappingRepo:  speakerMappingRepo,
-		contactRepo:         contactRepo,
-		refreshTokenRepo:    refreshTokenRepo,
-		taskQueue:           taskQueue,
+		contactRepo:           contactRepo,
+		refreshTokenRepo:      refreshTokenRepo,
+		cloudProviderRepo:     cloudProviderRepo,
+		taskQueue:             taskQueue,
 		unifiedProcessor:    unifiedProcessor,
 		quickTranscription:  quickTranscription,
 		multiTrackProcessor: multiTrackProcessor,
@@ -2693,6 +2696,20 @@ func (h *Handler) SaveLLMConfig(c *gin.Context) {
 			return
 		}
 		config = existingConfig
+	}
+
+	// Bidirectional sync: when an OpenAI key is saved via LLM config, also upsert
+	// it into CloudProviderConfig so that the unified cloud key store stays in sync.
+	if config.Provider == "openai" && h.cloudProviderRepo != nil && config.APIKey != nil && *config.APIKey != "" {
+		syncCfg := &models.CloudProviderConfig{
+			Provider: "openai",
+			APIKey:   *config.APIKey,
+			IsActive: true,
+		}
+		if err := h.cloudProviderRepo.Upsert(c.Request.Context(), syncCfg); err != nil {
+			// Non-fatal: log and continue — the LLM config was already saved.
+			_ = err
+		}
 	}
 
 	response := LLMConfigResponse{

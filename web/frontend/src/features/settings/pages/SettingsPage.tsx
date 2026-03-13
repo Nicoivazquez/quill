@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
-import { User, Settings as SettingsIcon, Key, Bot, FileText, Plus, FolderOpen, HardDrive } from "lucide-react";
+import { User, Settings as SettingsIcon, Key, Bot, FileText, Plus, FolderOpen, HardDrive, Cloud } from "lucide-react";
 import {
   Tabs,
   TabsContent,
@@ -18,6 +18,7 @@ import { SummaryTemplateDialog, type SummaryTemplate } from "../components/Summa
 import { SummaryTemplatesTable } from "../components/SummaryTemplatesTable";
 import { AutoImportSettingsTab } from "../components/AutoImportSettingsTab";
 import { VaultSettingsTab } from "../components/VaultSettingsTab";
+import { CloudProviderSettings } from "../components/CloudProviderSettings";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 
 export function Settings() {
@@ -68,7 +69,7 @@ export function Settings() {
           onValueChange={setActiveTab}
           className="space-y-4 sm:space-y-6"
         >
-          <TabsList className="grid w-full grid-cols-7 items-center h-auto bg-[var(--bg-muted-pane)] border border-[var(--border-subtle)] p-1 rounded-[var(--radius-btn)]">
+          <TabsList className="grid w-full grid-cols-8 items-center h-auto bg-[var(--bg-muted-pane)] border border-[var(--border-subtle)] p-1 rounded-[var(--radius-btn)]">
             <TabsTrigger
               value="transcription"
               aria-label="Transcription"
@@ -124,6 +125,14 @@ export function Settings() {
             >
               <HardDrive className="h-4 w-4" />
               <span className="hidden sm:inline">Vaults</span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="cloud-providers"
+              aria-label="Cloud Providers"
+              className="flex items-center justify-center gap-2 h-9 py-1.5 data-[state=active]:bg-[var(--bg-card)] data-[state=active]:border data-[state=active]:border-[var(--border-subtle)] data-[state=active]:text-[var(--text-primary)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] font-medium rounded-[calc(var(--radius-btn)-2px)] text-xs sm:text-sm transition-all"
+            >
+              <Cloud className="h-4 w-4" />
+              <span className="hidden sm:inline">Cloud</span>
             </TabsTrigger>
           </TabsList>
 
@@ -206,6 +215,11 @@ export function Settings() {
           {/* Vaults Tab */}
           <TabsContent value="vaults" className="space-y-6">
             <VaultSettingsTab />
+          </TabsContent>
+
+          {/* Cloud Providers Tab */}
+          <TabsContent value="cloud-providers" className="space-y-6">
+            <CloudProviderSettings />
           </TabsContent>
         </Tabs>
       </div>

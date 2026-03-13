@@ -39,14 +39,14 @@ export const isVideoFile = (file: File): boolean => {
 /**
  * Detects if a file is an .aup Audacity project file
  */
-export const isAupFile = (file: File): boolean => {
+const isAupFile = (file: File): boolean => {
 	return file.name.toLowerCase().endsWith('.aup');
 };
 
 /**
  * Extracts a clean title from a filename by removing the extension
  */
-export const extractTitle = (filename: string): string => {
+const extractTitle = (filename: string): string => {
 	return filename.replace(/\.[^/.]+$/, '');
 };
 

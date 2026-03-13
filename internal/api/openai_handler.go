@@ -45,6 +45,10 @@ type OpenAIModelListResponse struct {
 // @Security BearerAuth
 func (h *Handler) ValidateOpenAIKey(c *gin.Context) {
 	var req ValidateOpenAIKeyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		// Allow empty body — fall through to use server-configured key.
+		req = ValidateOpenAIKeyRequest{}
+	}
 	// If API key is not provided in request, try to use the one from config
 	apiKey := req.APIKey
 	if apiKey == "" {

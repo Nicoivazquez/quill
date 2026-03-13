@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"quill/internal/models"
+	"quill/internal/transcription"
 	"quill/pkg/logger"
 
 	"github.com/gin-gonic/gin"
@@ -135,6 +136,13 @@ func (h *Handler) UpdateSpeakerMappings(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch updated mappings"})
 		return
+	}
+
+	// Best-effort transcript file rewrite: update speaker_name in JSON segments
+	// and regenerate the markdown with display names.
+	if rewriteErr := transcription.RewriteTranscriptFiles(job, updatedMappings); rewriteErr != nil {
+		// Do not fail the rename flow; the DB mappings are already committed.
+		logger.Warn("transcript file rewrite failed", "job_id", jobID, "error", rewriteErr)
 	}
 
 	// Best-effort bootstrap: when a speaker is renamed to a real contact name,

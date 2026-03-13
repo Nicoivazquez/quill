@@ -271,6 +271,15 @@ func SetupRoutes(handler *Handler, authService *auth.AuthService) *gin.Engine {
 			}
 		}
 
+		// Cloud provider API key management routes (require authentication)
+		cloudProviders := v1.Group("/cloud-providers")
+		cloudProviders.Use(middleware.AuthMiddleware(authService))
+		{
+			cloudProviders.GET("", handler.ListCloudProviders)
+			cloudProviders.PUT("/:provider", handler.UpsertCloudProvider)
+			cloudProviders.DELETE("/:provider", handler.DeleteCloudProvider)
+		}
+
 		// LLM configuration routes (require authentication)
 		llm := v1.Group("/llm")
 		llm.Use(middleware.AuthMiddleware(authService))

@@ -13,6 +13,21 @@ interface JobUpdateEvent {
     };
 }
 
+export interface SpeakerSuggestion {
+    speaker: string;
+    contact_id: number;
+    contact_name: string;
+    score: number;
+    tier: 'auto' | 'suggest' | 'unknown';
+}
+
+export interface SpeakerIdentificationEvent {
+    job_id: string;
+    auto_assigned: SpeakerSuggestion[];
+    suggestions: SpeakerSuggestion[];
+    unmatched: string[];
+}
+
 export const useTranscriptionEvents = (jobId: string | null) => {
     const { token, isLocalMode, getAuthHeaders } = useAuth();
     const queryClient = useQueryClient();
@@ -141,6 +156,24 @@ export const useTranscriptionEvents = (jobId: string | null) => {
 
                     return oldData;
                 });
+            }
+
+            if (event.type === 'speaker_identification') {
+                const payload = event.payload as SpeakerIdentificationEvent;
+
+                // Cache suggestions for SpeakerRenameDialog to read
+                queryClient.setQueryData(
+                    ['speakerSuggestions', payload.job_id],
+                    payload,
+                );
+
+                // Auto-assigned speakers are already persisted as SpeakerMapping rows.
+                // Invalidate speaker mappings so the dialog picks them up on next open.
+                if (payload.auto_assigned.length > 0) {
+                    queryClient.invalidateQueries({
+                        queryKey: ['audioFiles'],
+                    });
+                }
             }
         };
 
