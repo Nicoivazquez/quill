@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"quill/internal/models"
+	"quill/internal/repository"
 	"quill/internal/transcription/adapters"
 	"quill/internal/transcription/interfaces"
 	"quill/internal/transcription/registry"
@@ -84,9 +85,14 @@ func (m *MockJobRepository) DeleteMultiTrackFilesByJobID(ctx context.Context, jo
 	return args.Error(0)
 }
 
-func (m *MockJobRepository) ListWithParams(ctx context.Context, offset, limit int, sortBy, sortOrder, searchQuery string, updatedAfter *time.Time, vaultID *uint) ([]models.TranscriptionJob, int64, error) {
-	args := m.Called(ctx, offset, limit, sortBy, sortOrder, searchQuery, updatedAfter, vaultID)
+func (m *MockJobRepository) ListWithParams(ctx context.Context, params repository.ListParams) ([]models.TranscriptionJob, int64, error) {
+	args := m.Called(ctx, params)
 	return args.Get(0).([]models.TranscriptionJob), args.Get(1).(int64), args.Error(2)
+}
+
+func (m *MockJobRepository) ListDistinctSpeakers(ctx context.Context, vaultID *uint) ([]string, error) {
+	args := m.Called(ctx, vaultID)
+	return args.Get(0).([]string), args.Error(1)
 }
 
 func (m *MockJobRepository) FindActiveTrackJobs(ctx context.Context, parentJobID string) ([]models.TranscriptionJob, error) {
@@ -131,6 +137,21 @@ func (m *MockJobRepository) CountByStatus(ctx context.Context, status models.Job
 func (m *MockJobRepository) UpdateSummary(ctx context.Context, jobID string, summary string) error {
 	args := m.Called(ctx, jobID, summary)
 	return args.Error(0)
+}
+
+func (m *MockJobRepository) ListFolders(ctx context.Context, vaultID *uint) ([]string, error) {
+	args := m.Called(ctx, vaultID)
+	return args.Get(0).([]string), args.Error(1)
+}
+
+func (m *MockJobRepository) UpdateFolder(ctx context.Context, jobID string, folder *string) error {
+	args := m.Called(ctx, jobID, folder)
+	return args.Error(0)
+}
+
+func (m *MockJobRepository) BulkUpdateFolder(ctx context.Context, oldFolder string, newFolder *string, vaultID *uint) (int64, error) {
+	args := m.Called(ctx, oldFolder, newFolder, vaultID)
+	return args.Get(0).(int64), args.Error(1)
 }
 
 // MockTranscriptionAdapter is a mock implementation of TranscriptionAdapter

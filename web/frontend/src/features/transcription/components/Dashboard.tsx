@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Header } from "@/components/Header";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { AudioFilesTable } from "./AudioFilesTable";
+import { FolderSidebar } from "./FolderSidebar";
 import { DragDropOverlay } from "@/components/DragDropOverlay";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,12 @@ import {
 import { useGlobalUpload } from "@/contexts/GlobalUploadContext";
 
 export function Dashboard() {
+	// Folder state: null = all files, "" = root/unfiled, "Work" = specific folder
+	const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
+	const handleFolderSelect = useCallback((folder: string | null) => {
+		setSelectedFolder(folder);
+	}, []);
+
 	// Get upload functionality from global context
 	const {
 		handleFileSelect,
@@ -136,6 +143,12 @@ export function Dashboard() {
 		<MainLayout
 			className="min-h-screen bg-[var(--bg-main)]"
 			header={<Header />}
+			sidebar={
+				<FolderSidebar
+					selectedFolder={selectedFolder}
+					onFolderSelect={handleFolderSelect}
+				/>
+			}
 		>
 			<div className="space-y-5">
 				{/* Upload Progress */}
@@ -202,6 +215,7 @@ export function Dashboard() {
 
 				<AudioFilesTable
 					onTranscribe={handleTranscribe}
+					selectedFolder={selectedFolder}
 				/>
 			</div>
 

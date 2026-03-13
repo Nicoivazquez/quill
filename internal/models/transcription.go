@@ -17,6 +17,7 @@ type TranscriptionJob struct {
 	ArtifactDir            *string        `json:"artifact_dir,omitempty" gorm:"type:text"`
 	TranscriptJSONPath     *string        `json:"transcript_json_path,omitempty" gorm:"type:text"`
 	TranscriptMarkdownPath *string        `json:"transcript_markdown_path,omitempty" gorm:"type:text"`
+	Folder                 *string        `json:"folder,omitempty" gorm:"type:text;index"`
 	Transcript             *string        `json:"transcript,omitempty" gorm:"type:text"`
 	Diarization            bool           `json:"diarization" gorm:"type:boolean;default:false"`
 	Summary                *string        `json:"summary,omitempty" gorm:"type:text"`

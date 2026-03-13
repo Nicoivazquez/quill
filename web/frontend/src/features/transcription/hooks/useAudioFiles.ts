@@ -14,6 +14,7 @@ export interface AudioFile {
     individual_transcripts?: any;
     speakers?: number;
     duration?: number;
+    folder?: string;
 }
 
 export interface AudioFilesResponse {
@@ -32,6 +33,9 @@ interface AudioListParams {
     search?: string;
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
+    folder?: string | null; // null = all, "" = root only, "Work" = specific folder
+    status?: string; // filter by job status (e.g., "completed", "failed")
+    speaker?: string; // filter by speaker custom name
 }
 
 function getListRefetchInterval(data: AudioFilesResponse | undefined) {
@@ -62,6 +66,11 @@ export function useAudioListInfinite(params: Omit<AudioListParams, 'page'>) {
                 searchParams.set('sort_by', params.sortBy);
                 searchParams.set('sort_order', params.sortOrder || 'desc');
             }
+            if (params.folder !== undefined && params.folder !== null) {
+                searchParams.set('folder', params.folder);
+            }
+            if (params.status) searchParams.set('status', params.status);
+            if (params.speaker) searchParams.set('speaker', params.speaker);
 
             const response = await fetch(`/api/v1/transcription/list?${searchParams}`, {
                 headers: getAuthHeaders(),

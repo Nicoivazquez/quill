@@ -962,15 +962,17 @@ func (h *Handler) GetTranscript(c *gin.Context) {
 }
 
 // @Summary List all transcription records
-// @Description Get a list of all transcription jobs with optional search and filtering
+// @Description Get a list of all transcription jobs with optional search, filtering, and sorting
 // @Tags transcription
 // @Produce json
 // @Param page query int false "Page number" default(1)
 // @Param limit query int false "Items per page" default(10)
-// @Param sort_by query string false "Sort By"
-// @Param sort_order query string false "Sort Order (asc/desc)"
-// @Param status query string false "Filter by status"
+// @Param sort_by query string false "Sort by column (created_at, updated_at, title, status)"
+// @Param sort_order query string false "Sort order (asc/desc)"
+// @Param status query string false "Filter by status (uploaded, pending, processing, completed, failed)"
+// @Param speaker query string false "Filter by speaker custom name"
 // @Param q query string false "Search in title, audio filename, and transcript content"
+// @Param folder query string false "Filter by folder"
 // @Param updated_after query string false "Filter by updated_at > timestamp (RFC3339)"
 // @Success 200 {object} map[string]interface{}
 // @Failure 500 {object} map[string]string
@@ -982,11 +984,7 @@ func (h *Handler) ListTranscriptionJobs(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
 	offset := (page - 1) * limit
 
-	sortBy := c.Query("sort_by")
-	sortOrder := c.Query("sort_order")
-	searchQuery := c.Query("q")
 	updatedAfterStr := c.Query("updated_after")
-
 	var updatedAfter *time.Time
 	if updatedAfterStr != "" {
 		if t, err := time.Parse(time.RFC3339, updatedAfterStr); err == nil {
@@ -1001,7 +999,26 @@ func (h *Handler) ListTranscriptionJobs(c *gin.Context) {
 		}
 	}
 
-	jobs, total, err := h.jobRepo.ListWithParams(c.Request.Context(), offset, limit, sortBy, sortOrder, searchQuery, updatedAfter, activeVaultID)
+	// Folder filter: if "folder" param is present, filter by folder
+	var folderPtr *string
+	if folderParam, hasFolderParam := c.GetQuery("folder"); hasFolderParam {
+		folderPtr = &folderParam
+	}
+
+	params := repository.ListParams{
+		Offset:       offset,
+		Limit:        limit,
+		SortBy:       c.Query("sort_by"),
+		SortOrder:    c.Query("sort_order"),
+		SearchQuery:  c.Query("q"),
+		UpdatedAfter: updatedAfter,
+		VaultID:      activeVaultID,
+		Folder:       folderPtr,
+		Status:       c.Query("status"),
+		Speaker:      c.Query("speaker"),
+	}
+
+	jobs, total, err := h.jobRepo.ListWithParams(c.Request.Context(), params)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list jobs"})
 		return
@@ -1016,6 +1033,30 @@ func (h *Handler) ListTranscriptionJobs(c *gin.Context) {
 			"pages": (total + int64(limit) - 1) / int64(limit),
 		},
 	})
+}
+
+// @Summary List distinct speakers
+// @Description Get a list of all distinct speaker names from speaker mappings
+// @Tags transcription
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Failure 500 {object} map[string]string
+// @Router /api/v1/transcription/speakers [get]
+// @Security ApiKeyAuth
+// @Security BearerAuth
+func (h *Handler) ListDistinctSpeakers(c *gin.Context) {
+	var activeVaultID *uint
+	if activeVault, vaultErr := getActiveVault(); vaultErr == nil {
+		activeVaultID = &activeVault.ID
+	}
+
+	speakers, err := h.jobRepo.ListDistinctSpeakers(c.Request.Context(), activeVaultID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list speakers"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"speakers": speakers})
 }
 
 // @Summary Get transcription job details

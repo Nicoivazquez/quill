@@ -16,6 +16,7 @@ import (
 
 	"quill/internal/database"
 	"quill/internal/models"
+	"quill/internal/repository"
 	"quill/internal/transcription"
 	"quill/pkg/logger"
 	"quill/pkg/slug"
@@ -1534,7 +1535,13 @@ func (h *Handler) ListOpenClawReadyJobs(c *gin.Context) {
 		activeVaultID = &activeVault.ID
 	}
 
-	jobs, _, err := h.jobRepo.ListWithParams(c.Request.Context(), 0, 200, "updated_at", "desc", "", nil, activeVaultID)
+	jobs, _, err := h.jobRepo.ListWithParams(c.Request.Context(), repository.ListParams{
+		Offset:    0,
+		Limit:     200,
+		SortBy:    "updated_at",
+		SortOrder: "desc",
+		VaultID:   activeVaultID,
+	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list jobs"})
 		return

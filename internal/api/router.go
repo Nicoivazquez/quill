@@ -153,6 +153,7 @@ func SetupRoutes(handler *Handler, authService *auth.AuthService) *gin.Engine {
 			transcription.GET("/:id", handler.GetTranscriptionJob)
 			transcription.DELETE("/:id", handler.DeleteTranscriptionJob)
 			transcription.GET("/list", handler.ListTranscriptionJobs)
+			transcription.GET("/speakers/distinct", handler.ListDistinctSpeakers)
 			transcription.GET("/models", handler.GetSupportedModels)
 			// Notes for a transcription
 			transcription.GET("/:id/notes", handler.ListNotes)
@@ -165,6 +166,13 @@ func SetupRoutes(handler *Handler, authService *auth.AuthService) *gin.Engine {
 			// Quick transcription endpoints
 			transcription.POST("/quick", handler.SubmitQuickTranscription)
 			transcription.GET("/quick/:id", handler.GetQuickTranscriptionStatus)
+
+			// Folder organization endpoints
+			transcription.GET("/folders", handler.ListFolders)
+			transcription.POST("/folders", handler.CreateFolder)
+			transcription.PUT("/folders/rename", handler.RenameFolder)
+			transcription.DELETE("/folders", handler.DeleteFolder)
+			transcription.PUT("/:id/folder", handler.MoveTranscriptToFolder)
 		}
 
 		// Profile routes (require authentication)

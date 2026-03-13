@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -395,7 +396,7 @@ func (suite *APIHandlerTestSuite) TestListTranscriptionJobsDeltaSync() {
 
 	// Case B: Delta Sync (updated_after)
 	// We want to see both jobs because both were updated (created or deleted) recently.
-	updatedAfter := syncTime.Format(time.RFC3339)
+	updatedAfter := url.QueryEscape(syncTime.Format(time.RFC3339))
 	w = suite.makeAuthenticatedRequest("GET", fmt.Sprintf("/api/v1/transcription/list?updated_after=%s", updatedAfter), nil, false)
 	assert.Equal(suite.T(), 200, w.Code)
 

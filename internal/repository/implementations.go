@@ -47,14 +47,44 @@ func (r *userRepository) CountWithAutoTranscription(ctx context.Context) (int64,
 	return count, err
 }
 
+// ListParams consolidates all filtering, sorting, and pagination parameters
+// for listing transcription jobs.
+type ListParams struct {
+	Offset       int
+	Limit        int
+	SortBy       string
+	SortOrder    string
+	SearchQuery  string
+	UpdatedAfter *time.Time
+	VaultID      *uint
+	Folder       *string // nil = all, pointer to "" = root/unfiled, pointer to "X" = specific folder
+	Status       string  // filter by job status (e.g., "completed", "failed")
+	Speaker      string  // filter by speaker custom name (subquery on speaker_mappings)
+}
+
+// allowedSortColumns defines the columns that can be used for sorting.
+// This prevents SQL injection through the sort_by parameter.
+var allowedSortColumns = map[string]bool{
+	"created_at": true,
+	"updated_at": true,
+	"title":      true,
+	"status":     true,
+}
+
+// IsSortColumnAllowed checks if a column name is in the sort allowlist.
+func IsSortColumnAllowed(col string) bool {
+	return allowedSortColumns[col]
+}
+
 // JobRepository handles transcription job operations
 type JobRepository interface {
 	Repository[models.TranscriptionJob]
 	FindWithAssociations(ctx context.Context, id string) (*models.TranscriptionJob, error)
 	FindActiveTrackJobs(ctx context.Context, parentJobID string) ([]models.TranscriptionJob, error)
 	FindLatestCompletedExecution(ctx context.Context, jobID string) (*models.TranscriptionJobExecution, error)
-	ListWithParams(ctx context.Context, offset, limit int, sortBy, sortOrder, searchQuery string, updatedAfter *time.Time, vaultID *uint) ([]models.TranscriptionJob, int64, error)
+	ListWithParams(ctx context.Context, params ListParams) ([]models.TranscriptionJob, int64, error)
 	ListByUser(ctx context.Context, userID uint, offset, limit int) ([]models.TranscriptionJob, int64, error)
+	ListDistinctSpeakers(ctx context.Context, vaultID *uint) ([]string, error)
 	UpdateTranscript(ctx context.Context, jobID string, transcript string) error
 	CreateExecution(ctx context.Context, execution *models.TranscriptionJobExecution) error
 	UpdateExecution(ctx context.Context, execution *models.TranscriptionJobExecution) error
@@ -65,6 +95,9 @@ type JobRepository interface {
 	FindByStatus(ctx context.Context, status models.JobStatus) ([]models.TranscriptionJob, error)
 	CountByStatus(ctx context.Context, status models.JobStatus) (int64, error)
 	UpdateSummary(ctx context.Context, jobID string, summary string) error
+	ListFolders(ctx context.Context, vaultID *uint) ([]string, error)
+	UpdateFolder(ctx context.Context, jobID string, folder *string) error
+	BulkUpdateFolder(ctx context.Context, oldFolder string, newFolder *string, vaultID *uint) (int64, error)
 }
 
 type jobRepository struct {
@@ -89,24 +122,50 @@ func (r *jobRepository) FindWithAssociations(ctx context.Context, id string) (*m
 	return &job, nil
 }
 
-func (r *jobRepository) ListWithParams(ctx context.Context, offset, limit int, sortBy, sortOrder, searchQuery string, updatedAfter *time.Time, vaultID *uint) ([]models.TranscriptionJob, int64, error) {
+func (r *jobRepository) ListWithParams(ctx context.Context, params ListParams) ([]models.TranscriptionJob, int64, error) {
 	var jobs []models.TranscriptionJob
 	var count int64
 
-	db := r.db.WithContext(ctx).Model(&models.TranscriptionJob{})
+	db := r.db.WithContext(ctx)
 
-	// Handle delta sync if updatedAfter provided
-	if updatedAfter != nil {
-		db = db.Unscoped().Where("updated_at > ?", *updatedAfter)
+	// Handle delta sync: apply Unscoped before Model to include soft-deleted records
+	if params.UpdatedAfter != nil {
+		db = db.Unscoped()
 	}
 
-	if vaultID != nil {
-		db = db.Where("vault_id = ?", *vaultID)
+	db = db.Model(&models.TranscriptionJob{})
+
+	if params.UpdatedAfter != nil {
+		db = db.Where("updated_at > ?", *params.UpdatedAfter)
+	}
+
+	if params.VaultID != nil {
+		db = db.Where("vault_id = ?", *params.VaultID)
+	}
+
+	// Apply folder filter
+	if params.Folder != nil {
+		if *params.Folder != "" {
+			db = db.Where("folder = ?", *params.Folder)
+		} else {
+			// Explicitly filter for root (no folder)
+			db = db.Where("folder IS NULL OR folder = ''")
+		}
+	}
+
+	// Apply status filter
+	if params.Status != "" {
+		db = db.Where("status = ?", params.Status)
+	}
+
+	// Apply speaker filter via subquery to avoid JOINs and duplicate rows
+	if params.Speaker != "" {
+		db = db.Where("id IN (SELECT transcription_job_id FROM speaker_mappings WHERE custom_name = ?)", params.Speaker)
 	}
 
 	// Apply search filter
-	if searchQuery != "" {
-		search := "%" + searchQuery + "%"
+	if params.SearchQuery != "" {
+		search := "%" + params.SearchQuery + "%"
 		db = db.Where("title LIKE ? OR audio_path LIKE ? OR transcript LIKE ?", search, search, search)
 	}
 
@@ -115,9 +174,11 @@ func (r *jobRepository) ListWithParams(ctx context.Context, offset, limit int, s
 		return nil, 0, err
 	}
 
-	// Apply sorting
-	if sortBy != "" {
-		if sortOrder == "" {
+	// Apply sorting with allowlist to prevent SQL injection
+	sortBy := params.SortBy
+	sortOrder := params.SortOrder
+	if sortBy != "" && allowedSortColumns[sortBy] {
+		if sortOrder != "asc" && sortOrder != "desc" {
 			sortOrder = "desc"
 		}
 		db = db.Order(sortBy + " " + sortOrder)
@@ -127,12 +188,23 @@ func (r *jobRepository) ListWithParams(ctx context.Context, offset, limit int, s
 	}
 
 	// Apply pagination
-	err := db.Offset(offset).Limit(limit).Find(&jobs).Error
+	err := db.Offset(params.Offset).Limit(params.Limit).Find(&jobs).Error
 	if err != nil {
 		return nil, 0, err
 	}
 
 	return jobs, count, nil
+}
+
+func (r *jobRepository) ListDistinctSpeakers(ctx context.Context, vaultID *uint) ([]string, error) {
+	var speakers []string
+	db := r.db.WithContext(ctx).Model(&models.SpeakerMapping{}).
+		Where("custom_name != ''")
+	if vaultID != nil {
+		db = db.Where("transcription_job_id IN (SELECT id FROM transcription_jobs WHERE vault_id = ?)", *vaultID)
+	}
+	err := db.Distinct("custom_name").Order("custom_name ASC").Pluck("custom_name", &speakers).Error
+	return speakers, err
 }
 
 func (r *jobRepository) ListByUser(ctx context.Context, userID uint, offset, limit int) ([]models.TranscriptionJob, int64, error) {
@@ -211,6 +283,32 @@ func (r *jobRepository) CountByStatus(ctx context.Context, status models.JobStat
 
 func (r *jobRepository) UpdateSummary(ctx context.Context, jobID string, summary string) error {
 	return r.db.WithContext(ctx).Model(&models.TranscriptionJob{}).Where("id = ?", jobID).Update("summary", summary).Error
+}
+
+func (r *jobRepository) ListFolders(ctx context.Context, vaultID *uint) ([]string, error) {
+	var folders []string
+	db := r.db.WithContext(ctx).Model(&models.TranscriptionJob{}).
+		Where("folder IS NOT NULL AND folder != ''")
+	if vaultID != nil {
+		db = db.Where("vault_id = ?", *vaultID)
+	}
+	err := db.Distinct("folder").Order("folder ASC").Pluck("folder", &folders).Error
+	return folders, err
+}
+
+func (r *jobRepository) UpdateFolder(ctx context.Context, jobID string, folder *string) error {
+	return r.db.WithContext(ctx).Model(&models.TranscriptionJob{}).
+		Where("id = ?", jobID).Update("folder", folder).Error
+}
+
+func (r *jobRepository) BulkUpdateFolder(ctx context.Context, oldFolder string, newFolder *string, vaultID *uint) (int64, error) {
+	db := r.db.WithContext(ctx).Model(&models.TranscriptionJob{}).
+		Where("folder = ?", oldFolder)
+	if vaultID != nil {
+		db = db.Where("vault_id = ?", *vaultID)
+	}
+	result := db.Update("folder", newFolder)
+	return result.RowsAffected, result.Error
 }
 
 // APIKeyRepository handles API key operations

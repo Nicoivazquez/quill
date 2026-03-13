@@ -48,26 +48,32 @@ const JobStatusMonitor = memo(function JobStatusMonitor({ jobId }: { jobId: stri
 import { DebouncedSearchInput } from "@/components/DebouncedSearchInput";
 import { SwipeableItem } from "@/components/ui/swipeable-item";
 import { useSwipeHint } from "@/hooks/use-swipe-hint";
+import { ListFilterBar, type ListFilters } from "@/features/transcription/components/ListFilterBar";
 
 
 
 interface AudioFilesTableProps {
 	refreshTrigger?: number; // Optional now, kept for compatibility during refactor
 	onTranscribe?: (jobId: string) => void;
+	selectedFolder?: string | null; // null = all, "" = root only, "Work" = specific folder
 }
 
 export const AudioFilesTable = memo(function AudioFilesTable({
 	onTranscribe,
+	selectedFolder = null,
 }: AudioFilesTableProps) {
 	const navigate = useNavigate();
 	const { getAuthHeaders } = useAuth();
 	const { shouldShowHint, markHintShown } = useSwipeHint();
 
 	// Table State
-	const sorting = [
-		{ id: "created_at", desc: true }
-	];
 	const [globalFilter, setGlobalFilter] = useState("");
+	const [filters, setFilters] = useState<ListFilters>({
+		status: "",
+		speaker: "",
+		sortBy: "created_at",
+		sortOrder: "desc",
+	});
 
 	// Query
 	const {
@@ -78,10 +84,13 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 		isLoading: queryLoading,
 		refetch
 	} = useAudioListInfinite({
-		limit: 20, // Fetch 20 items per page
+		limit: 20,
 		search: globalFilter,
-		sortBy: sorting[0]?.id,
-		sortOrder: sorting[0]?.desc ? 'desc' : 'asc'
+		sortBy: filters.sortBy,
+		sortOrder: filters.sortOrder,
+		folder: selectedFolder,
+		status: filters.status,
+		speaker: filters.speaker,
 	});
 
 	// Get active jobs for real-time monitoring
@@ -732,13 +741,16 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 	return (
 		<div className="space-y-6">
 			{/* Toolbar */}
-			<div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
-				<DebouncedSearchInput
-					placeholder="Search recordings..."
-					value={globalFilter ?? ""}
-					onChange={(value) => setGlobalFilter(String(value))}
-					className="w-full sm:w-80 shadow-sm border-[var(--border-subtle)] focus:border-[var(--brand-solid)] bg-[var(--bg-muted-pane)]"
-				/>
+			<div className="flex flex-col gap-3">
+				<div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+					<DebouncedSearchInput
+						placeholder="Search recordings..."
+						value={globalFilter ?? ""}
+						onChange={(value) => setGlobalFilter(String(value))}
+						className="w-full sm:w-80 shadow-sm border-[var(--border-subtle)] focus:border-[var(--brand-solid)] bg-[var(--bg-muted-pane)]"
+					/>
+					<ListFilterBar filters={filters} onFiltersChange={setFilters} />
+				</div>
 			</div>
 
 			{/* List Container */}
