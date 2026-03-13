@@ -21,7 +21,6 @@ import (
 	"quill/internal/webhook"
 	"quill/pkg/binaries"
 	"quill/pkg/logger"
-	"quill/pkg/slug"
 )
 
 const (
@@ -1043,13 +1042,7 @@ func (u *UnifiedTranscriptionService) materializeTranscriptArtifacts(ctx context
 		if job.Title != nil && strings.TrimSpace(*job.Title) != "" {
 			title = *job.Title
 		}
-		targetDir = filepath.Join(
-			activeVault.Path,
-			"Transcripts",
-			job.CreatedAt.Format("2006"),
-			job.CreatedAt.Format("01"),
-			fmt.Sprintf("%s-%s", slug.Sanitize(title, "transcript"), shortID(job.ID)),
-		)
+		targetDir = BundleTargetDir(activeVault.Path, title, job.ID)
 		job.VaultID = &activeVault.ID
 	} else {
 		targetDir = filepath.Join(u.outputDirectory, job.ID)
@@ -1082,6 +1075,14 @@ func (u *UnifiedTranscriptionService) materializeTranscriptArtifacts(ctx context
 	markdown := renderMarkdownTranscript(job, &markdownPayload)
 	if err := os.WriteFile(mdPath, []byte(markdown), 0644); err != nil {
 		return err
+	}
+
+	// Move audio file into the bundle directory for self-contained artifacts
+	if job.AudioPath != "" {
+		if newAudioPath, moveErr := MoveAudioToBundle(job.AudioPath, targetDir); moveErr == nil {
+			job.AudioPath = newAudioPath
+		}
+		// Non-fatal: if move fails (e.g. file already deleted), keep original path
 	}
 
 	job.ArtifactDir = &targetDir

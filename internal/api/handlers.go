@@ -1672,6 +1672,11 @@ func maybeRenameAudioPathForGeneratedTitle(job *models.TranscriptionJob, generat
 	if job.IsMultiTrack {
 		return job.AudioPath, nil
 	}
+	// When audio lives inside a bundle directory (audio.{ext}), the title is
+	// reflected in the folder name, not the file name — skip renaming.
+	if job.ArtifactDir != nil && strings.HasPrefix(job.AudioPath, *job.ArtifactDir) {
+		return job.AudioPath, nil
+	}
 
 	currentPath := strings.TrimSpace(job.AudioPath)
 	if currentPath == "" {

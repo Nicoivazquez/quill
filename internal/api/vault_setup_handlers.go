@@ -16,6 +16,7 @@ import (
 
 	"quill/internal/database"
 	"quill/internal/models"
+	"quill/internal/transcription"
 	"quill/pkg/logger"
 	"quill/pkg/slug"
 
@@ -482,12 +483,6 @@ func recoverJobsFromVaultArtifacts(vault models.Vault) (int, error) {
 	return recoveredCount, nil
 }
 
-func shortID(value string) string {
-	if len(value) <= 8 {
-		return value
-	}
-	return value[:8]
-}
 
 func isSupportedIngestExtension(ext string) bool {
 	switch strings.ToLower(ext) {
@@ -569,9 +564,7 @@ func writeTranscriptArtifactsForJob(job *models.TranscriptionJob) error {
 		if job.Title != nil && strings.TrimSpace(*job.Title) != "" {
 			title = *job.Title
 		}
-		year := job.CreatedAt.Format("2006")
-		month := job.CreatedAt.Format("01")
-		baseDir = filepath.Join(activeVault.Path, "Transcripts", year, month, fmt.Sprintf("%s-%s", slug.Sanitize(title, "transcript"), shortID(job.ID)))
+		baseDir = transcription.BundleTargetDir(activeVault.Path, title, job.ID)
 		job.VaultID = &activeVault.ID
 	} else {
 		baseDir = filepath.Join("data", "transcripts", job.ID)
@@ -600,6 +593,13 @@ func writeTranscriptArtifactsForJob(job *models.TranscriptionJob) error {
 	md := renderTranscriptMarkdown(job, transcript)
 	if err := os.WriteFile(mdPath, []byte(md), 0644); err != nil {
 		return err
+	}
+
+	// Move audio file into the bundle directory for self-contained artifacts
+	if job.AudioPath != "" {
+		if newAudioPath, moveErr := transcription.MoveAudioToBundle(job.AudioPath, baseDir); moveErr == nil {
+			job.AudioPath = newAudioPath
+		}
 	}
 
 	job.ArtifactDir = &baseDir
