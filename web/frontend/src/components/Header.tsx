@@ -141,7 +141,7 @@ export function Header({ onFileSelect, onMultiTrackClick, onDownloadComplete }: 
 
 
 	return (
-		<header className="sticky top-2 sm:top-3 z-50 rounded-[var(--radius-card)] px-3 py-2 sm:px-4 sm:py-3 transition-all duration-300 shadow-[var(--shadow-card)] border border-[var(--border-subtle)] bg-[var(--bg-card)]/90 backdrop-blur-md">
+		<header className="sticky top-2 sm:top-3 z-50 overflow-visible rounded-[var(--radius-card)] px-3 py-2 sm:px-4 sm:py-3 transition-all duration-300 shadow-[var(--shadow-card)] border border-[var(--border-subtle)] bg-[var(--bg-card)]/90 backdrop-blur-md">
 			<div className="flex items-center justify-between">
 				{/* Left side - Logo navigates home */}
 				<QuillLogo onClick={handleHomeClick} />
