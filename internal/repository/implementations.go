@@ -418,6 +418,7 @@ type SummaryRepository interface {
 	SaveSettings(ctx context.Context, settings *models.SummarySetting) error
 	SaveSummary(ctx context.Context, summary *models.Summary) error
 	GetLatestSummary(ctx context.Context, transcriptionID string) (*models.Summary, error)
+	ListByTranscriptionID(ctx context.Context, transcriptionID string) ([]models.Summary, error)
 	DeleteByTranscriptionID(ctx context.Context, transcriptionID string) error
 }
 
@@ -457,6 +458,12 @@ func (r *summaryRepository) GetLatestSummary(ctx context.Context, transcriptionI
 		return nil, err
 	}
 	return &summary, nil
+}
+
+func (r *summaryRepository) ListByTranscriptionID(ctx context.Context, transcriptionID string) ([]models.Summary, error) {
+	var summaries []models.Summary
+	err := r.db.WithContext(ctx).Where("transcription_id = ?", transcriptionID).Order("created_at ASC").Find(&summaries).Error
+	return summaries, err
 }
 
 func (r *summaryRepository) DeleteByTranscriptionID(ctx context.Context, transcriptionID string) error {

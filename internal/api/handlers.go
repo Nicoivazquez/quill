@@ -63,6 +63,7 @@ type Handler struct {
 	multiTrackProcessor *processing.MultiTrackProcessor
 	folderWatchService  *folderwatch.Service
 	contactManager      *contacts.Manager
+	bundleManager       *transcription.BundleManager
 	runtimeWarmup       *transcription.RuntimeWarmupManager
 	broadcaster         *sse.Broadcaster
 }
@@ -124,6 +125,11 @@ func (h *Handler) SetFolderWatchService(folderWatchService *folderwatch.Service)
 // SetContactManager wires optional file-first contact synchronization.
 func (h *Handler) SetContactManager(contactManager *contacts.Manager) {
 	h.contactManager = contactManager
+}
+
+// SetBundleManager wires the bundle sync/watch lifecycle manager.
+func (h *Handler) SetBundleManager(bundleManager *transcription.BundleManager) {
+	h.bundleManager = bundleManager
 }
 
 // SetRuntimeWarmupManager wires desktop runtime warmup state and controls.
@@ -1380,6 +1386,9 @@ func (h *Handler) UpdateTranscriptionTitle(c *gin.Context) {
 		return
 	}
 
+	// Best-effort metadata sidecar sync
+	h.syncMetadataToBundle(c.Request.Context(), jobID)
+
 	c.JSON(http.StatusOK, gin.H{
 		"id":         job.ID,
 		"title":      job.Title,
@@ -1976,10 +1985,16 @@ func (h *Handler) DeleteTranscriptionJob(c *gin.Context) {
 		return
 	}
 
-	// Delete files
+	// Delete the bundle directory (contains audio, metadata, transcript files)
+	if job.ArtifactDir != nil && *job.ArtifactDir != "" {
+		_ = h.fileService.RemoveDirectory(*job.ArtifactDir)
+	}
+
+	// Delete files outside the bundle (legacy or multi-track)
 	if job.IsMultiTrack && job.MultiTrackFolder != nil {
 		_ = h.fileService.RemoveDirectory(*job.MultiTrackFolder)
-	} else {
+	} else if job.ArtifactDir == nil || *job.ArtifactDir == "" {
+		// Only delete standalone audio if no bundle dir (legacy job)
 		_ = h.fileService.RemoveFile(job.AudioPath)
 	}
 

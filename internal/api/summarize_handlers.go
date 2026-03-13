@@ -182,6 +182,9 @@ func (h *Handler) persistSummary(req SummarizeRequest, content string) {
 		// Also cache on the transcription job for quick access
 		_ = h.jobRepo.UpdateSummary(context.Background(), req.TranscriptionID, content)
 	}
+
+	// Best-effort metadata sidecar sync
+	h.syncMetadataToBundle(context.Background(), req.TranscriptionID)
 }
 
 // GetSummaryForTranscription returns the latest summary for a transcription

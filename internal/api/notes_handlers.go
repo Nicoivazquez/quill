@@ -140,6 +140,10 @@ func (h *Handler) CreateNote(c *gin.Context) {
 	}
 
 	log.Printf("notes.CreateNote: created note %s for transcription %s (start=%d end=%d startTime=%.3f endTime=%.3f quoteLen=%d)", n.ID, transcriptionID, n.StartWordIndex, n.EndWordIndex, n.StartTime, n.EndTime, len(n.Quote))
+
+	// Best-effort metadata sidecar sync
+	h.syncMetadataToBundle(c.Request.Context(), transcriptionID)
+
 	// Tests expect 200 on creation
 	c.JSON(http.StatusOK, n)
 }
@@ -209,6 +213,9 @@ func (h *Handler) UpdateNote(c *gin.Context) {
 		return
 	}
 
+	// Best-effort metadata sidecar sync
+	h.syncMetadataToBundle(c.Request.Context(), n.TranscriptionID)
+
 	c.JSON(http.StatusOK, n)
 }
 
@@ -224,10 +231,24 @@ func (h *Handler) UpdateNote(c *gin.Context) {
 // @Router /api/v1/notes/{note_id} [delete]
 func (h *Handler) DeleteNote(c *gin.Context) {
 	noteID := c.Param("note_id")
+
+	// Fetch note before deleting so we have the transcription ID for metadata sync
+	note, findErr := h.noteRepo.FindByID(c.Request.Context(), noteID)
+	transcriptionID := ""
+	if findErr == nil {
+		transcriptionID = note.TranscriptionID
+	}
+
 	if err := h.noteRepo.Delete(c.Request.Context(), noteID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete note"})
 		return
 	}
+
+	// Best-effort metadata sidecar sync
+	if transcriptionID != "" {
+		h.syncMetadataToBundle(c.Request.Context(), transcriptionID)
+	}
+
 	// Tests expect 200 on deletion
 	c.JSON(http.StatusOK, gin.H{"message": "Note deleted"})
 }

@@ -177,6 +177,12 @@ func main() {
 	}
 	defer contactManager.Stop()
 
+	bundleManager := transcription.NewBundleManager(database.DB)
+	if err := bundleManager.Start(context.Background()); err != nil {
+		logger.Warn("Bundle sync manager failed to initialize", "error", err)
+	}
+	defer bundleManager.Stop()
+
 	runtimeWarmup := transcription.NewDesktopRuntimeWarmupManager(deferModelInit, "small")
 	defer runtimeWarmup.Stop()
 
@@ -209,6 +215,7 @@ func main() {
 	)
 	handler.SetFolderWatchService(folderWatchService)
 	handler.SetContactManager(contactManager)
+	handler.SetBundleManager(bundleManager)
 	handler.SetRuntimeWarmupManager(runtimeWarmup)
 	taskQueue.SetOnJobCompleted(func(jobID string) {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)

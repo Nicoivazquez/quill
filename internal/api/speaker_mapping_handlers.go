@@ -154,6 +154,9 @@ func (h *Handler) UpdateSpeakerMappings(c *gin.Context) {
 		logger.Warn("speaker->contact bootstrap failed", "job_id", jobID, "error", bootstrapErr)
 	}
 
+	// Best-effort metadata sidecar sync
+	h.syncMetadataToBundle(c.Request.Context(), jobID)
+
 	// Convert to response format
 	response := make([]SpeakerMappingResponse, len(updatedMappings))
 	for i, mapping := range updatedMappings {

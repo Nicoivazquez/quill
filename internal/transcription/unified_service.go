@@ -1088,5 +1088,13 @@ func (u *UnifiedTranscriptionService) materializeTranscriptArtifacts(ctx context
 	job.ArtifactDir = &targetDir
 	job.TranscriptJSONPath = &jsonPath
 	job.TranscriptMarkdownPath = &mdPath
+
+	// Write initial metadata.json sidecar (no summaries/notes at creation time)
+	meta := BuildMetadataFromJob(job, nil, nil, nil)
+	if metaErr := WriteMetadata(targetDir, meta); metaErr != nil {
+		logger.Warn("materialize: failed to write initial metadata.json",
+			"job_id", jobID, "dir", targetDir, "error", metaErr)
+	}
+
 	return u.jobRepo.Update(ctx, job)
 }

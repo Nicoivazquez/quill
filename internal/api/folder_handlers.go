@@ -234,6 +234,9 @@ func (h *Handler) MoveTranscriptToFolder(c *gin.Context) {
 		return
 	}
 
+	// Best-effort metadata sidecar sync
+	h.syncMetadataToBundle(c.Request.Context(), jobID)
+
 	c.JSON(http.StatusOK, gin.H{
 		"id":     jobID,
 		"folder": folder,
