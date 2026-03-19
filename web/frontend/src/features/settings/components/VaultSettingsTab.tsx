@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertCircle, CheckCircle2, FolderOpen, HardDrive, Loader2 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/features/auth/hooks/useAuth";
@@ -37,6 +38,7 @@ async function parseAPIError(response: Response): Promise<string> {
 
 export function VaultSettingsTab() {
   const { getAuthHeaders } = useAuth();
+  const queryClient = useQueryClient();
   const [vaults, setVaults] = useState<Vault[]>([]);
   const [activeVaultID, setActiveVaultID] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -91,6 +93,10 @@ export function VaultSettingsTab() {
           throw new Error(await parseAPIError(response));
         }
         await loadVaults();
+        // Invalidate all transcript/folder/contact caches so the UI reflects the new vault.
+        await queryClient.invalidateQueries({ queryKey: ["audioFiles"] });
+        await queryClient.invalidateQueries({ queryKey: ["folders"] });
+        await queryClient.invalidateQueries({ queryKey: ["contacts"] });
         setSuccess("Active vault updated.");
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to activate vault");
@@ -98,7 +104,7 @@ export function VaultSettingsTab() {
         setBusyVaultID(null);
       }
     },
-    [getAuthHeaders, loadVaults],
+    [getAuthHeaders, loadVaults, queryClient],
   );
 
   const connectExistingVault = async () => {

@@ -10,16 +10,23 @@ import {
 	Check,
 	AlertCircle,
 	Clock,
-	X
+	X,
+	FolderInput,
 } from "lucide-react";
 import { WandAdvancedIcon } from "@/components/icons/WandAdvancedIcon";
-// Checkbox removed
 
 import {
 	Tooltip,
 	TooltipContent,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuSeparator,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -38,6 +45,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { useAudioListInfinite, type AudioFile } from "@/features/transcription/hooks/useAudioFiles";
 import { useTranscriptionEvents } from "@/features/transcription/hooks/useTranscriptionEvents";
+import { useFolders, useMoveToFolder } from "@/features/transcription/hooks/useFolders";
 
 const JobStatusMonitor = memo(function JobStatusMonitor({ jobId }: { jobId: string }) {
 	useTranscriptionEvents(jobId);
@@ -65,6 +73,8 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 	const navigate = useNavigate();
 	const { getAuthHeaders } = useAuth();
 	const { shouldShowHint, markHintShown } = useSwipeHint();
+	const { data: folders = [] } = useFolders();
+	const moveToFolder = useMoveToFolder();
 
 	// Table State
 	const [globalFilter, setGlobalFilter] = useState("");
@@ -549,6 +559,33 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 		}
 	}, [rowSelection, getAuthHeaders, refetch]);
 
+	// Handle move to folder for a single file
+	const handleMoveToFolder = useCallback(async (jobId: string, folder: string) => {
+		try {
+			await moveToFolder.mutateAsync({ jobId, folder });
+		} catch {
+			// Error handled by mutation
+		}
+	}, [moveToFolder]);
+
+	// Handle bulk move to folder
+	const handleBulkMoveToFolder = useCallback(async (folder: string) => {
+		const selectedIds = Object.keys(rowSelection);
+		if (selectedIds.length === 0) return;
+
+		setBulkActionLoading(true);
+		try {
+			for (const id of selectedIds) {
+				await moveToFolder.mutateAsync({ jobId: id, folder });
+			}
+			setRowSelection({});
+		} catch {
+			// Error handled by mutation
+		} finally {
+			setBulkActionLoading(false);
+		}
+	}, [rowSelection, moveToFolder]);
+
 	// Modified handlers to support bulk actions
 	const onStartTranscribe = (params: WhisperXParams) => {
 		if (Object.keys(rowSelection).length > 0) {
@@ -856,6 +893,42 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 												</>
 											)}
 
+											{/* Move to Folder */}
+											<DropdownMenu>
+												<Tooltip>
+													<TooltipTrigger asChild>
+														<DropdownMenuTrigger asChild>
+															<Button
+																variant="ghost"
+																size="icon"
+																className="h-9 w-9 rounded-lg text-gray-400 hover:text-[var(--brand-solid)] hover:bg-[var(--brand-light)] cursor-pointer transition-colors"
+															>
+																<FolderInput className="h-5 w-5" strokeWidth={2} />
+															</Button>
+														</DropdownMenuTrigger>
+													</TooltipTrigger>
+													<TooltipContent>Move to Folder</TooltipContent>
+												</Tooltip>
+												<DropdownMenuContent align="end" className="w-48">
+													<DropdownMenuItem
+														onClick={() => handleMoveToFolder(file.id, "")}
+														className={cn(!file.folder && "font-medium")}
+													>
+														Unfiled
+													</DropdownMenuItem>
+													{folders.length > 0 && <DropdownMenuSeparator />}
+													{folders.map((f) => (
+														<DropdownMenuItem
+															key={f}
+															onClick={() => handleMoveToFolder(file.id, f)}
+															className={cn(file.folder === f && "font-medium")}
+														>
+															{f}
+														</DropdownMenuItem>
+													))}
+												</DropdownMenuContent>
+											</DropdownMenu>
+
 											{(file.status === "processing" || file.status === "pending") ? (
 												<Tooltip>
 													<TooltipTrigger asChild>
@@ -945,6 +1018,39 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 						</Tooltip>
 
 						<div className="h-4 w-px bg-[var(--border-subtle)] mx-1" />
+
+						{/* Bulk Move to Folder */}
+						<DropdownMenu>
+							<Tooltip>
+								<TooltipTrigger asChild>
+									<DropdownMenuTrigger asChild>
+										<Button
+											variant="ghost"
+											size="icon"
+											disabled={bulkActionLoading}
+											className="h-9 w-9 rounded-full hover:bg-[var(--brand-light)] hover:text-[var(--brand-solid)] transition-colors"
+										>
+											<FolderInput className="h-4 w-4" />
+										</Button>
+									</DropdownMenuTrigger>
+								</TooltipTrigger>
+								<TooltipContent>Move to Folder</TooltipContent>
+							</Tooltip>
+							<DropdownMenuContent align="center" className="w-48">
+								<DropdownMenuItem onClick={() => handleBulkMoveToFolder("")}>
+									Unfiled
+								</DropdownMenuItem>
+								{folders.length > 0 && <DropdownMenuSeparator />}
+								{folders.map((f) => (
+									<DropdownMenuItem
+										key={f}
+										onClick={() => handleBulkMoveToFolder(f)}
+									>
+										{f}
+									</DropdownMenuItem>
+								))}
+							</DropdownMenuContent>
+						</DropdownMenu>
 
 						{/* Bulk Delete */}
 						<Tooltip>

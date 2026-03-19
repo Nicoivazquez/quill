@@ -125,8 +125,15 @@ desktop-tools: ## Bundle external tool binaries for Electron packaging
 desktop-runtime-seed: ## Prepare prewarmed AI runtime assets for Electron packaging
 	@./scripts/prepare-desktop-runtime-seed.sh
 
-desktop-dev: ## Run Electron shell against local backend binary
+desktop-dev: ## Run Electron shell against local backend binary (rebuilds frontend)
+	@echo "Building React frontend..."
+	@cd web/frontend && npm run build
+	@rm -rf internal/web/dist
+	@cp -r web/frontend/dist internal/web/
+	@echo "✓ Frontend embedded"
+	@echo "Building Go binary..."
 	@go build -o quill cmd/server/main.go
+	@echo "✓ Starting Electron..."
 	@cd desktop/electron && npm run dev
 
 desktop-dist-mac: ## Build macOS DMG with Electron

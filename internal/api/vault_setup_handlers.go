@@ -1052,6 +1052,13 @@ func (h *Handler) ActivateVault(c *gin.Context) {
 
 	h.syncContactManager(c.Request.Context(), vault.ID, vault.Path)
 
+	// Switch bundle watcher to the new vault so filesystem changes are tracked.
+	if h.bundleManager != nil {
+		if err := h.bundleManager.HandleActiveVaultChange(c.Request.Context()); err != nil {
+			logger.Warn("Failed to switch bundle manager to new vault", "vault_id", vault.ID, "error", err)
+		}
+	}
+
 	c.JSON(http.StatusOK, vault)
 }
 

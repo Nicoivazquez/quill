@@ -17,7 +17,7 @@ export const MainLayout = ({ children, header, sidebar, className = "" }: MainLa
                 </div>
                 {sidebar ? (
                     <div className="flex gap-5">
-                        <aside className="hidden lg:block w-56 flex-shrink-0">
+                        <aside className="hidden md:block w-56 flex-shrink-0">
                             <div className="obsidian-pane sticky top-4 max-h-[calc(100vh-6rem)] overflow-hidden flex flex-col rounded-[var(--radius-card)]">
                                 {sidebar}
                             </div>

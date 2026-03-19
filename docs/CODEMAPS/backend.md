@@ -1,4 +1,4 @@
-<!-- Generated: 2026-03-13 | Files scanned: 255 | Token estimate: ~950 -->
+<!-- Generated: 2026-03-19 | Files scanned: 270 | Token estimate: ~1050 -->
 
 # Backend
 
@@ -30,6 +30,13 @@ GET  /transcription/:id/speakers   → GetSpeakerMappings     → SpeakerMapping
 POST /transcription/:id/speakers   → SaveSpeakerMappings    → SpeakerMappingRepo, ContactManager
 POST /transcription/youtube        → YouTubeDownload        → FileService (yt-dlp subprocess)
 POST /transcription/quick          → QuickTranscription     → QuickTranscriptionService
+
+# Folder Organization
+GET  /transcription/folders        → ListFolders            → JobRepo, transcription.ListFoldersOnDisk
+POST /transcription/folders        → CreateFolder           → transcription.CreateFolderOnDisk
+PUT  /transcription/folders/rename → RenameFolder           → JobRepo.BulkUpdateFolder, transcription.RenameFolderOnDisk
+DELETE /transcription/folders      → DeleteFolder           → transcription.DeleteFolderOnDisk
+PUT  /transcription/:id/folder    → MoveTranscriptToFolder  → JobRepo
 
 # Profiles
 GET/POST/PUT/DELETE /profiles      → ProfileHandlers        → ProfileRepo
@@ -69,7 +76,7 @@ GET/POST/PUT/DELETE /vaults        → VaultHandlers          → DB (vaults tab
 | Package | Purpose |
 |---------|---------|
 | internal/api (28 files) | HTTP handlers, router, request types |
-| internal/transcription | Unified service, adapter registry, job processor |
+| internal/transcription | Unified service, adapter registry, job processor, bundles, folders, sync/watcher |
 | internal/transcription/adapters | 8 model adapters (WhisperX, Parakeet, Canary, Sortformer, Voxtral, OpenAI, AssemblyAI, Deepgram) |
 | internal/contacts (18 files) | File-first contacts, TitaNet embeddings, cosine matching |
 | internal/repository (6 files) | 13 repo interfaces + GORM implementations |

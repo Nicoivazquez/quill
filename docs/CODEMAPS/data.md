@@ -1,4 +1,4 @@
-<!-- Generated: 2026-03-13 | Files scanned: 255 | Token estimate: ~700 -->
+<!-- Generated: 2026-03-19 | Files scanned: 270 | Token estimate: ~750 -->
 
 # Data
 
@@ -10,7 +10,7 @@ SQLite + GORM | WAL mode | 10 max connections | Auto-migrate on startup
 ### Core Transcription
 | Table | Key Fields | Relationships |
 |-------|-----------|---------------|
-| transcription_jobs | id(UUID), title, status, audio_path, vault_id, transcript, whisperx_params(embedded) | has_many: multi_track_files, speaker_mappings, chat_sessions |
+| transcription_jobs | id(UUID), title, status, audio_path, vault_id, folder, transcript, whisperx_params(embedded) | has_many: multi_track_files, speaker_mappings, chat_sessions |
 | transcription_job_executions | id, job_id, started_at, completed_at, processing_duration | belongs_to: job |
 | speaker_mappings | id, job_id, original_speaker, custom_name | unique(job_id, original_speaker) |
 | multi_track_files | id, job_id, file_name, file_path, track_index, offset, gain | belongs_to: job |
@@ -55,8 +55,10 @@ uploaded → pending → processing → completed
 
 ## File Storage (Vault-Scoped)
 ```
-data/uploads/      → original audio files
-data/transcripts/  → output JSON + Markdown
-data/temp/         → working directory
+Transcripts/<title>/           → self-contained bundles (audio, transcript, notes, metadata.json)
+Transcripts/<folder>/<title>/  → folder-organized bundles
+data/uploads/                  → original audio files
+data/transcripts/              → legacy output JSON + Markdown
+data/temp/                     → working directory
 Contacts/People/<slug>--<uid>/contact.md → contact files (source of truth)
 ```

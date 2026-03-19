@@ -1,4 +1,4 @@
-<!-- Generated: 2026-03-13 | Files scanned: 255 | Token estimate: ~900 -->
+<!-- Generated: 2026-03-19 | Files scanned: 270 | Token estimate: ~1000 -->
 
 # Architecture
 
@@ -60,6 +60,7 @@ Upload → FileService → JobRepo(status:uploaded)
 | SSE (internal) | Real-time push | EventSource stream |
 | Transcription | ML model execution | Subprocess (Python) |
 | Contacts | Voice signatures, file sync | fsnotify + TitaNet |
+| Bundles | Transcript bundle lifecycle, sync | fsnotify + metadata sidecar |
 | LLM | Chat, summarization | OpenAI/Ollama API |
 | Desktop (Electron) | OS integration, packaging | Embedded Go binary |
 
@@ -68,8 +69,18 @@ Upload → FileService → JobRepo(status:uploaded)
 ```
 Vault Root/
 ├── Contacts/People/<slug>--<uid>/contact.md   (file-first, DB is cache)
+├── Transcripts/                                (self-contained bundles)
+│   ├── <title>/                               (one bundle per transcription)
+│   │   ├── audio.*                            (original audio file)
+│   │   ├── transcript.json                    (transcript output)
+│   │   ├── transcript.md                      (Markdown export)
+│   │   ├── notes/                             (annotation files)
+│   │   └── metadata.json                      (sidecar: status, speakers, timestamps)
+│   └── <folder>/<title>/                      (folder-organized bundles)
 ├── data/quill.db                               (SQLite, regenerable)
 ├── data/uploads/                               (audio files)
-├── data/transcripts/                           (output JSON/Markdown)
+├── data/transcripts/                           (legacy output JSON/Markdown)
 └── data/temp/                                  (working directory)
 ```
+
+Bundle sync on startup reconciles DB ↔ disk. fsnotify watcher detects real-time changes.

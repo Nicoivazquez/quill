@@ -12,6 +12,7 @@ export const AUDIO_FILES = [
     diarization: true,
     speakers: 3,
     duration: 1823.5,
+    folder: 'Work',
   },
   {
     id: '2',
@@ -22,6 +23,7 @@ export const AUDIO_FILES = [
     diarization: true,
     speakers: 5,
     duration: 3600.0,
+    folder: 'Work/Projects',
   },
   {
     id: '3',
@@ -32,6 +34,7 @@ export const AUDIO_FILES = [
     diarization: true,
     speakers: 0,
     duration: 0,
+    folder: '',
   },
   {
     id: '4',
@@ -42,6 +45,7 @@ export const AUDIO_FILES = [
     diarization: true,
     speakers: 2,
     duration: 2700.0,
+    folder: 'Clients',
   },
 ];
 
@@ -140,6 +144,8 @@ export const CONTACTS = [
   },
 ];
 
+export const FOLDERS = ['Work', 'Work/Projects', 'Clients'];
+
 export const CLOUD_PROVIDERS = [
   { provider: 'openai', has_key: true, is_active: true },
   { provider: 'assemblyai', has_key: false, is_active: false },
@@ -191,13 +197,18 @@ export async function installApiMocks(page: Page) {
   await page.route('**/api/v1/transcription/list*', (route) => {
     const url = new URL(route.request().url());
     const q = url.searchParams.get('q')?.toLowerCase() ?? '';
-    const filtered = q
-      ? AUDIO_FILES.filter(
-          (f) =>
-            f.title.toLowerCase().includes(q) ||
-            f.audio_path.toLowerCase().includes(q),
-        )
-      : AUDIO_FILES;
+    const folder = url.searchParams.get('folder');
+    let filtered = [...AUDIO_FILES];
+    if (q) {
+      filtered = filtered.filter(
+        (f) =>
+          f.title.toLowerCase().includes(q) ||
+          f.audio_path.toLowerCase().includes(q),
+      );
+    }
+    if (folder !== null) {
+      filtered = filtered.filter((f) => f.folder === folder);
+    }
     return route.fulfill({
       json: {
         jobs: filtered,
@@ -307,6 +318,36 @@ export async function installApiMocks(page: Page) {
   await page.route('**/api/v1/transcription/*/title/auto', (route) =>
     route.fulfill({ json: { title: 'AI Generated Title' } }),
   );
+
+  // Folder rename (register before broader folders route)
+  await page.route('**/api/v1/transcription/folders/rename', (route) => {
+    if (route.request().method() === 'PUT') {
+      return route.fulfill({ json: { message: 'Folder renamed' } });
+    }
+    return route.continue();
+  });
+
+  // Folders (GET list, POST create, DELETE)
+  await page.route(/\/api\/v1\/transcription\/folders(\?.*)?$/, (route) => {
+    if (route.request().method() === 'GET') {
+      return route.fulfill({ json: { folders: FOLDERS } });
+    }
+    if (route.request().method() === 'POST') {
+      return route.fulfill({ json: { folder: 'New Folder' } });
+    }
+    if (route.request().method() === 'DELETE') {
+      return route.fulfill({ json: { message: 'Folder deleted' } });
+    }
+    return route.continue();
+  });
+
+  // Move transcript to folder
+  await page.route('**/api/v1/transcription/*/folder', (route) => {
+    if (route.request().method() === 'PUT') {
+      return route.fulfill({ json: { message: 'Moved to folder' } });
+    }
+    return route.continue();
+  });
 
   // Models
   await page.route('**/api/v1/transcription/models', (route) =>

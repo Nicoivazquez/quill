@@ -1,4 +1,4 @@
-<!-- Generated: 2026-03-13 | Files scanned: 255 | Token estimate: ~850 -->
+<!-- Generated: 2026-03-19 | Files scanned: 270 | Token estimate: ~950 -->
 
 # Frontend
 
@@ -11,7 +11,7 @@ React 19 + TypeScript + Vite + Tailwind CSS + Radix UI + Zustand + React Query +
 BrowserRouter
 └── ProtectedRoute (auth gate → SetupWizard | Login | Register)
     └── MainLayout (Header + content)
-        ├── /                    → Dashboard (AudioFilesTable + upload)
+        ├── /                    → Dashboard (FolderSidebar + AudioFilesTable + upload)
         ├── /audio/:audioId      → AudioDetailView (transcript + player + notes)
         ├── /contacts            → ContactsPage (CRUD + voice signatures)
         ├── /settings            → SettingsPage (8 tabs)
@@ -25,7 +25,9 @@ BrowserRouter
 App.tsx
 ├── Header (nav, add-audio menu, theme switcher)
 ├── Dashboard
-│   ├── AudioFilesTable (infinite scroll, search, sort)
+│   ├── FolderSidebar (tree view, create/rename/delete folders)
+│   ├── ListFilterBar (sort, filter, speaker filter)
+│   ├── AudioFilesTable (infinite scroll, search, sort, move-to-folder)
 │   ├── MultiTrackUploadDialog
 │   ├── QuickTranscriptionDialog
 │   └── YouTubeDownloadDialog
@@ -64,6 +66,7 @@ React Query (server cache):
   ['notes', id]            → transcript annotations
   ['summaryTemplates']     → summary prompts
   ['contacts']             → contact list/detail/files
+  ['folders']              → folder list
   ['runtime-warmup']       → desktop warmup status
 
 Context Providers:
@@ -83,6 +86,8 @@ Context Providers:
 | useTranscriptionNotes | notes | create, update, delete |
 | useTranscriptionSummary | templates, existing summary | summarize (streaming) |
 | useContacts | list, detail, files | create, update, delete, snippet, signature |
+| useFolders | folder list | create, rename, delete, moveToFolder |
+| useSpeakers | distinct speaker list | — |
 | useAuth | setup state, registration | login, register, refresh, logout |
 | useRuntimeWarmup | warmup status | retry |
 
