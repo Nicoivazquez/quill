@@ -167,6 +167,11 @@ func SetupRoutes(handler *Handler, authService *auth.AuthService) *gin.Engine {
 			transcription.POST("/quick", handler.SubmitQuickTranscription)
 			transcription.GET("/quick/:id", handler.GetQuickTranscriptionStatus)
 
+			// Batch operations
+			transcription.POST("/batch/delete", handler.BatchDeleteTranscriptionJobs)
+			transcription.POST("/batch/move", handler.BatchMoveTranscriptsToFolder)
+			transcription.POST("/batch/start", handler.BatchStartTranscriptions)
+
 			// Folder organization endpoints
 			transcription.GET("/folders", handler.ListFolders)
 			transcription.POST("/folders", handler.CreateFolder)
@@ -234,6 +239,7 @@ func SetupRoutes(handler *Handler, authService *auth.AuthService) *gin.Engine {
 			obsidian.GET("/config", handler.GetObsidianConfig)
 			obsidian.POST("/config", handler.SaveObsidianConfig)
 			obsidian.POST("/sync/:id", handler.SyncTranscriptToObsidian)
+			obsidian.POST("/sync-all", handler.BulkSyncToObsidian)
 		}
 
 		// OpenClaw interoperability routes
@@ -267,6 +273,13 @@ func SetupRoutes(handler *Handler, authService *auth.AuthService) *gin.Engine {
 			contacts.POST("/:id/signature", handler.UploadContactSignature)
 			contacts.DELETE("/:id/signature", handler.DeleteContactSignature)
 			contacts.POST("/:id/signature/extract", handler.ExtractContactSignature)
+		}
+
+		// Search routes (require authentication)
+		searchGroup := v1.Group("/search")
+		searchGroup.Use(middleware.AuthMiddleware(authService))
+		{
+			searchGroup.POST("/reindex", handler.ReindexFTS)
 		}
 
 		// Admin routes (require authentication)

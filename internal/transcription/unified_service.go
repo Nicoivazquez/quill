@@ -55,6 +55,7 @@ type UnifiedTranscriptionService struct {
 	jobRepo               repository.JobRepository
 	webhookService        *webhook.Service
 	broadcaster           *sse.Broadcaster
+	postMaterializeHook   func(job *models.TranscriptionJob) // Called after successful artifact materialization
 }
 
 // NewUnifiedTranscriptionService creates a new unified transcription service
@@ -78,6 +79,12 @@ func NewUnifiedTranscriptionService(jobRepo repository.JobRepository, tempDir, o
 // SetBroadcaster sets the SSE broadcaster for the service
 func (u *UnifiedTranscriptionService) SetBroadcaster(b *sse.Broadcaster) {
 	u.broadcaster = b
+}
+
+// SetPostMaterializeHook registers a callback invoked after transcription artifacts
+// are successfully written to disk. Used for auto-publish to Obsidian.
+func (u *UnifiedTranscriptionService) SetPostMaterializeHook(fn func(job *models.TranscriptionJob)) {
+	u.postMaterializeHook = fn
 }
 
 // Initialize prepares all registered models for use
@@ -1096,5 +1103,14 @@ func (u *UnifiedTranscriptionService) materializeTranscriptArtifacts(ctx context
 			"job_id", jobID, "dir", targetDir, "error", metaErr)
 	}
 
-	return u.jobRepo.Update(ctx, job)
+	if err := u.jobRepo.Update(ctx, job); err != nil {
+		return err
+	}
+
+	// Invoke post-materialization hook (e.g. auto-publish to Obsidian)
+	if u.postMaterializeHook != nil {
+		u.postMaterializeHook(job)
+	}
+
+	return nil
 }

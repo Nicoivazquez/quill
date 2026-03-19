@@ -55,6 +55,7 @@ type ListParams struct {
 	SortBy       string
 	SortOrder    string
 	SearchQuery  string
+	FTSJobIDs    []string // Pre-resolved FTS matches; when set, replaces LIKE search
 	UpdatedAfter *time.Time
 	VaultID      *uint
 	Folder       *string // nil = all, pointer to "" = root/unfiled, pointer to "X" = specific folder
@@ -163,8 +164,10 @@ func (r *jobRepository) ListWithParams(ctx context.Context, params ListParams) (
 		db = db.Where("id IN (SELECT transcription_job_id FROM speaker_mappings WHERE custom_name = ?)", params.Speaker)
 	}
 
-	// Apply search filter
-	if params.SearchQuery != "" {
+	// Apply search filter — prefer FTS5 pre-resolved IDs when available
+	if len(params.FTSJobIDs) > 0 {
+		db = db.Where("id IN ?", params.FTSJobIDs)
+	} else if params.SearchQuery != "" {
 		search := "%" + params.SearchQuery + "%"
 		db = db.Where("title LIKE ? OR audio_path LIKE ? OR transcript LIKE ?", search, search, search)
 	}
