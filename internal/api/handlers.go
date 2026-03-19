@@ -28,6 +28,7 @@ import (
 	"quill/internal/processing"
 	"quill/internal/queue"
 	"quill/internal/repository"
+	"quill/internal/search"
 	"quill/internal/service"
 	"quill/internal/sse"
 	"quill/internal/transcription"
@@ -65,6 +66,7 @@ type Handler struct {
 	contactManager      *contacts.Manager
 	bundleManager       *transcription.BundleManager
 	runtimeWarmup       *transcription.RuntimeWarmupManager
+	ftsManager          *search.FTSManager
 	broadcaster         *sse.Broadcaster
 }
 
@@ -135,6 +137,46 @@ func (h *Handler) SetBundleManager(bundleManager *transcription.BundleManager) {
 // SetRuntimeWarmupManager wires desktop runtime warmup state and controls.
 func (h *Handler) SetRuntimeWarmupManager(runtimeWarmup *transcription.RuntimeWarmupManager) {
 	h.runtimeWarmup = runtimeWarmup
+}
+
+// SetFTSManager wires full-text search indexing for transcription jobs.
+func (h *Handler) SetFTSManager(ftsManager *search.FTSManager) {
+	h.ftsManager = ftsManager
+}
+
+// ftsUpsertJob is a best-effort helper that updates the FTS index for a job.
+func (h *Handler) ftsUpsertJob(job *models.TranscriptionJob) {
+	if h.ftsManager == nil || job == nil {
+		return
+	}
+	title := ""
+	if job.Title != nil {
+		title = *job.Title
+	}
+	content := ""
+	if job.Transcript != nil {
+		content = *job.Transcript
+	}
+	summary := ""
+	if job.Summary != nil {
+		summary = *job.Summary
+	}
+	if err := h.ftsManager.Upsert(job.ID, title, content, summary); err != nil {
+		logger.Warn("FTS upsert failed", "job_id", job.ID, "error", err)
+	}
+}
+
+// ReindexFTS rebuilds the full-text search index from all transcription jobs.
+func (h *Handler) ReindexFTS(c *gin.Context) {
+	if h.ftsManager == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "FTS not configured"})
+		return
+	}
+	if err := h.ftsManager.Rebuild(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "FTS reindex failed: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "reindex complete"})
 }
 
 // SubmitJobRequest represents the submit job request
@@ -1011,17 +1053,27 @@ func (h *Handler) ListTranscriptionJobs(c *gin.Context) {
 		folderPtr = &folderParam
 	}
 
+	searchQuery := c.Query("q")
 	params := repository.ListParams{
 		Offset:       offset,
 		Limit:        limit,
 		SortBy:       c.Query("sort_by"),
 		SortOrder:    c.Query("sort_order"),
-		SearchQuery:  c.Query("q"),
+		SearchQuery:  searchQuery,
 		UpdatedAfter: updatedAfter,
 		VaultID:      activeVaultID,
 		Folder:       folderPtr,
 		Status:       c.Query("status"),
 		Speaker:      c.Query("speaker"),
+	}
+
+	// Use FTS5 for search when available — fall back to LIKE via SearchQuery
+	if h.ftsManager != nil && searchQuery != "" {
+		if ids, err := h.ftsManager.MatchingJobIDs(searchQuery); err == nil && len(ids) > 0 {
+			params.FTSJobIDs = ids
+			params.SearchQuery = "" // FTS replaces LIKE
+		}
+		// If FTS returns no matches, keep SearchQuery for LIKE fallback
 	}
 
 	jobs, total, err := h.jobRepo.ListWithParams(c.Request.Context(), params)
@@ -1388,6 +1440,9 @@ func (h *Handler) UpdateTranscriptionTitle(c *gin.Context) {
 
 	// Best-effort metadata sidecar sync
 	h.syncMetadataToBundle(c.Request.Context(), jobID)
+
+	// Best-effort FTS index update
+	h.ftsUpsertJob(job)
 
 	c.JSON(http.StatusOK, gin.H{
 		"id":         job.ID,
@@ -1973,82 +2028,17 @@ func buildTranscriptTitleSource(transcript string) string {
 func (h *Handler) DeleteTranscriptionJob(c *gin.Context) {
 	jobID := c.Param("id")
 
-	job, err := h.jobRepo.FindByID(c.Request.Context(), jobID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Job not found"})
-		return
-	}
-
-	// Prevent deletion of jobs that are currently processing
-	if job.Status == models.StatusProcessing {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Cannot delete job that is currently processing"})
-		return
-	}
-
-	// Delete the bundle directory (contains audio, metadata, transcript files)
-	if job.ArtifactDir != nil && *job.ArtifactDir != "" {
-		_ = h.fileService.RemoveDirectory(*job.ArtifactDir)
-	}
-
-	// Delete files outside the bundle (legacy or multi-track)
-	if job.IsMultiTrack && job.MultiTrackFolder != nil {
-		_ = h.fileService.RemoveDirectory(*job.MultiTrackFolder)
-	} else if job.ArtifactDir == nil || *job.ArtifactDir == "" {
-		// Only delete standalone audio if no bundle dir (legacy job)
-		_ = h.fileService.RemoveFile(job.AudioPath)
-	}
-
-	// Also remove .aup file if exists
-	if job.AupFilePath != nil {
-		_ = h.fileService.RemoveFile(*job.AupFilePath)
-	}
-
-	// Manually delete related records to handle legacy DBs without CASCADE constraints
-	// 1. Delete Chat Sessions (and their messages via GORM hooks or manual if needed, but let's assume messages are cascaded by session deletion or we delete them too)
-	// Actually, we should use the repositories if available, or direct DB calls if not exposed.
-	// Since we have repositories, let's try to use them or add methods.
-	// However, for speed and robustness here, we can use the jobRepo's DB instance if we had access, but we don't directly.
-	// We should add DeleteByJobID methods to repositories or use a transaction.
-	// Given the constraints, let's add a helper in jobRepo or just rely on the fact that we can't easily access other repos here without adding them to Handler if they aren't already.
-	// Wait, Handler HAS all repos.
-
-	ctx := c.Request.Context()
-
-	// Delete Chat Sessions
-	// We need a method in ChatRepository to delete by JobID or TranscriptionID
-	if err := h.chatRepo.DeleteByJobID(ctx, jobID); err != nil {
-		// Log error but continue? Or fail? Best to try to clean up as much as possible.
-		fmt.Printf("Failed to delete chat sessions for job %s: %v\n", jobID, err)
-	}
-
-	// Delete Notes
-	if err := h.noteRepo.DeleteByTranscriptionID(ctx, jobID); err != nil {
-		fmt.Printf("Failed to delete notes for job %s: %v\n", jobID, err)
-	}
-
-	// Delete Summaries
-	if err := h.summaryRepo.DeleteByTranscriptionID(ctx, jobID); err != nil {
-		fmt.Printf("Failed to delete summaries for job %s: %v\n", jobID, err)
-	}
-
-	// Delete Speaker Mappings
-	if err := h.speakerMappingRepo.DeleteByJobID(ctx, jobID); err != nil {
-		fmt.Printf("Failed to delete speaker mappings for job %s: %v\n", jobID, err)
-	}
-
-	// Delete Job Executions
-	if err := h.jobRepo.DeleteExecutionsByJobID(ctx, jobID); err != nil {
-		fmt.Printf("Failed to delete job executions for job %s: %v\n", jobID, err)
-	}
-
-	// Delete MultiTrack Files (DB records)
-	if err := h.jobRepo.DeleteMultiTrackFilesByJobID(ctx, jobID); err != nil {
-		fmt.Printf("Failed to delete multi-track file records for job %s: %v\n", jobID, err)
-	}
-
-	// Delete from database
-	if err := h.jobRepo.Delete(c.Request.Context(), jobID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete job: " + err.Error()})
+	if err := h.deleteJob(c.Request.Context(), jobID); err != nil {
+		// Map specific errors to HTTP status codes
+		errMsg := err.Error()
+		switch {
+		case errMsg == "Job not found":
+			c.JSON(http.StatusNotFound, gin.H{"error": errMsg})
+		case errMsg == "Cannot delete job that is currently processing":
+			c.JSON(http.StatusBadRequest, gin.H{"error": errMsg})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": errMsg})
+		}
 		return
 	}
 

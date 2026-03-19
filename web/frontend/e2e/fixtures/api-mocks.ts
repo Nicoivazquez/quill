@@ -570,6 +570,73 @@ export async function installApiMocks(page: Page) {
     });
   });
 
+  // Obsidian config
+  await page.route('**/api/v1/obsidian/config', (route) => {
+    if (route.request().method() === 'GET') {
+      return route.fulfill({ json: { vault_path: '', configured: false } });
+    }
+    // POST – save config
+    return route.fulfill({ json: { vault_path: '/Users/test/ObsidianVault', configured: true } });
+  });
+
+  // Obsidian sync single transcript
+  await page.route('**/api/v1/obsidian/sync/*', (route) =>
+    route.fulfill({ json: { synced: true, path: '/Users/test/ObsidianVault/Quill/Test Transcript.md' } }),
+  );
+
+  // Obsidian bulk sync
+  await page.route('**/api/v1/obsidian/sync-all', (route) =>
+    route.fulfill({ json: { synced: 2, failed: 0, total: 2 } }),
+  );
+
+  // Batch delete
+  await page.route('**/api/v1/transcription/batch/delete', (route) => {
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON();
+      const results = (body.ids || []).map((id: string) => ({ id, success: true }));
+      return route.fulfill({ json: { results } });
+    }
+    return route.continue();
+  });
+
+  // Batch move
+  await page.route('**/api/v1/transcription/batch/move', (route) => {
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON();
+      const results = (body.ids || []).map((id: string) => ({ id, success: true }));
+      return route.fulfill({ json: { results } });
+    }
+    return route.continue();
+  });
+
+  // Batch start
+  await page.route('**/api/v1/transcription/batch/start', (route) => {
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON();
+      const results = (body.ids || []).map((id: string) => ({ id, success: true }));
+      return route.fulfill({ json: { results } });
+    }
+    return route.continue();
+  });
+
+  // OpenClaw config
+  await page.route('**/api/v1/openclaw/config', (route) => {
+    if (route.request().method() === 'GET') {
+      return route.fulfill({ json: { drop_folder: '', auto_ingest: false, configured: false } });
+    }
+    return route.fulfill({ json: { drop_folder: '/tmp/openclaw', auto_ingest: true, configured: true } });
+  });
+
+  // OpenClaw ingest drop folder
+  await page.route('**/api/v1/openclaw/ingest-drop', (route) =>
+    route.fulfill({ json: { ingested: 3, failed: 0 } }),
+  );
+
+  // OpenClaw jobs list
+  await page.route('**/api/v1/openclaw/jobs', (route) =>
+    route.fulfill({ json: { jobs: [] } }),
+  );
+
   // Health
   await page.route('**/health', (route) =>
     route.fulfill({ json: { status: 'ok' } }),

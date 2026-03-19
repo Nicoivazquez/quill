@@ -185,6 +185,13 @@ func (h *Handler) persistSummary(req SummarizeRequest, content string) {
 
 	// Best-effort metadata sidecar sync
 	h.syncMetadataToBundle(context.Background(), req.TranscriptionID)
+
+	// Best-effort FTS index update with new summary
+	if h.ftsManager != nil && req.TranscriptionID != "" {
+		if job, err := h.jobRepo.FindByID(context.Background(), req.TranscriptionID); err == nil {
+			h.ftsUpsertJob(job)
+		}
+	}
 }
 
 // GetSummaryForTranscription returns the latest summary for a transcription

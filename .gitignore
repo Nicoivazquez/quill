@@ -74,3 +74,9 @@ tmp/
 dhl.txt
 __pycache__/
 .cache/
+
+# Build artifacts & test output
+.reports/
+coverage_dg.out
+playwright-report/
+test-results/

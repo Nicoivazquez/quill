@@ -16,10 +16,10 @@ import (
 
 	"quill/internal/database"
 	"quill/internal/models"
+	"quill/internal/obsidian"
 	"quill/internal/repository"
 	"quill/internal/transcription"
 	"quill/pkg/logger"
-	"quill/pkg/slug"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -1207,6 +1207,96 @@ func (h *Handler) SyncTranscriptToObsidian(c *gin.Context) {
 		return
 	}
 
+	markdown, mdErr := resolveJobMarkdown(job)
+	if mdErr != nil {
+		c.JSON(mdErr.Code, gin.H{"error": mdErr.Message})
+		return
+	}
+
+	title := "transcript"
+	if job.Title != nil && strings.TrimSpace(*job.Title) != "" {
+		title = strings.TrimSpace(*job.Title)
+	}
+
+	pub := obsidian.NewPublisher(*setup.ObsidianVaultDir)
+	path, pubErr := pub.PublishTranscript(markdown, job.ID, title)
+	if pubErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to publish to Obsidian: " + pubErr.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"synced": true, "path": path})
+}
+
+// BulkSyncToObsidian publishes all completed transcripts to the Obsidian vault.
+func (h *Handler) BulkSyncToObsidian(c *gin.Context) {
+	setup, err := getSetupRecord()
+	if err != nil || setup.ObsidianVaultDir == nil || strings.TrimSpace(*setup.ObsidianVaultDir) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Obsidian vault path is not configured"})
+		return
+	}
+
+	var activeVaultID *uint
+	if activeVault, vaultErr := getActiveVault(); vaultErr == nil {
+		activeVaultID = &activeVault.ID
+	}
+
+	jobs, _, err := h.jobRepo.ListWithParams(c.Request.Context(), repository.ListParams{
+		Offset:    0,
+		Limit:     500,
+		SortBy:    "updated_at",
+		SortOrder: "desc",
+		VaultID:   activeVaultID,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list jobs"})
+		return
+	}
+
+	var publishJobs []obsidian.PublishableJob
+	for _, job := range jobs {
+		if job.Status != models.StatusCompleted {
+			continue
+		}
+		md, mdErr := resolveJobMarkdown(&job)
+		if mdErr != nil {
+			continue
+		}
+		title := "transcript"
+		if job.Title != nil && strings.TrimSpace(*job.Title) != "" {
+			title = strings.TrimSpace(*job.Title)
+		}
+		publishJobs = append(publishJobs, obsidian.PublishableJob{
+			JobID:    job.ID,
+			Title:    title,
+			Markdown: md,
+		})
+	}
+
+	pub := obsidian.NewPublisher(*setup.ObsidianVaultDir)
+	results, _ := pub.BulkPublish(publishJobs)
+
+	synced := 0
+	failed := 0
+	for _, r := range results {
+		if r.Error != nil {
+			failed++
+		} else {
+			synced++
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"synced": synced, "failed": failed, "total": len(publishJobs)})
+}
+
+// AutoPublishToObsidian is called after transcription completes to auto-publish
+// if Obsidian vault is configured. Safe to call — no-ops if unconfigured.
+func AutoPublishToObsidian(job *models.TranscriptionJob) {
+	setup, err := getSetupRecord()
+	if err != nil || setup.ObsidianVaultDir == nil || strings.TrimSpace(*setup.ObsidianVaultDir) == "" {
+		return
+	}
+
 	var markdown string
 	if job.TranscriptMarkdownPath != nil && strings.TrimSpace(*job.TranscriptMarkdownPath) != "" {
 		content, readErr := os.ReadFile(*job.TranscriptMarkdownPath)
@@ -1214,37 +1304,45 @@ func (h *Handler) SyncTranscriptToObsidian(c *gin.Context) {
 			markdown = string(content)
 		}
 	}
-
 	if markdown == "" {
-		if job.Transcript == nil || strings.TrimSpace(*job.Transcript) == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Transcript is not available"})
-			return
-		}
-		payload, parseErr := parseTranscriptJSON(*job.Transcript)
-		if parseErr != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse transcript JSON"})
-			return
-		}
-		markdown = renderTranscriptMarkdown(job, payload)
+		return // Can't auto-publish without markdown
 	}
 
 	title := "transcript"
 	if job.Title != nil && strings.TrimSpace(*job.Title) != "" {
 		title = strings.TrimSpace(*job.Title)
 	}
-	filename := fmt.Sprintf("%s-%s.md", slug.Sanitize(title, "transcript"), job.ID)
-	targetDir := filepath.Join(*setup.ObsidianVaultDir, "Quill")
-	if err := os.MkdirAll(targetDir, 0755); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create Obsidian target directory"})
-		return
+
+	pub := obsidian.NewPublisher(*setup.ObsidianVaultDir)
+	if _, err := pub.PublishTranscript(markdown, job.ID, title); err != nil {
+		logger.Warn("auto-publish to Obsidian failed", "job_id", job.ID, "error", err)
+	} else {
+		logger.Info("auto-published to Obsidian", "job_id", job.ID)
 	}
-	targetPath := filepath.Join(targetDir, filename)
-	if err := os.WriteFile(targetPath, []byte(markdown), 0644); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to write Obsidian markdown file"})
-		return
+}
+
+type markdownError struct {
+	Code    int
+	Message string
+}
+
+// resolveJobMarkdown extracts or generates markdown content from a job.
+func resolveJobMarkdown(job *models.TranscriptionJob) (string, *markdownError) {
+	if job.TranscriptMarkdownPath != nil && strings.TrimSpace(*job.TranscriptMarkdownPath) != "" {
+		content, readErr := os.ReadFile(*job.TranscriptMarkdownPath)
+		if readErr == nil {
+			return string(content), nil
+		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{"synced": true, "path": targetPath})
+	if job.Transcript == nil || strings.TrimSpace(*job.Transcript) == "" {
+		return "", &markdownError{Code: http.StatusBadRequest, Message: "Transcript is not available"}
+	}
+	payload, parseErr := parseTranscriptJSON(*job.Transcript)
+	if parseErr != nil {
+		return "", &markdownError{Code: http.StatusInternalServerError, Message: "Failed to parse transcript JSON"}
+	}
+	return renderTranscriptMarkdown(job, payload), nil
 }
 
 func (h *Handler) OpenClawIngest(c *gin.Context) {

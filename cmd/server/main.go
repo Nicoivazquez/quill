@@ -22,6 +22,7 @@ import (
 	"quill/internal/processing"
 	"quill/internal/queue"
 	"quill/internal/repository"
+	"quill/internal/search"
 	"quill/internal/service"
 	"quill/internal/sse"
 	"quill/internal/transcription"
@@ -136,6 +137,34 @@ func main() {
 	logger.Startup("transcription", "Initializing transcription service")
 	unifiedProcessor := transcription.NewUnifiedJobProcessor(jobRepo, cfg.TempDir, cfg.TranscriptsDir)
 	unifiedProcessor.GetUnifiedService().SetBroadcaster(broadcaster)
+	// Initialize FTS5 full-text search
+	logger.Startup("fts", "Initializing full-text search")
+	ftsManager := search.NewFTSManager(database.DB)
+	if err := ftsManager.EnsureTable(); err != nil {
+		logger.Warn("FTS5 table creation failed — search will fall back to LIKE", "error", err)
+		ftsManager = nil
+	}
+
+	unifiedProcessor.GetUnifiedService().SetPostMaterializeHook(func(job *models.TranscriptionJob) {
+		api.AutoPublishToObsidian(job)
+		if ftsManager != nil && job != nil {
+			title := ""
+			if job.Title != nil {
+				title = *job.Title
+			}
+			content := ""
+			if job.Transcript != nil {
+				content = *job.Transcript
+			}
+			summary := ""
+			if job.Summary != nil {
+				summary = *job.Summary
+			}
+			if err := ftsManager.Upsert(job.ID, title, content, summary); err != nil {
+				logger.Warn("FTS upsert in post-materialize hook failed", "job_id", job.ID, "error", err)
+			}
+		}
+	})
 
 	// Bootstrap embedded Python environment (for all adapters) unless deferred.
 	// Desktop builds can set QUILL_DEFER_MODEL_INIT=true to avoid long first-run startup delays.
@@ -217,6 +246,9 @@ func main() {
 	handler.SetContactManager(contactManager)
 	handler.SetBundleManager(bundleManager)
 	handler.SetRuntimeWarmupManager(runtimeWarmup)
+	if ftsManager != nil {
+		handler.SetFTSManager(ftsManager)
+	}
 	taskQueue.SetOnJobCompleted(func(jobID string) {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()

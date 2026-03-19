@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertCircle, CheckCircle2, FolderOpen, HardDrive, Loader2 } from "lucide-react";
+import { AlertCircle, CheckCircle2, Clapperboard, FolderOpen, HardDrive, Loader2, BookMarked, RefreshCw } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
@@ -48,6 +48,22 @@ export function VaultSettingsTab() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  // Obsidian Bridge state
+  const [obsVaultPath, setObsVaultPath] = useState("");
+  const [obsLoading, setObsLoading] = useState(true);
+  const [obsSaving, setObsSaving] = useState(false);
+  const [obsSyncing, setObsSyncing] = useState(false);
+  const [obsError, setObsError] = useState<string | null>(null);
+  const [obsSuccess, setObsSuccess] = useState<string | null>(null);
+
+  // OpenClaw Bridge state
+  const [ocDropDir, setOcDropDir] = useState("");
+  const [ocLoading, setOcLoading] = useState(true);
+  const [ocSaving, setOcSaving] = useState(false);
+  const [ocIngesting, setOcIngesting] = useState(false);
+  const [ocError, setOcError] = useState<string | null>(null);
+  const [ocSuccess, setOcSuccess] = useState<string | null>(null);
+
   const isDesktopApp = useMemo(() => {
     return typeof getDesktopBridge()?.selectFolder === "function";
   }, []);
@@ -78,6 +94,170 @@ export function VaultSettingsTab() {
   useEffect(() => {
     void loadVaults();
   }, [loadVaults]);
+
+  // Load Obsidian config
+  const loadObsidianConfig = useCallback(async () => {
+    try {
+      const response = await fetch("/api/v1/obsidian/config", {
+        headers: { ...getAuthHeaders() },
+      });
+      if (!response.ok) return;
+      const payload = (await response.json()) as { vault_path?: string };
+      setObsVaultPath(payload.vault_path ?? "");
+    } catch {
+      // ignore – non-critical
+    } finally {
+      setObsLoading(false);
+    }
+  }, [getAuthHeaders]);
+
+  useEffect(() => {
+    void loadObsidianConfig();
+  }, [loadObsidianConfig]);
+
+  const saveObsidianConfig = useCallback(async () => {
+    setObsSaving(true);
+    setObsError(null);
+    setObsSuccess(null);
+    try {
+      const response = await fetch("/api/v1/obsidian/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ vault_path: obsVaultPath }),
+      });
+      if (!response.ok) {
+        throw new Error(await parseAPIError(response));
+      }
+      setObsSuccess("Obsidian vault path saved.");
+    } catch (err) {
+      setObsError(err instanceof Error ? err.message : "Failed to save Obsidian config");
+    } finally {
+      setObsSaving(false);
+    }
+  }, [obsVaultPath, getAuthHeaders]);
+
+  const syncAllToObsidian = useCallback(async () => {
+    setObsSyncing(true);
+    setObsError(null);
+    setObsSuccess(null);
+    try {
+      const response = await fetch("/api/v1/obsidian/sync-all", {
+        method: "POST",
+        headers: { ...getAuthHeaders() },
+      });
+      if (!response.ok) {
+        throw new Error(await parseAPIError(response));
+      }
+      const payload = (await response.json()) as { synced?: number; failed?: number; total?: number };
+      const synced = payload.synced ?? 0;
+      const failed = payload.failed ?? 0;
+      setObsSuccess(`Synced ${synced} transcript${synced === 1 ? "" : "s"} to Obsidian.${failed > 0 ? ` ${failed} failed.` : ""}`);
+    } catch (err) {
+      setObsError(err instanceof Error ? err.message : "Failed to sync to Obsidian");
+    } finally {
+      setObsSyncing(false);
+    }
+  }, [getAuthHeaders]);
+
+  const browseObsidianVault = useCallback(async () => {
+    const desktopBridge = getDesktopBridge();
+    if (!desktopBridge?.selectFolder) {
+      setObsError("Folder picker is available in the desktop app.");
+      return;
+    }
+    try {
+      const selectedPath = await desktopBridge.selectFolder({
+        title: "Select Obsidian Vault Folder",
+      });
+      if (selectedPath) {
+        setObsVaultPath(selectedPath);
+      }
+    } catch (err) {
+      setObsError(err instanceof Error ? err.message : "Failed to select folder");
+    }
+  }, []);
+
+  // Load OpenClaw config
+  const loadOpenClawConfig = useCallback(async () => {
+    try {
+      const response = await fetch("/api/v1/openclaw/config", {
+        headers: { ...getAuthHeaders() },
+      });
+      if (!response.ok) return;
+      const payload = (await response.json()) as { drop_dir?: string };
+      setOcDropDir(payload.drop_dir ?? "");
+    } catch {
+      // ignore – non-critical
+    } finally {
+      setOcLoading(false);
+    }
+  }, [getAuthHeaders]);
+
+  useEffect(() => {
+    void loadOpenClawConfig();
+  }, [loadOpenClawConfig]);
+
+  const saveOpenClawConfig = useCallback(async () => {
+    setOcSaving(true);
+    setOcError(null);
+    setOcSuccess(null);
+    try {
+      const response = await fetch("/api/v1/openclaw/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ drop_dir: ocDropDir }),
+      });
+      if (!response.ok) {
+        throw new Error(await parseAPIError(response));
+      }
+      setOcSuccess("OpenClaw drop folder path saved.");
+    } catch (err) {
+      setOcError(err instanceof Error ? err.message : "Failed to save OpenClaw config");
+    } finally {
+      setOcSaving(false);
+    }
+  }, [ocDropDir, getAuthHeaders]);
+
+  const ingestDropFolder = useCallback(async () => {
+    setOcIngesting(true);
+    setOcError(null);
+    setOcSuccess(null);
+    try {
+      const response = await fetch("/api/v1/openclaw/ingest-drop", {
+        method: "POST",
+        headers: { ...getAuthHeaders() },
+      });
+      if (!response.ok) {
+        throw new Error(await parseAPIError(response));
+      }
+      const payload = (await response.json()) as { ingested?: string[]; skipped?: string[] };
+      const ingested = payload.ingested ?? [];
+      const skipped = payload.skipped ?? [];
+      setOcSuccess(`Ingested ${ingested.length} file${ingested.length === 1 ? "" : "s"}.${skipped.length > 0 ? ` ${skipped.length} skipped.` : ""}`);
+    } catch (err) {
+      setOcError(err instanceof Error ? err.message : "Failed to ingest drop folder");
+    } finally {
+      setOcIngesting(false);
+    }
+  }, [getAuthHeaders]);
+
+  const browseOpenClawDrop = useCallback(async () => {
+    const desktopBridge = getDesktopBridge();
+    if (!desktopBridge?.selectFolder) {
+      setOcError("Folder picker is available in the desktop app.");
+      return;
+    }
+    try {
+      const selectedPath = await desktopBridge.selectFolder({
+        title: "Select OpenClaw Drop Folder",
+      });
+      if (selectedPath) {
+        setOcDropDir(selectedPath);
+      }
+    } catch (err) {
+      setOcError(err instanceof Error ? err.message : "Failed to select folder");
+    }
+  }, []);
 
   const activateVault = useCallback(
     async (vaultID: number) => {
@@ -275,6 +455,152 @@ export function VaultSettingsTab() {
               );
             })}
           </ul>
+        )}
+      </div>
+
+      {/* Obsidian Bridge */}
+      <div className="bg-[var(--bg-main)]/50 rounded-[var(--radius-card)] shadow-sm border border-[var(--border-subtle)] p-6 space-y-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <BookMarked className="h-5 w-5 text-[var(--text-primary)]" />
+              <h2 className="text-xl font-bold text-[var(--text-primary)]">Obsidian Bridge</h2>
+            </div>
+            <p className="text-[var(--text-secondary)] mt-1">
+              Publish completed transcripts to your Obsidian vault with quill-id frontmatter for deterministic updates.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            disabled={!obsVaultPath || obsSyncing}
+            onClick={() => void syncAllToObsidian()}
+          >
+            {obsSyncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            {obsSyncing ? "Syncing..." : "Sync All to Obsidian"}
+          </Button>
+        </div>
+
+        {obsLoading ? (
+          <div className="flex items-center gap-3 text-[var(--text-secondary)]">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading Obsidian config...
+          </div>
+        ) : (
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="flex-1">
+              <label htmlFor="obs-vault-path" className="block text-sm font-medium text-[var(--text-secondary)] mb-1">
+                Obsidian Vault Path
+              </label>
+              <div className="flex gap-2">
+                <input
+                  id="obs-vault-path"
+                  type="text"
+                  value={obsVaultPath}
+                  onChange={(e) => setObsVaultPath(e.target.value)}
+                  placeholder="/path/to/your/obsidian/vault"
+                  className="flex-1 rounded-[var(--radius-btn)] border border-[var(--border-subtle)] bg-[var(--bg-card)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-solid)]/40"
+                />
+                {isDesktopApp && (
+                  <Button variant="outline" size="sm" onClick={() => void browseObsidianVault()}>
+                    <FolderOpen className="h-4 w-4" />
+                    Browse
+                  </Button>
+                )}
+              </div>
+            </div>
+            <div className="flex items-end">
+              <Button variant="brand" disabled={obsSaving} onClick={() => void saveObsidianConfig()}>
+                {obsSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {obsSaving ? "Saving..." : "Save"}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {obsError && (
+          <div className="text-sm rounded-md border border-[var(--error)]/30 bg-[var(--error)]/10 px-3 py-2 text-[var(--error)] flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+            <span>{obsError}</span>
+          </div>
+        )}
+        {obsSuccess && (
+          <div className="text-sm rounded-md border border-[var(--success)]/30 bg-[var(--success)]/10 px-3 py-2 text-[var(--success)] flex items-start gap-2">
+            <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" />
+            <span>{obsSuccess}</span>
+          </div>
+        )}
+      </div>
+
+      {/* OpenClaw Bridge */}
+      <div className="bg-[var(--bg-main)]/50 rounded-[var(--radius-card)] shadow-sm border border-[var(--border-subtle)] p-6 space-y-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <Clapperboard className="h-5 w-5 text-[var(--text-primary)]" />
+              <h2 className="text-xl font-bold text-[var(--text-primary)]">OpenClaw Bridge</h2>
+            </div>
+            <p className="text-[var(--text-secondary)] mt-1">
+              Ingest audio files from a shared drop folder for batch transcription via OpenClaw.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            disabled={!ocDropDir || ocIngesting}
+            onClick={() => void ingestDropFolder()}
+          >
+            {ocIngesting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            {ocIngesting ? "Ingesting..." : "Ingest Drop Folder"}
+          </Button>
+        </div>
+
+        {ocLoading ? (
+          <div className="flex items-center gap-3 text-[var(--text-secondary)]">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading OpenClaw config...
+          </div>
+        ) : (
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="flex-1">
+              <label htmlFor="oc-drop-dir" className="block text-sm font-medium text-[var(--text-secondary)] mb-1">
+                Drop Folder Path
+              </label>
+              <div className="flex gap-2">
+                <input
+                  id="oc-drop-dir"
+                  type="text"
+                  value={ocDropDir}
+                  onChange={(e) => setOcDropDir(e.target.value)}
+                  placeholder="/path/to/openclaw/drop"
+                  className="flex-1 rounded-[var(--radius-btn)] border border-[var(--border-subtle)] bg-[var(--bg-card)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-solid)]/40"
+                />
+                {isDesktopApp && (
+                  <Button variant="outline" size="sm" onClick={() => void browseOpenClawDrop()}>
+                    <FolderOpen className="h-4 w-4" />
+                    Browse
+                  </Button>
+                )}
+              </div>
+            </div>
+            <div className="flex items-end">
+              <Button variant="brand" disabled={ocSaving} onClick={() => void saveOpenClawConfig()}>
+                {ocSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {ocSaving ? "Saving..." : "Save"}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {ocError && (
+          <div className="text-sm rounded-md border border-[var(--error)]/30 bg-[var(--error)]/10 px-3 py-2 text-[var(--error)] flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+            <span>{ocError}</span>
+          </div>
+        )}
+        {ocSuccess && (
+          <div className="text-sm rounded-md border border-[var(--success)]/30 bg-[var(--success)]/10 px-3 py-2 text-[var(--success)] flex items-start gap-2">
+            <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" />
+            <span>{ocSuccess}</span>
+          </div>
         )}
       </div>
     </div>

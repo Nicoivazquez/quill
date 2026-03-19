@@ -12,6 +12,7 @@ import {
 	Clock,
 	X,
 	FolderInput,
+	BookMarked,
 } from "lucide-react";
 import { WandAdvancedIcon } from "@/components/icons/WandAdvancedIcon";
 
@@ -46,6 +47,7 @@ import { useAuth } from "@/features/auth/hooks/useAuth";
 import { useAudioListInfinite, type AudioFile } from "@/features/transcription/hooks/useAudioFiles";
 import { useTranscriptionEvents } from "@/features/transcription/hooks/useTranscriptionEvents";
 import { useFolders, useMoveToFolder } from "@/features/transcription/hooks/useFolders";
+import { useBatchDelete, useBatchMove, useBatchStart } from "@/features/transcription/hooks/useBatchActions";
 
 const JobStatusMonitor = memo(function JobStatusMonitor({ jobId }: { jobId: string }) {
 	useTranscriptionEvents(jobId);
@@ -75,6 +77,9 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 	const { shouldShowHint, markHintShown } = useSwipeHint();
 	const { data: folders = [] } = useFolders();
 	const moveToFolder = useMoveToFolder();
+	const batchDelete = useBatchDelete();
+	const batchMove = useBatchMove();
+	const batchStart = useBatchStart();
 
 	// Table State
 	const [globalFilter, setGlobalFilter] = useState("");
@@ -495,40 +500,29 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 		const selectedIds = Object.keys(rowSelection);
 		if (selectedIds.length === 0) return;
 
+		// Filter out multi-track mismatches client-side
+		const ids = selectedIds.filter(id => {
+			const job = data.find(j => j.id === id);
+			if (!job) return false;
+			if (job.is_multi_track && !params.is_multi_track_enabled) return false;
+			if (!job.is_multi_track && params.is_multi_track_enabled) return false;
+			return true;
+		});
+		if (ids.length === 0) return;
+
 		setBulkActionLoading(true);
 		try {
-			// Process sequentially to avoid overwhelming the server
-			for (const id of selectedIds) {
-				const job = data.find(j => j.id === id);
-				if (!job) continue;
-
-				// Skip if multi-track mismatch
-				if (job.is_multi_track && !params.is_multi_track_enabled) continue;
-				if (!job.is_multi_track && params.is_multi_track_enabled) continue;
-
-				await fetch(`/api/v1/transcription/${id}/start`, {
-					method: "POST",
-					headers: {
-						...getAuthHeaders(),
-						"Content-Type": "application/json",
-					},
-					body: JSON.stringify(params),
-				});
-			}
-
-			// Clear selection and refresh
+			await batchStart.mutateAsync({ ids, params });
 			setRowSelection({});
 			setConfigDialogOpen(false);
 			setTranscribeDDialogOpen(false);
-			setTranscribeDDialogOpen(false);
-			refetch();
 		} catch (error) {
 			console.error("Bulk transcribe error:", error);
 			alert("Error processing bulk transcription");
 		} finally {
 			setBulkActionLoading(false);
 		}
-	}, [rowSelection, data, getAuthHeaders, refetch]);
+	}, [rowSelection, data, batchStart]);
 
 	const handleBulkDelete = useCallback(async () => {
 		const selectedIds = Object.keys(rowSelection);
@@ -536,28 +530,32 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 
 		setBulkActionLoading(true);
 		try {
-			// Process sequentially
-			for (const id of selectedIds) {
-				await fetch(`/api/v1/transcription/${id}`, {
-					method: "DELETE",
-					headers: {
-						...getAuthHeaders(),
-					},
-				});
-			}
-
-			// Clear selection and refresh
+			await batchDelete.mutateAsync(selectedIds);
 			setRowSelection({});
 			setBulkDeleteDialogOpen(false);
-			setBulkDeleteDialogOpen(false);
-			refetch();
 		} catch (error) {
 			console.error("Bulk delete error:", error);
 			alert("Error processing bulk delete");
 		} finally {
 			setBulkActionLoading(false);
 		}
-	}, [rowSelection, getAuthHeaders, refetch]);
+	}, [rowSelection, batchDelete]);
+
+	// Handle publish to Obsidian
+	const handlePublishToObsidian = useCallback(async (jobId: string) => {
+		try {
+			const response = await fetch(`/api/v1/obsidian/sync/${jobId}`, {
+				method: "POST",
+				headers: { ...getAuthHeaders() },
+			});
+			if (!response.ok) {
+				const data = await response.json().catch(() => null);
+				alert(data?.error || "Failed to publish to Obsidian");
+			}
+		} catch {
+			alert("Error publishing to Obsidian");
+		}
+	}, [getAuthHeaders]);
 
 	// Handle move to folder for a single file
 	const handleMoveToFolder = useCallback(async (jobId: string, folder: string) => {
@@ -575,16 +573,14 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 
 		setBulkActionLoading(true);
 		try {
-			for (const id of selectedIds) {
-				await moveToFolder.mutateAsync({ jobId: id, folder });
-			}
+			await batchMove.mutateAsync({ ids: selectedIds, folder });
 			setRowSelection({});
 		} catch {
 			// Error handled by mutation
 		} finally {
 			setBulkActionLoading(false);
 		}
-	}, [rowSelection, moveToFolder]);
+	}, [rowSelection, batchMove]);
 
 	// Modified handlers to support bulk actions
 	const onStartTranscribe = (params: WhisperXParams) => {
@@ -928,6 +924,23 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 													))}
 												</DropdownMenuContent>
 											</DropdownMenu>
+
+											{/* Publish to Obsidian (completed only) */}
+											{file.status === "completed" && (
+												<Tooltip>
+													<TooltipTrigger asChild>
+														<Button
+															variant="ghost"
+															size="icon"
+															onClick={() => handlePublishToObsidian(file.id)}
+															className="h-9 w-9 rounded-lg text-gray-400 hover:text-purple-600 hover:bg-purple-50 cursor-pointer transition-colors"
+														>
+															<BookMarked className="h-5 w-5" strokeWidth={2} />
+														</Button>
+													</TooltipTrigger>
+													<TooltipContent>Publish to Obsidian</TooltipContent>
+												</Tooltip>
+											)}
 
 											{(file.status === "processing" || file.status === "pending") ? (
 												<Tooltip>
