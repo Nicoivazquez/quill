@@ -5,13 +5,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
-import { Loader2, Users, Save, X, Sparkles } from 'lucide-react';
+import { Loader2, Users, Save, X, Sparkles, Check } from 'lucide-react';
 import { useToast } from '@/components/ui/toast';
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { useQueryClient } from "@tanstack/react-query";
 import { useContacts } from "@/features/contacts/hooks/useContacts";
 import type { Contact } from "@/features/contacts/types";
 import type { SpeakerMapping, SpeakerMappingsUpdateResponse } from "@/features/transcription/hooks/useTranscriptionSpeakers";
+import { usePromoteSpeakerSuggestion } from "@/features/transcription/hooks/useTranscriptionSpeakers";
 import type { SpeakerIdentificationEvent, SpeakerSuggestion } from "@/features/transcription/hooks/useTranscriptionEvents";
 
 interface SpeakerRenameDialogProps {
@@ -39,11 +40,14 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [speakerMappings, setSpeakerMappings] = useState<Record<string, string>>({});
+  const [mappingDetails, setMappingDetails] = useState<Map<string, SpeakerMapping>>(new Map());
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeSpeaker, setActiveSpeaker] = useState<string | null>(null);
   const [highlightedSuggestionIndex, setHighlightedSuggestionIndex] = useState(0);
+  const [promotedSpeakers, setPromotedSpeakers] = useState<Set<string>>(new Set());
+  const promoteMutation = usePromoteSpeakerSuggestion();
   const contactsQuery = useContacts("", open);
   const contacts = useMemo(() => contactsQuery.data?.contacts ?? [], [contactsQuery.data?.contacts]);
 
@@ -84,10 +88,16 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
 
       // Create a mapping object from the response
       const mappingObj: Record<string, string> = {};
+      const detailsMap = new Map<string, SpeakerMapping>();
+      const alreadyPromoted = new Set<string>();
 
-      // Initialize with existing mappings
+      // Initialize with existing mappings and preserve confidence metadata
       existingMappings.forEach(mapping => {
         mappingObj[mapping.original_speaker] = mapping.custom_name;
+        detailsMap.set(mapping.original_speaker, mapping);
+        if (mapping.match_source === 'suggestion_promoted') {
+          alreadyPromoted.add(mapping.original_speaker);
+        }
       });
 
       // Add any speakers from the transcript that don't have mappings yet
@@ -98,6 +108,8 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
       });
 
       setSpeakerMappings(mappingObj);
+      setMappingDetails(detailsMap);
+      setPromotedSpeakers(alreadyPromoted);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch speaker mappings');
 
@@ -230,11 +242,19 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
     setError(null);
 
     try {
-      // Convert mappings to API format
-      const mappingsArray = Object.entries(speakerMappings).map(([original_speaker, custom_name]) => ({
-        original_speaker,
-        custom_name,
-      }));
+      // Convert mappings to API format, excluding locked speakers (auto-matched and promoted)
+      const mappingsArray = Object.entries(speakerMappings)
+        .filter(([original_speaker]) => !isLockedSpeaker(original_speaker))
+        .map(([original_speaker, custom_name]) => ({
+          original_speaker,
+          custom_name,
+        }));
+
+      // If all speakers were promoted, just close — no bulk POST needed
+      if (mappingsArray.length === 0) {
+        onOpenChange(false);
+        return;
+      }
 
       const response = await fetch(`/api/v1/transcription/${transcriptionId}/speakers`, {
         method: 'POST',
@@ -274,10 +294,19 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
 
   const speakers = Object.keys(speakerMappings).sort();
 
+  // A speaker is "locked" if it was auto-assigned or previously promoted
+  const isLockedSpeaker = useCallback((speaker: string) => {
+    if (promotedSpeakers.has(speaker)) return true;
+    const detail = mappingDetails.get(speaker);
+    return detail?.match_source === 'auto';
+  }, [promotedSpeakers, mappingDetails]);
+
   useEffect(() => {
     if (!open) {
       setActiveSpeaker(null);
       setHighlightedSuggestionIndex(0);
+      setPromotedSpeakers(new Set());
+      setMappingDetails(new Map());
     }
   }, [open]);
 
@@ -326,19 +355,53 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
                         <Label htmlFor={`speaker-${speaker}`} className="text-xs font-medium text-muted-foreground">
                           {speaker}
                         </Label>
-                        {voiceSuggestion && (
+                        {promotedSpeakers.has(speaker) ? (
+                          <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-green-500/10 text-green-600 dark:text-green-400" data-testid={`badge-matched-${speaker}`}>
+                            <Check className="h-3 w-3" />
+                            Matched{mappingDetails.get(speaker)?.confidence_score ? ` ${Math.round(mappingDetails.get(speaker)!.confidence_score! * 100)}%` : ''}
+                          </span>
+                        ) : mappingDetails.get(speaker)?.match_source === 'auto' ? (
+                          <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400" data-testid={`badge-auto-${speaker}`}>
+                            <Sparkles className="h-3 w-3" />
+                            Auto {Math.round((mappingDetails.get(speaker)?.confidence_score ?? 0) * 100)}%
+                          </span>
+                        ) : voiceSuggestion && (
                           <button
                             type="button"
+                            disabled={promoteMutation.isPending && promoteMutation.variables?.originalSpeaker === speaker}
                             onClick={() => {
-                              setSpeakerMappings((prev) => ({
-                                ...prev,
-                                [speaker]: voiceSuggestion.contact_name,
-                              }));
+                              promoteMutation.mutate(
+                                {
+                                  transcriptionId,
+                                  originalSpeaker: speaker,
+                                  contactId: voiceSuggestion.contact_id,
+                                  contactName: voiceSuggestion.contact_name,
+                                  score: voiceSuggestion.score,
+                                },
+                                {
+                                  onSuccess: (data) => {
+                                    setSpeakerMappings((prev) => ({
+                                      ...prev,
+                                      [speaker]: voiceSuggestion.contact_name,
+                                    }));
+                                    setPromotedSpeakers((prev) => new Set(prev).add(speaker));
+                                    onSpeakerMappingsUpdate(data.mappings);
+                                    toast({
+                                      title: `Speaker assigned to ${voiceSuggestion.contact_name}`,
+                                      description: `Voice match with ${Math.round(voiceSuggestion.score * 100)}% confidence`,
+                                    });
+                                  },
+                                },
+                              );
                             }}
                             className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-[var(--brand-solid)]/10 text-[var(--brand-solid)] hover:bg-[var(--brand-solid)]/20 transition-colors"
-                            title={`Voice match: ${Math.round(voiceSuggestion.score * 100)}% confidence`}
+                            title={`Voice match: ${Math.round(voiceSuggestion.score * 100)}% confidence — click to apply`}
                           >
-                            <Sparkles className="h-3 w-3" />
+                            {promoteMutation.isPending && promoteMutation.variables?.originalSpeaker === speaker ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Sparkles className="h-3 w-3" />
+                            )}
                             {voiceSuggestion.contact_name} ({Math.round(voiceSuggestion.score * 100)}%)
                           </button>
                         )}
@@ -363,16 +426,21 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
                             value={speakerMappings[speaker] || ''}
                             onChange={(e) => handleSpeakerNameChange(speaker, e.target.value)}
                             onFocus={() => {
-                              setActiveSpeaker(speaker);
-                              setHighlightedSuggestionIndex(0);
+                              if (!isLockedSpeaker(speaker)) {
+                                setActiveSpeaker(speaker);
+                                setHighlightedSuggestionIndex(0);
+                              }
                             }}
                             onClick={() => {
-                              setActiveSpeaker(speaker);
-                              setHighlightedSuggestionIndex(0);
+                              if (!isLockedSpeaker(speaker)) {
+                                setActiveSpeaker(speaker);
+                                setHighlightedSuggestionIndex(0);
+                              }
                             }}
                             onKeyDown={(event) => handleSpeakerInputKeyDown(event, speaker)}
                             placeholder={`Enter custom name for ${speaker}`}
-                            className="transition-all duration-200 focus:ring-2 focus:ring-primary/20"
+                            readOnly={isLockedSpeaker(speaker)}
+                            className={`transition-all duration-200 focus:ring-2 focus:ring-primary/20 ${isLockedSpeaker(speaker) ? 'opacity-60 cursor-default' : ''}`}
                           />
                         </PopoverAnchor>
                         <PopoverContent

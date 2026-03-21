@@ -354,6 +354,9 @@ type SpeakerMapping struct {
 	TranscriptionJobID string    `json:"transcription_job_id" gorm:"type:varchar(36);not null;index"`
 	OriginalSpeaker    string    `json:"original_speaker" gorm:"type:varchar(50);not null"` // e.g., "speaker_00"
 	CustomName         string    `json:"custom_name" gorm:"type:varchar(100);not null"`     // e.g., "John Doe"
+	ConfidenceScore    float64   `json:"confidence_score" gorm:"type:real;default:0"`       // cosine similarity score (0.0–1.0)
+	MatchSource        string    `json:"match_source" gorm:"type:varchar(30);default:''"`   // "auto", "manual", "suggestion_promoted"
+	MatchTier          string    `json:"match_tier" gorm:"type:varchar(20);default:''"`     // "auto", "suggest", "unknown", or ""
 	CreatedAt          time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt          time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 

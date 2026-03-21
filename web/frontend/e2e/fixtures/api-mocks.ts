@@ -82,9 +82,9 @@ function generateWordSegments(segments: typeof TRANSCRIPT_SEGMENTS) {
 export const WORD_SEGMENTS = generateWordSegments(TRANSCRIPT_SEGMENTS);
 
 export const SPEAKER_MAPPINGS = [
-  { original_speaker: 'SPEAKER_00', custom_name: 'Alice' },
-  { original_speaker: 'SPEAKER_01', custom_name: 'Bob' },
-  { original_speaker: 'SPEAKER_02', custom_name: 'Charlie' },
+  { original_speaker: 'SPEAKER_00', custom_name: 'Alice', confidence_score: 0.92, match_source: 'auto', match_tier: 'auto' },
+  { original_speaker: 'SPEAKER_01', custom_name: 'Bob', confidence_score: 0.75, match_source: 'suggestion_promoted', match_tier: 'suggest' },
+  { original_speaker: 'SPEAKER_02', custom_name: 'Charlie', confidence_score: 0, match_source: 'manual', match_tier: '' },
 ];
 
 export const CONTACTS = [
