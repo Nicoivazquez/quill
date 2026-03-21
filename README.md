@@ -1,17 +1,3 @@
-<div align="center">
-  <img src="logo.svg" height="90" style="vertical-align: middle;" />
-  <img src="logo-text.svg" height="80" style="vertical-align: middle;" />
-</div>
-</br>
-</br>
-<p align="center">
-Desktop-first, local-first, privacy-focused audio transcription. Your recordings never leave your machine.
-</p>
-
-<div align="center">
-  <img src="screenshots/hero.png" alt="Quill Desktop App" width="800" />
-</div>
-
 ## What is Quill?
 
 Quill is an open-source audio transcription app that runs entirely on your machine. It ships as a **native desktop app** built on a local-first vault architecture — your recordings, transcripts, and contacts live as plain files in folders you own, much like Obsidian. The database is just a cache; delete it and Quill rebuilds it from your files.
