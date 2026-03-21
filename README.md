@@ -51,40 +51,33 @@ Quill is a Go backend with an embedded React frontend. The backend manages audio
 - Node.js 20+
 - Python 3.10+ (for ML models)
 
-### Development
+### Build the Desktop App
 
 ```bash
 # Clone the repo
 git clone https://github.com/Nicoivazquez/quill.git
 cd quill
 
-# Start backend (Air hot-reload) + frontend (Vite) together
-make dev
-```
-
-The backend runs on `http://localhost:8080` and the frontend dev server on `http://localhost:5173`.
-
-### Production Build
-
-```bash
-# Build production binary with embedded frontend
-make build
-
-# Run it
-./quill
-```
-
-### Desktop App
-
-```bash
-# Build and run the Electron desktop app against local backend
-make desktop-dev
-
-# Build macOS DMG
+# Build the macOS DMG
 make desktop-dist-mac
 ```
 
+The DMG is written to `desktop/electron/release/`. Mount it, drag Quill to Applications, and launch.
+
 On first launch, Quill will initialize a Python environment and download ML models (WhisperX, PyAnnote, NVIDIA NeMo). This requires an internet connection. Subsequent launches are fast and fully offline.
+
+<details>
+<summary>Development mode</summary>
+
+```bash
+# Run Electron against a local dev backend (hot-reload)
+make desktop-dev
+
+# Or run just the backend + frontend without Electron
+make dev
+```
+
+</details>
 
 ## Configuration
 
