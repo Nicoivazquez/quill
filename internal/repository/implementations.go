@@ -656,6 +656,7 @@ type SpeakerMappingRepository interface {
 	Repository[models.SpeakerMapping]
 	ListByJob(ctx context.Context, jobID string) ([]models.SpeakerMapping, error)
 	UpdateMappings(ctx context.Context, jobID string, mappings []models.SpeakerMapping) error
+	UpsertMapping(ctx context.Context, jobID string, mapping models.SpeakerMapping) (*models.SpeakerMapping, error)
 	DeleteByJobID(ctx context.Context, jobID string) error
 }
 
@@ -680,6 +681,40 @@ func (r *speakerMappingRepository) ListByJob(ctx context.Context, jobID string) 
 
 func (r *speakerMappingRepository) DeleteByJobID(ctx context.Context, jobID string) error {
 	return r.db.WithContext(ctx).Where("transcription_job_id = ?", jobID).Delete(&models.SpeakerMapping{}).Error
+}
+
+func (r *speakerMappingRepository) UpsertMapping(ctx context.Context, jobID string, mapping models.SpeakerMapping) (*models.SpeakerMapping, error) {
+	var result models.SpeakerMapping
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var existing models.SpeakerMapping
+		findErr := tx.Where("transcription_job_id = ? AND original_speaker = ?", jobID, mapping.OriginalSpeaker).First(&existing).Error
+		if findErr == nil {
+			// Update existing row.
+			existing.CustomName = mapping.CustomName
+			existing.ConfidenceScore = mapping.ConfidenceScore
+			existing.MatchSource = mapping.MatchSource
+			existing.MatchTier = mapping.MatchTier
+			if err := tx.Save(&existing).Error; err != nil {
+				return err
+			}
+			result = existing
+			return nil
+		}
+		if findErr != gorm.ErrRecordNotFound {
+			return findErr
+		}
+		// Create new row.
+		mapping.TranscriptionJobID = jobID
+		if err := tx.Create(&mapping).Error; err != nil {
+			return err
+		}
+		result = mapping
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
 }
 
 func (r *speakerMappingRepository) UpdateMappings(ctx context.Context, jobID string, mappings []models.SpeakerMapping) error {

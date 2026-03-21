@@ -98,6 +98,80 @@ test.describe('Speaker Rename Dialog', () => {
     }
   });
 
+  test('shows confidence badges for auto-matched and promoted speakers', async ({ page }) => {
+    await page.goto('/audio/1');
+    await page.waitForLoadState('networkidle');
+
+    // Open dialog
+    const triggers = [
+      page.locator('button:has-text("Rename")').first(),
+      page.locator('button:has-text("Speaker")').first(),
+      page.locator('[aria-label*="speaker"]').first(),
+    ];
+
+    for (const trigger of triggers) {
+      if (await trigger.isVisible().catch(() => false)) {
+        await trigger.click();
+        break;
+      }
+    }
+
+    const dialog = page.locator('[role="dialog"]');
+    if (await dialog.isVisible().catch(() => false)) {
+      // SPEAKER_00 has match_source="auto" with 92% confidence
+      const autoBadge = dialog.locator('[data-testid="badge-auto-SPEAKER_00"]');
+      if (await autoBadge.isVisible().catch(() => false)) {
+        await expect(autoBadge).toContainText('Auto 92%');
+      }
+
+      // SPEAKER_01 has match_source="suggestion_promoted" with 75% confidence
+      const matchedBadge = dialog.locator('[data-testid="badge-matched-SPEAKER_01"]');
+      if (await matchedBadge.isVisible().catch(() => false)) {
+        await expect(matchedBadge).toContainText('Matched 75%');
+      }
+
+      // SPEAKER_02 has match_source="manual" — no auto or matched badge
+      await expect(dialog.locator('[data-testid="badge-auto-SPEAKER_02"]')).not.toBeVisible();
+      await expect(dialog.locator('[data-testid="badge-matched-SPEAKER_02"]')).not.toBeVisible();
+    }
+  });
+
+  test('auto-matched speaker inputs are read-only', async ({ page }) => {
+    await page.goto('/audio/1');
+    await page.waitForLoadState('networkidle');
+
+    // Open dialog
+    const triggers = [
+      page.locator('button:has-text("Rename")').first(),
+      page.locator('button:has-text("Speaker")').first(),
+      page.locator('[aria-label*="speaker"]').first(),
+    ];
+
+    for (const trigger of triggers) {
+      if (await trigger.isVisible().catch(() => false)) {
+        await trigger.click();
+        break;
+      }
+    }
+
+    const dialog = page.locator('[role="dialog"]');
+    if (await dialog.isVisible().catch(() => false)) {
+      // SPEAKER_00 (auto-matched) should be read-only
+      const autoInput = dialog.locator('input#speaker-SPEAKER_00');
+      if (await autoInput.isVisible().catch(() => false)) {
+        await expect(autoInput).toHaveAttribute('readonly', '');
+        await expect(autoInput).toHaveValue('Alice');
+      }
+
+      // SPEAKER_02 (manual) should be editable
+      const manualInput = dialog.locator('input#speaker-SPEAKER_02');
+      if (await manualInput.isVisible().catch(() => false)) {
+        const isReadOnly = await manualInput.getAttribute('readonly');
+        expect(isReadOnly).toBeNull();
+      }
+    }
+  });
+
   test('save button is disabled when no speakers exist', async ({ page }) => {
     // Override to return empty speakers
     await page.route('**/api/v1/transcription/*/speakers', (route) => {

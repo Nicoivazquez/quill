@@ -186,6 +186,9 @@ func (s *AutoLabelService) persistMapping(ctx context.Context, jobID string, m S
 		TranscriptionJobID: jobID,
 		OriginalSpeaker:    m.Speaker,
 		CustomName:         m.ContactName,
+		ConfidenceScore:    m.Score,
+		MatchSource:        "auto",
+		MatchTier:          string(m.Tier),
 	}
 	return s.speakerMapRepo.Create(ctx, mapping)
 }
