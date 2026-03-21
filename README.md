@@ -2,6 +2,9 @@
 
 Quill is an open-source audio transcription app that runs entirely on your machine. It ships as a **native desktop app** built on a local-first vault architecture — your recordings, transcripts, and contacts live as plain files in folders you own, much like Obsidian. The database is just a cache; delete it and Quill rebuilds it from your files.
 
+
+easy download:https://github.com/Nicoivazquez/quill/releases
+
 ### Features
 
 - **Offline transcription** — WhisperX, NVIDIA Parakeet, and Canary models run locally with no cloud dependency
@@ -51,7 +54,7 @@ Quill is a Go backend with an embedded React frontend. The backend manages audio
 - Node.js 20+
 - Python 3.10+ (for ML models)
 
-### Build the Desktop App
+### Build the Desktop App for development
 
 ```bash
 # Clone the repo
