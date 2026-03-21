@@ -138,55 +138,6 @@ Provide the token in **Settings > Transcription** (desktop) or via the `HF_TOKEN
 
 **Alternative:** NVIDIA NeMo Sortformer diarization does not require a HuggingFace token.
 
-## Screenshots
-
-<details>
-  <summary>Click to expand</summary>
-
-  <p align="center">
-    <img alt="Transcript view" src="screenshots/transcript-light.png" width="720" />
-  </p>
-  <p align="center"><em>Transcript reader with playback follow-along and seek-from-text.</em></p>
-
-  <p align="center">
-    <img alt="Chat with Audio" src="screenshots/chat.png" width="720" />
-  </p>
-  <p align="center"><em>Chat with your transcripts using local LLMs or OpenAI.</em></p>
-
-  <p align="center">
-    <img alt="Notes and Highlights" src="screenshots/notes.png" width="720" />
-  </p>
-  <p align="center"><em>Highlight key moments and take notes while listening.</em></p>
-
-  <p align="center">
-    <img alt="AI Summaries" src="screenshots/ai-summary.png" width="720" />
-  </p>
-  <p align="center"><em>Generate comprehensive summaries of your recordings.</em></p>
-
-  <p align="center">
-    <strong>Dark Mode</strong>
-  </p>
-
-  <p align="center">
-    <img alt="Homepage Dark Mode" src="screenshots/homepage-dark.png" width="720" />
-  </p>
-
-  <p align="center">
-    <img alt="Transcript Dark Mode" src="screenshots/transcript-dark.png" width="720" />
-  </p>
-
-  ### Mobile
-
-  <p align="center">
-    <img alt="Mobile Homepage" src="screenshots/homepage-mobile.PNG" width="300" />
-    <img alt="Mobile Homepage Dark" src="screenshots/homepage-mobile-dark.PNG" width="300" />
-  </p>
-
-  <p align="center">
-    <img alt="Mobile Transcript" src="screenshots/transcript-mobile.PNG" width="300" />
-    <img alt="Mobile Transcript Dark" src="screenshots/transcript-mobile-dark.PNG" width="300" />
-  </p>
-
 </details>
 
 ## License
