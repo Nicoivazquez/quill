@@ -14,6 +14,7 @@ easy download:https://github.com/Nicoivazquez/quill/releases
 - **Vault-based file organization** — plain Markdown + JSON in folders on your machine, Obsidian-style
 - **Auto-import folder watching** — drop files into a watched folder and Quill transcribes them automatically
 - **Built-in audio recorder & notes** — capture thoughts on the fly and annotate transcripts as you listen
+- **AI agent ready** — ships with a [SKILL.md](skills/quill-api/SKILL.md) so AI agents (Claude Code, OpenClaw, Codex, etc.) can operate Quill via natural language — "transcribe this meeting," "find everything with Alice," "move last week's recordings to Archive"
 - **PWA + native desktop app** — install as a Progressive Web App on any device, or use the native macOS app
 
 ## Philosophy

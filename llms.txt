@@ -1,0 +1,25 @@
+# Quill
+
+> Local-first, privacy-focused audio transcription. Your recordings never leave your machine.
+
+Quill is an open-source desktop app for offline audio transcription with speaker diarization, voice signatures, and LLM-powered chat. Built on a vault architecture — plain Markdown + JSON files you own.
+
+## API Skill
+
+- [SKILL.md](skills/quill-api/SKILL.md): Teach an AI agent how to operate Quill — upload audio, transcribe, rename speakers, organize folders, search, chat with transcripts, sync to Obsidian
+- [API Reference](skills/quill-api/references/api-reference.md): Complete REST API endpoint catalog (100+ endpoints)
+
+## Documentation
+
+- [README](README.md): Project overview, features, and how to build the desktop app
+
+## Instructions for AI Agents
+
+- Quill runs locally at `http://localhost:8080` by default. All API endpoints are under `/api/v1/`.
+- Authenticate with an API key via the `X-API-Key` header, or use JWT cookies from `/api/v1/auth/login`.
+- Transcription is asynchronous: upload → submit → poll status → fetch transcript.
+- When renaming speakers, do NOT modify speakers with `match_source: "auto"` — these are voice-matched and locked.
+- Use `POST /api/v1/transcription/quick` for single-step upload+transcribe when the user wants fast results.
+- Search uses FTS5 full-text indexing. Use the `search` query parameter on `/api/v1/transcription/list`.
+- Real-time updates come via SSE at `/api/v1/events`, not polling.
+- The database is a cache. Vault files on disk are the source of truth.
