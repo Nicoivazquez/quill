@@ -26,15 +26,20 @@ var titanetEmbeddingScript string
 
 const embeddingFileName = "voice-signature.embedding.json"
 
+// OnContactReadyFunc is called after a contact's voice signature becomes ready.
+// It receives the contact ID that just got its embedding extracted.
+type OnContactReadyFunc func(contactID uint)
+
 // EmbeddingWorker extracts voice embeddings asynchronously.
 type EmbeddingWorker struct {
 	db          *gorm.DB
 	repo        repository.ContactRepository
 	whisperXEnv string
 
-	jobs chan uint
-	stop chan struct{}
-	wg   sync.WaitGroup
+	jobs           chan uint
+	stop           chan struct{}
+	wg             sync.WaitGroup
+	onContactReady OnContactReadyFunc
 }
 
 func NewEmbeddingWorker(db *gorm.DB, repo repository.ContactRepository, whisperXEnv string) *EmbeddingWorker {
@@ -45,6 +50,12 @@ func NewEmbeddingWorker(db *gorm.DB, repo repository.ContactRepository, whisperX
 		jobs:        make(chan uint, 128),
 		stop:        make(chan struct{}),
 	}
+}
+
+// SetOnContactReady registers a callback invoked after a contact's embedding
+// is successfully extracted and marked "ready".
+func (w *EmbeddingWorker) SetOnContactReady(fn OnContactReadyFunc) {
+	w.onContactReady = fn
 }
 
 func (w *EmbeddingWorker) Start() {
@@ -150,6 +161,10 @@ func (w *EmbeddingWorker) process(contactID uint) {
 	}
 	if err := w.repo.Update(ctx, contact); err != nil {
 		logger.Warn("contact embedding worker: db update failed", "contact_id", contact.ID, "error", err)
+	}
+
+	if w.onContactReady != nil {
+		w.onContactReady(contact.ID)
 	}
 }
 

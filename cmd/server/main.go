@@ -201,6 +201,7 @@ func main() {
 	defer folderWatchService.Stop()
 
 	contactManager := contacts.NewManager(database.DB, contactRepo, cfg.WhisperXEnv)
+	contactManager.SetRetroactiveScanExtractor(api.BuildRetroactiveSpeakerExtractor(cfg.WhisperXEnv))
 	if err := contactManager.Start(context.Background()); err != nil {
 		logger.Warn("Contact file-sync manager failed to initialize", "error", err)
 	}
@@ -262,6 +263,11 @@ func main() {
 		defer labelCancel()
 		if err := handler.AutoLabelSpeakersForJob(labelCtx, jobID); err != nil {
 			logger.Warn("Auto speaker identification after transcription completion failed", "job_id", jobID, "error", err)
+		}
+
+		// Re-publish to Obsidian now that title and speaker labels are applied.
+		if job, jobErr := jobRepo.FindByID(context.Background(), jobID); jobErr == nil {
+			api.AutoPublishToObsidian(job)
 		}
 	})
 

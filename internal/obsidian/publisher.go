@@ -146,13 +146,9 @@ func (p *Publisher) PublishTranscript(markdown, jobID, title string) (string, er
 		return "", fmt.Errorf("creating Quill directory: %w", err)
 	}
 
-	// Compute the target filename
+	// Compute the target filename (title only — quill-id in frontmatter handles dedup)
 	safeTitle := slug.Sanitize(strings.TrimSpace(title), "transcript")
-	shortID := jobID
-	if len(shortID) > 8 {
-		shortID = shortID[:8]
-	}
-	filename := fmt.Sprintf("%s-%s.md", safeTitle, shortID)
+	filename := fmt.Sprintf("%s.md", safeTitle)
 	targetPath := filepath.Join(quillDir, filename)
 
 	// Check if an existing file matches by quill-id

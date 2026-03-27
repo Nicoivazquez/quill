@@ -31,6 +31,7 @@ import { useSummaryTemplates, useSummarizer, useExistingSummary } from "@/featur
 
 import { useTranscript, useAudioDetail, type Transcript } from "@/features/transcription/hooks/useAudioDetail";
 import { useSpeakerMappings } from "@/features/transcription/hooks/useTranscriptionSpeakers";
+import { formatSpeakerLabel } from "@/lib/speaker-utils";
 
 import { Sparkles, Download, Copy, RefreshCw, ChevronDown, FileText } from "lucide-react";
 
@@ -46,7 +47,7 @@ function formatTranscriptWithSpeakers(
 
     // Format each segment with speaker label
     return transcript.segments.map(segment => {
-        const speaker = speakerMappings[segment.speaker || ''] || segment.speaker || 'UNKNOWN';
+        const speaker = speakerMappings[segment.speaker || ''] || formatSpeakerLabel(segment.speaker || 'UNKNOWN');
         return `[${speaker}] ${segment.text.trim()}`;
     }).join('\n');
 }

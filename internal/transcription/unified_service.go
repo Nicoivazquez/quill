@@ -999,7 +999,7 @@ func formatMMSS(seconds float64) string {
 	return fmt.Sprintf("%d:%02d", minutes, secs)
 }
 
-func renderMarkdownTranscript(job *models.TranscriptionJob, payload *markdownTranscriptPayload) string {
+func renderMarkdownTranscript(job *models.TranscriptionJob, payload *markdownTranscriptPayload, speakerNames map[string]string) string {
 	title := "Untitled"
 	if job.Title != nil && strings.TrimSpace(*job.Title) != "" {
 		title = strings.TrimSpace(*job.Title)
@@ -1024,7 +1024,11 @@ func renderMarkdownTranscript(job *models.TranscriptionJob, payload *markdownTra
 	for _, segment := range payload.Segments {
 		prefix := fmt.Sprintf("[%s - %s]", formatMMSS(segment.Start), formatMMSS(segment.End))
 		if segment.Speaker != nil && strings.TrimSpace(*segment.Speaker) != "" {
-			prefix += " " + strings.TrimSpace(*segment.Speaker) + ":"
+			speaker := strings.TrimSpace(*segment.Speaker)
+			if name, ok := speakerNames[speaker]; ok && name != "" {
+				speaker = name
+			}
+			prefix += " " + speaker + ":"
 		}
 		b.WriteString(prefix)
 		b.WriteString(" ")
@@ -1079,7 +1083,19 @@ func (u *UnifiedTranscriptionService) materializeTranscriptArtifacts(ctx context
 	if err := json.Unmarshal([]byte(transcriptJSON), &markdownPayload); err != nil {
 		return err
 	}
-	markdown := renderMarkdownTranscript(job, &markdownPayload)
+
+	// Load speaker mappings so markdown uses custom names instead of SPEAKER_00
+	speakerNames := make(map[string]string)
+	smRepo := repository.NewSpeakerMappingRepository(database.DB)
+	if mappings, smErr := smRepo.ListByJob(ctx, jobID); smErr == nil {
+		for _, m := range mappings {
+			if m.CustomName != "" && m.CustomName != m.OriginalSpeaker {
+				speakerNames[m.OriginalSpeaker] = m.CustomName
+			}
+		}
+	}
+
+	markdown := renderMarkdownTranscript(job, &markdownPayload, speakerNames)
 	if err := os.WriteFile(mdPath, []byte(markdown), 0644); err != nil {
 		return err
 	}

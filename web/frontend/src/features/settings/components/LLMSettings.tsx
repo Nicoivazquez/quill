@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Bot, Key, Globe, CheckCircle, AlertCircle } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Bot, Key, Globe, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 
 interface LLMConfig {
@@ -13,6 +14,7 @@ interface LLMConfig {
 	openai_base_url?: string;
 	has_api_key?: boolean;
 	is_active: boolean;
+	model?: string;
 	created_at?: string;
 	updated_at?: string;
 }
@@ -26,6 +28,11 @@ const normalizeProviderUrl = (value: string): string => {
 	return `http://${trimmed}`;
 };
 
+const isEmbeddingModel = (name: string): boolean => {
+	const lower = name.toLowerCase();
+	return ["embed", "nomic-bert", "bge-", "e5-", "gte-"].some((kw) => lower.includes(kw));
+};
+
 export function LLMSettings() {
 	const [config, setConfig] = useState<LLMConfig>({
 		provider: "ollama",
@@ -34,10 +41,50 @@ export function LLMSettings() {
 	const [baseUrl, setBaseUrl] = useState("");
 	const [openAIBaseUrl, setOpenAIBaseUrl] = useState("");
 	const [apiKey, setApiKey] = useState("");
+	const [selectedModel, setSelectedModel] = useState<string>("");
+	const [availableModels, setAvailableModels] = useState<string[]>([]);
+	const [modelsLoading, setModelsLoading] = useState(false);
+	const [modelsError, setModelsError] = useState<string | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [saving, setSaving] = useState(false);
 	const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 	const { getAuthHeaders } = useAuth();
+
+	const fetchOllamaModels = useCallback(async (url: string) => {
+		const normalizedUrl = normalizeProviderUrl(url);
+		if (!normalizedUrl) {
+			setAvailableModels([]);
+			setModelsError(null);
+			return;
+		}
+
+		setModelsLoading(true);
+		setModelsError(null);
+
+		try {
+			const response = await fetch(
+				`/api/v1/llm/ollama/models?base_url=${encodeURIComponent(normalizedUrl)}`,
+				{ headers: getAuthHeaders() }
+			);
+
+			if (response.ok) {
+				const data = await response.json();
+				const models: string[] = (data.models || []).filter(
+					(m: string) => !isEmbeddingModel(m)
+				);
+				setAvailableModels(models);
+			} else {
+				const errorData = await response.json().catch(() => ({ error: "Failed to fetch models" }));
+				setModelsError(errorData.error || "Failed to fetch models from Ollama");
+				setAvailableModels([]);
+			}
+		} catch {
+			setModelsError("Could not connect to Ollama server");
+			setAvailableModels([]);
+		} finally {
+			setModelsLoading(false);
+		}
+	}, [getAuthHeaders]);
 
 	useEffect(() => {
 		const fetchConfig = async () => {
@@ -51,6 +98,7 @@ export function LLMSettings() {
 					setConfig(data);
 					setBaseUrl(data.base_url || "");
 					setOpenAIBaseUrl(data.openai_base_url || "");
+					setSelectedModel(data.model || "");
 					// Don't set API key from response for security
 				} else if (response.status !== 404) {
 					console.error("Failed to fetch LLM config");
@@ -65,14 +113,39 @@ export function LLMSettings() {
 		fetchConfig();
 	}, [getAuthHeaders]);
 
+	// Fetch Ollama models when provider is ollama and base URL changes
+	useEffect(() => {
+		if (config.provider !== "ollama") {
+			setAvailableModels([]);
+			setModelsError(null);
+			return;
+		}
+
+		const trimmedUrl = baseUrl.trim();
+		if (!trimmedUrl) {
+			setAvailableModels([]);
+			setModelsError(null);
+			return;
+		}
+
+		const debounce = setTimeout(() => {
+			fetchOllamaModels(trimmedUrl);
+		}, 500);
+
+		return () => clearTimeout(debounce);
+	}, [config.provider, baseUrl, fetchOllamaModels]);
+
 	const handleSave = async () => {
 		setSaving(true);
 		setMessage(null);
 
-		const payload = {
+		const payload: Record<string, unknown> = {
 			provider: config.provider,
 			is_active: true, // Always set to active when saving
-			...(config.provider === "ollama" && { base_url: normalizeProviderUrl(baseUrl) }),
+			...(config.provider === "ollama" && {
+				base_url: normalizeProviderUrl(baseUrl),
+				...(selectedModel ? { model: selectedModel } : {}),
+			}),
 			...(config.provider === "openai" && {
 				api_key: apiKey,
 				...(openAIBaseUrl.trim() ? { openai_base_url: normalizeProviderUrl(openAIBaseUrl) } : {})
@@ -92,6 +165,7 @@ export function LLMSettings() {
 			if (response.ok) {
 				const data = await response.json();
 				setConfig(data);
+				setSelectedModel(data.model || "");
 				setMessage({ type: "success", text: "LLM configuration saved successfully!" });
 				// Clear the API key field after saving
 				if (config.provider === "openai") {
@@ -223,20 +297,65 @@ export function LLMSettings() {
 					{/* Configuration Fields */}
 					<div className="space-y-4">
 						{config.provider === "ollama" && (
-							<div>
-								<Label htmlFor="baseUrl" className="text-[var(--text-primary)]">Ollama Base URL *</Label>
-								<Input
-									id="baseUrl"
-									type="url"
-									placeholder="http://localhost:11434"
-									value={baseUrl}
-									onChange={(e) => setBaseUrl(e.target.value)}
-									className="mt-1 bg-[var(--bg-main)] border-[var(--border-subtle)] text-[var(--text-primary)] focus:border-[var(--brand-solid)]"
-								/>
-								<p className="text-xs text-[var(--text-tertiary)] mt-1">
-									The URL where your Ollama server is running
-								</p>
-							</div>
+							<>
+								<div>
+									<Label htmlFor="baseUrl" className="text-[var(--text-primary)]">Ollama Base URL *</Label>
+									<Input
+										id="baseUrl"
+										type="url"
+										placeholder="http://localhost:11434"
+										value={baseUrl}
+										onChange={(e) => setBaseUrl(e.target.value)}
+										className="mt-1 bg-[var(--bg-main)] border-[var(--border-subtle)] text-[var(--text-primary)] focus:border-[var(--brand-solid)]"
+									/>
+									<p className="text-xs text-[var(--text-tertiary)] mt-1">
+										The URL where your Ollama server is running
+									</p>
+								</div>
+
+								{/* Model Selection */}
+								<div>
+									<Label htmlFor="ollamaModel" className="text-[var(--text-primary)]">
+										Model
+										{modelsLoading && (
+											<Loader2 className="inline-block ml-2 h-3 w-3 animate-spin text-[var(--text-tertiary)]" />
+										)}
+									</Label>
+									{modelsError ? (
+										<p className="text-xs text-[var(--error)] mt-1">
+											{modelsError}
+										</p>
+									) : availableModels.length > 0 ? (
+										<>
+											<Select
+												value={selectedModel}
+												onValueChange={setSelectedModel}
+											>
+												<SelectTrigger
+													id="ollamaModel"
+													className="mt-1 bg-[var(--bg-main)] border-[var(--border-subtle)] text-[var(--text-primary)] focus:border-[var(--brand-solid)]"
+												>
+													<SelectValue placeholder="Auto-detect (first available)" />
+												</SelectTrigger>
+												<SelectContent className="bg-[var(--bg-main)] border-[var(--border-subtle)]">
+													{availableModels.map((m) => (
+														<SelectItem key={m} value={m} className="text-[var(--text-primary)]">
+															{m}
+														</SelectItem>
+													))}
+												</SelectContent>
+											</Select>
+											<p className="text-xs text-[var(--text-tertiary)] mt-1">
+												Choose which model to use for chat and summarization. Leave unset for auto-detection.
+											</p>
+										</>
+									) : !modelsLoading && baseUrl.trim() ? (
+										<p className="text-xs text-[var(--text-tertiary)] mt-1">
+											No chat models found. Make sure Ollama is running and has models installed.
+										</p>
+									) : null}
+								</div>
+							</>
 						)}
 
 						{config.provider === "openai" && (

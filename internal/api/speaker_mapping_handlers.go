@@ -172,6 +172,9 @@ func (h *Handler) UpdateSpeakerMappings(c *gin.Context) {
 	// Best-effort metadata sidecar sync
 	h.syncMetadataToBundle(c.Request.Context(), jobID)
 
+	// Best-effort auto-publish to Obsidian with updated speaker names.
+	AutoPublishToObsidian(job)
+
 	// Convert to response format
 	response := make([]SpeakerMappingResponse, len(updatedMappings))
 	for i, mapping := range updatedMappings {
@@ -261,6 +264,9 @@ func (h *Handler) PromoteSpeakerSuggestion(c *gin.Context) {
 	}
 
 	h.syncMetadataToBundle(c.Request.Context(), jobID)
+
+	// Best-effort auto-publish to Obsidian with updated speaker names.
+	AutoPublishToObsidian(job)
 
 	// Build response with the single promoted mapping.
 	resp := SpeakerMappingsUpdateResponse{

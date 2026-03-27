@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -511,7 +512,7 @@ func copyFile(srcPath, dstPath string) error {
 	return err
 }
 
-func renderTranscriptMarkdown(job *models.TranscriptionJob, transcript *transcriptPayload) string {
+func renderTranscriptMarkdown(job *models.TranscriptionJob, transcript *transcriptPayload, speakerNames map[string]string) string {
 	title := "Untitled"
 	if job.Title != nil && strings.TrimSpace(*job.Title) != "" {
 		title = strings.TrimSpace(*job.Title)
@@ -536,7 +537,11 @@ func renderTranscriptMarkdown(job *models.TranscriptionJob, transcript *transcri
 	for _, segment := range transcript.Segments {
 		prefix := fmt.Sprintf("[%s - %s]", formatMMSS(segment.Start), formatMMSS(segment.End))
 		if segment.Speaker != nil && strings.TrimSpace(*segment.Speaker) != "" {
-			prefix += " " + strings.TrimSpace(*segment.Speaker) + ":"
+			speaker := strings.TrimSpace(*segment.Speaker)
+			if name, ok := speakerNames[speaker]; ok && name != "" {
+				speaker = name
+			}
+			prefix += " " + speaker + ":"
 		}
 		b.WriteString(prefix)
 		b.WriteString(" ")
@@ -591,7 +596,8 @@ func writeTranscriptArtifactsForJob(job *models.TranscriptionJob) error {
 		}
 	}
 
-	md := renderTranscriptMarkdown(job, transcript)
+	speakerNames := loadSpeakerNames(job.ID)
+	md := renderTranscriptMarkdown(job, transcript, speakerNames)
 	if err := os.WriteFile(mdPath, []byte(md), 0644); err != nil {
 		return err
 	}
@@ -1225,7 +1231,11 @@ func (h *Handler) SyncTranscriptToObsidian(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"synced": true, "path": path})
+	// Stamp obsidian_synced_at so the frontend can show sync status.
+	now := time.Now()
+	database.DB.Model(job).Update("obsidian_synced_at", now)
+
+	c.JSON(http.StatusOK, gin.H{"synced": true, "path": path, "obsidian_synced_at": now})
 }
 
 // BulkSyncToObsidian publishes all completed transcripts to the Obsidian vault.
@@ -1278,34 +1288,32 @@ func (h *Handler) BulkSyncToObsidian(c *gin.Context) {
 
 	synced := 0
 	failed := 0
+	now := time.Now()
 	for _, r := range results {
 		if r.Error != nil {
 			failed++
 		} else {
 			synced++
+			database.DB.Model(&models.TranscriptionJob{}).Where("id = ?", r.JobID).Update("obsidian_synced_at", now)
 		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"synced": synced, "failed": failed, "total": len(publishJobs)})
 }
 
-// AutoPublishToObsidian is called after transcription completes to auto-publish
-// if Obsidian vault is configured. Safe to call — no-ops if unconfigured.
+// AutoPublishToObsidian is called after transcription completes or speaker
+// mappings change to auto-publish if Obsidian vault is configured.
+// Safe to call — no-ops if unconfigured or if markdown can't be resolved.
 func AutoPublishToObsidian(job *models.TranscriptionJob) {
 	setup, err := getSetupRecord()
 	if err != nil || setup.ObsidianVaultDir == nil || strings.TrimSpace(*setup.ObsidianVaultDir) == "" {
 		return
 	}
 
-	var markdown string
-	if job.TranscriptMarkdownPath != nil && strings.TrimSpace(*job.TranscriptMarkdownPath) != "" {
-		content, readErr := os.ReadFile(*job.TranscriptMarkdownPath)
-		if readErr == nil {
-			markdown = string(content)
-		}
-	}
-	if markdown == "" {
-		return // Can't auto-publish without markdown
+	markdown, mdErr := resolveJobMarkdown(job)
+	if mdErr != nil {
+		logger.Warn("auto-publish to Obsidian: markdown unavailable", "job_id", job.ID)
+		return
 	}
 
 	title := "transcript"
@@ -1317,6 +1325,8 @@ func AutoPublishToObsidian(job *models.TranscriptionJob) {
 	if _, err := pub.PublishTranscript(markdown, job.ID, title); err != nil {
 		logger.Warn("auto-publish to Obsidian failed", "job_id", job.ID, "error", err)
 	} else {
+		now := time.Now()
+		database.DB.Model(job).Update("obsidian_synced_at", now)
 		logger.Info("auto-published to Obsidian", "job_id", job.ID)
 	}
 }
@@ -1326,8 +1336,33 @@ type markdownError struct {
 	Message string
 }
 
+// loadSpeakerNames loads speaker name mappings for a job from the database.
+func loadSpeakerNames(jobID string) map[string]string {
+	speakerNames := make(map[string]string)
+	smRepo := repository.NewSpeakerMappingRepository(database.DB)
+	if mappings, err := smRepo.ListByJob(context.Background(), jobID); err == nil {
+		for _, m := range mappings {
+			if m.CustomName != "" && m.CustomName != m.OriginalSpeaker {
+				speakerNames[m.OriginalSpeaker] = m.CustomName
+			}
+		}
+	}
+	return speakerNames
+}
+
 // resolveJobMarkdown extracts or generates markdown content from a job.
+// It always re-renders from transcript JSON to apply current speaker name mappings.
 func resolveJobMarkdown(job *models.TranscriptionJob) (string, *markdownError) {
+	// Prefer re-rendering from JSON so speaker name mappings are always applied.
+	if job.Transcript != nil && strings.TrimSpace(*job.Transcript) != "" {
+		payload, parseErr := parseTranscriptJSON(*job.Transcript)
+		if parseErr == nil {
+			speakerNames := loadSpeakerNames(job.ID)
+			return renderTranscriptMarkdown(job, payload, speakerNames), nil
+		}
+	}
+
+	// Fall back to the markdown file on disk if JSON is unavailable.
 	if job.TranscriptMarkdownPath != nil && strings.TrimSpace(*job.TranscriptMarkdownPath) != "" {
 		content, readErr := os.ReadFile(*job.TranscriptMarkdownPath)
 		if readErr == nil {
@@ -1335,14 +1370,7 @@ func resolveJobMarkdown(job *models.TranscriptionJob) (string, *markdownError) {
 		}
 	}
 
-	if job.Transcript == nil || strings.TrimSpace(*job.Transcript) == "" {
-		return "", &markdownError{Code: http.StatusBadRequest, Message: "Transcript is not available"}
-	}
-	payload, parseErr := parseTranscriptJSON(*job.Transcript)
-	if parseErr != nil {
-		return "", &markdownError{Code: http.StatusInternalServerError, Message: "Failed to parse transcript JSON"}
-	}
-	return renderTranscriptMarkdown(job, payload), nil
+	return "", &markdownError{Code: http.StatusBadRequest, Message: "Transcript is not available"}
 }
 
 func (h *Handler) OpenClawIngest(c *gin.Context) {
@@ -1600,7 +1628,8 @@ func (h *Handler) GetOpenClawJobTranscriptMarkdown(c *gin.Context) {
 	if job.Transcript != nil && strings.TrimSpace(*job.Transcript) != "" {
 		payload, parseErr := parseTranscriptJSON(*job.Transcript)
 		if parseErr == nil {
-			c.String(http.StatusOK, renderTranscriptMarkdown(job, payload))
+			speakerNames := loadSpeakerNames(job.ID)
+			c.String(http.StatusOK, renderTranscriptMarkdown(job, payload, speakerNames))
 			return
 		}
 	}

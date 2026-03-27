@@ -5,15 +5,16 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
-import { Loader2, Users, Save, X, Sparkles, Check } from 'lucide-react';
+import { Loader2, Users, Save, X, Sparkles, Check, UserPlus } from 'lucide-react';
 import { useToast } from '@/components/ui/toast';
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { useQueryClient } from "@tanstack/react-query";
-import { useContacts } from "@/features/contacts/hooks/useContacts";
+import { useContacts, useCreateContact } from "@/features/contacts/hooks/useContacts";
 import type { Contact } from "@/features/contacts/types";
 import type { SpeakerMapping, SpeakerMappingsUpdateResponse } from "@/features/transcription/hooks/useTranscriptionSpeakers";
 import { usePromoteSpeakerSuggestion } from "@/features/transcription/hooks/useTranscriptionSpeakers";
 import type { SpeakerIdentificationEvent, SpeakerSuggestion } from "@/features/transcription/hooks/useTranscriptionEvents";
+import { formatSpeakerLabel } from "@/lib/speaker-utils";
 
 interface SpeakerRenameDialogProps {
   open: boolean;
@@ -48,6 +49,7 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
   const [highlightedSuggestionIndex, setHighlightedSuggestionIndex] = useState(0);
   const [promotedSpeakers, setPromotedSpeakers] = useState<Set<string>>(new Set());
   const promoteMutation = usePromoteSpeakerSuggestion();
+  const createContactMutation = useCreateContact();
   const contactsQuery = useContacts("", open);
   const contacts = useMemo(() => contactsQuery.data?.contacts ?? [], [contactsQuery.data?.contacts]);
 
@@ -93,7 +95,11 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
 
       // Initialize with existing mappings and preserve confidence metadata
       existingMappings.forEach(mapping => {
-        mappingObj[mapping.original_speaker] = mapping.custom_name;
+        // If custom_name is just the raw label (legacy auto-populated data), treat as unset
+        // so the placeholder shows the friendly "Speaker A" / "Speaker B" format
+        const isRawLabel = mapping.custom_name === mapping.original_speaker ||
+          /^speaker[_ ]\d+$/i.test(mapping.custom_name);
+        mappingObj[mapping.original_speaker] = isRawLabel ? '' : mapping.custom_name;
         detailsMap.set(mapping.original_speaker, mapping);
         if (mapping.match_source === 'suggestion_promoted') {
           alreadyPromoted.add(mapping.original_speaker);
@@ -103,7 +109,7 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
       // Add any speakers from the transcript that don't have mappings yet
       initialSpeakers.forEach(speaker => {
         if (!mappingObj[speaker]) {
-          mappingObj[speaker] = speaker; // Default to original name
+          mappingObj[speaker] = ''; // Empty so placeholder shows friendly label
         }
       });
 
@@ -116,7 +122,7 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
       // Initialize with default mappings if fetch fails
       const defaultMappings: Record<string, string> = {};
       initialSpeakers.forEach(speaker => {
-        defaultMappings[speaker] = speaker;
+        defaultMappings[speaker] = '';
       });
       setSpeakerMappings(defaultMappings);
     } finally {
@@ -199,34 +205,70 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
     setHighlightedSuggestionIndex(0);
   }, []);
 
+  // Returns true when the typed query is a novel name not matching any existing contact
+  const isNewContactCandidate = useCallback((query: string, originalSpeaker: string): boolean => {
+    const trimmed = query.trim();
+    if (!trimmed) return false;
+    // Don't show create option if user hasn't changed from the original speaker label
+    if (normalize(trimmed) === normalize(originalSpeaker)) return false;
+    // Don't show if a contact with this exact name already exists
+    return !contacts.some((c) => normalize(c.name) === normalize(trimmed));
+  }, [contacts]);
+
+  const handleCreateContact = useCallback((originalSpeaker: string, name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    createContactMutation.mutate(
+      { name: trimmed, phone: null, email: null, notes: null },
+      {
+        onSuccess: (contact) => {
+          setSpeakerMappings((prev) => ({
+            ...prev,
+            [originalSpeaker]: contact.name,
+          }));
+          setActiveSpeaker(null);
+          setHighlightedSuggestionIndex(0);
+          toast({ title: `Contact "${contact.name}" created` });
+        },
+        onError: (err) => {
+          toast({ title: "Failed to create contact", description: err.message });
+        },
+      },
+    );
+  }, [createContactMutation, toast]);
+
   const handleSpeakerInputKeyDown = useCallback((event: React.KeyboardEvent<HTMLInputElement>, originalSpeaker: string) => {
     const suggestions = getContactSuggestions(speakerMappings[originalSpeaker] ?? "", originalSpeaker);
-    if (suggestions.length === 0) {
-      return;
-    }
+    const query = speakerMappings[originalSpeaker] ?? "";
+    const showCreate = isNewContactCandidate(query, originalSpeaker);
+    const totalItems = suggestions.length + (showCreate ? 1 : 0);
+    if (totalItems === 0) return;
 
     if (event.key === "ArrowDown") {
       event.preventDefault();
       setActiveSpeaker(originalSpeaker);
-      setHighlightedSuggestionIndex((prev) => (prev + 1) % suggestions.length);
+      setHighlightedSuggestionIndex((prev) => (prev + 1) % totalItems);
       return;
     }
 
     if (event.key === "ArrowUp") {
       event.preventDefault();
       setActiveSpeaker(originalSpeaker);
-      setHighlightedSuggestionIndex((prev) => (prev - 1 + suggestions.length) % suggestions.length);
+      setHighlightedSuggestionIndex((prev) => (prev - 1 + totalItems) % totalItems);
       return;
     }
 
     if (event.key === "Enter") {
-      if (activeSpeaker !== originalSpeaker) {
-        return;
-      }
+      if (activeSpeaker !== originalSpeaker) return;
       event.preventDefault();
-      const selected = suggestions[highlightedSuggestionIndex] ?? suggestions[0];
-      if (selected) {
-        applyContactSuggestion(originalSpeaker, selected);
+      // If the highlighted index is past all suggestions, it's the "Create" option
+      if (showCreate && highlightedSuggestionIndex === suggestions.length) {
+        handleCreateContact(originalSpeaker, query);
+      } else {
+        const selected = suggestions[highlightedSuggestionIndex] ?? suggestions[0];
+        if (selected) {
+          applyContactSuggestion(originalSpeaker, selected);
+        }
       }
       return;
     }
@@ -235,16 +277,16 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
       setActiveSpeaker(null);
       setHighlightedSuggestionIndex(0);
     }
-  }, [activeSpeaker, applyContactSuggestion, getContactSuggestions, highlightedSuggestionIndex, speakerMappings]);
+  }, [activeSpeaker, applyContactSuggestion, getContactSuggestions, handleCreateContact, highlightedSuggestionIndex, isNewContactCandidate, speakerMappings]);
 
   const saveSpeakerMappings = async () => {
     setIsSaving(true);
     setError(null);
 
     try {
-      // Convert mappings to API format, excluding locked speakers (auto-matched and promoted)
+      // Convert mappings to API format, excluding locked speakers and empty names
       const mappingsArray = Object.entries(speakerMappings)
-        .filter(([original_speaker]) => !isLockedSpeaker(original_speaker))
+        .filter(([original_speaker, custom_name]) => !isLockedSpeaker(original_speaker) && custom_name.trim() !== '')
         .map(([original_speaker, custom_name]) => ({
           original_speaker,
           custom_name,
@@ -353,7 +395,7 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
                     >
                       <div className="flex items-center gap-2">
                         <Label htmlFor={`speaker-${speaker}`} className="text-xs font-medium text-muted-foreground">
-                          {speaker}
+                          {formatSpeakerLabel(speaker)}
                         </Label>
                         {promotedSpeakers.has(speaker) ? (
                           <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-green-500/10 text-green-600 dark:text-green-400" data-testid={`badge-matched-${speaker}`}>
@@ -438,7 +480,7 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
                               }
                             }}
                             onKeyDown={(event) => handleSpeakerInputKeyDown(event, speaker)}
-                            placeholder={`Enter custom name for ${speaker}`}
+                            placeholder={`Enter custom name for ${formatSpeakerLabel(speaker)}`}
                             readOnly={isLockedSpeaker(speaker)}
                             className={`transition-all duration-200 focus:ring-2 focus:ring-primary/20 ${isLockedSpeaker(speaker) ? 'opacity-60 cursor-default' : ''}`}
                           />
@@ -454,37 +496,75 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
                               <div className="px-3 py-2 text-xs text-[var(--text-tertiary)]">
                                 Loading contacts...
                               </div>
-                            ) : contacts.length === 0 ? (
-                              <div className="px-3 py-2 text-xs text-[var(--text-tertiary)]">
-                                No contacts found. Add contacts first.
-                              </div>
                             ) : (
-                              suggestions.map((contact, index) => (
-                                <button
-                                  type="button"
-                                  role="option"
-                                  aria-selected={index === highlightedSuggestionIndex}
-                                  key={contact.id}
-                                  onMouseEnter={() => setHighlightedSuggestionIndex(index)}
-                                  onMouseDown={(event) => {
-                                    event.preventDefault();
-                                    applyContactSuggestion(speaker, contact);
-                                  }}
-                                  className={`w-full px-3 py-2 text-left transition-colors ${index === highlightedSuggestionIndex
-                                    ? "bg-[var(--bg-muted-pane)]"
-                                    : "hover:bg-[var(--bg-muted-pane)]/70"
-                                    }`}
-                                >
-                                  <div className="text-sm font-medium text-[var(--text-primary)]">
-                                    {contact.name}
-                                  </div>
-                                  {(contact.email || contact.phone) && (
-                                    <div className="text-xs text-[var(--text-secondary)]">
-                                      {contact.email || contact.phone}
+                              <>
+                                {suggestions.map((contact, index) => (
+                                  <button
+                                    type="button"
+                                    role="option"
+                                    aria-selected={index === highlightedSuggestionIndex}
+                                    key={contact.id}
+                                    onMouseEnter={() => setHighlightedSuggestionIndex(index)}
+                                    onMouseDown={(event) => {
+                                      event.preventDefault();
+                                      applyContactSuggestion(speaker, contact);
+                                    }}
+                                    className={`w-full px-3 py-2 text-left transition-colors ${index === highlightedSuggestionIndex
+                                      ? "bg-[var(--bg-muted-pane)]"
+                                      : "hover:bg-[var(--bg-muted-pane)]/70"
+                                      }`}
+                                  >
+                                    <div className="text-sm font-medium text-[var(--text-primary)]">
+                                      {contact.name}
                                     </div>
-                                  )}
-                                </button>
-                              ))
+                                    {(contact.email || contact.phone) && (
+                                      <div className="text-xs text-[var(--text-secondary)]">
+                                        {contact.email || contact.phone}
+                                      </div>
+                                    )}
+                                  </button>
+                                ))}
+                                {isNewContactCandidate(speakerMappings[speaker] ?? "", speaker) && (() => {
+                                  const createIndex = suggestions.length;
+                                  const trimmedName = (speakerMappings[speaker] ?? "").trim();
+                                  return (
+                                    <>
+                                      {suggestions.length > 0 && (
+                                        <div className="border-t border-[var(--border-subtle)] my-1" />
+                                      )}
+                                      <button
+                                        type="button"
+                                        role="option"
+                                        aria-selected={createIndex === highlightedSuggestionIndex}
+                                        onMouseEnter={() => setHighlightedSuggestionIndex(createIndex)}
+                                        onMouseDown={(event) => {
+                                          event.preventDefault();
+                                          handleCreateContact(speaker, trimmedName);
+                                        }}
+                                        disabled={createContactMutation.isPending}
+                                        className={`w-full px-3 py-2 text-left transition-colors flex items-center gap-2 ${createIndex === highlightedSuggestionIndex
+                                          ? "bg-[var(--bg-muted-pane)]"
+                                          : "hover:bg-[var(--bg-muted-pane)]/70"
+                                          }`}
+                                      >
+                                        {createContactMutation.isPending ? (
+                                          <Loader2 className="h-4 w-4 animate-spin text-[var(--brand-solid)] shrink-0" />
+                                        ) : (
+                                          <UserPlus className="h-4 w-4 text-[var(--brand-solid)] shrink-0" />
+                                        )}
+                                        <span className="text-sm text-[var(--text-primary)]">
+                                          Create "<span className="font-medium">{trimmedName}</span>"
+                                        </span>
+                                      </button>
+                                    </>
+                                  );
+                                })()}
+                                {suggestions.length === 0 && !isNewContactCandidate(speakerMappings[speaker] ?? "", speaker) && contacts.length === 0 && (
+                                  <div className="px-3 py-2 text-xs text-[var(--text-tertiary)]">
+                                    No contacts yet. Type a name to create one.
+                                  </div>
+                                )}
+                              </>
                             )}
                           </div>
                         </PopoverContent>
@@ -504,7 +584,7 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
           </Button>
           <Button
             onClick={saveSpeakerMappings}
-            disabled={isSaving || speakers.length === 0}
+            disabled={isSaving || speakers.length === 0 || createContactMutation.isPending}
             className="min-w-[100px]"
           >
             {isSaving ? (

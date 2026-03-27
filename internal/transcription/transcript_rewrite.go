@@ -139,7 +139,7 @@ func RewriteTranscriptMarkdown(mdPath string, jsonPath string, job *models.Trans
 		mdPayload.Segments = append(mdPayload.Segments, mdSeg)
 	}
 
-	markdown := renderMarkdownTranscript(job, mdPayload)
+	markdown := renderMarkdownTranscript(job, mdPayload, nil)
 
 	// Atomic write.
 	dir := filepath.Dir(mdPath)

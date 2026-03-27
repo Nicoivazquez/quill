@@ -29,6 +29,7 @@ type TranscriptionJob struct {
 	MergeStatus            string         `json:"merge_status" gorm:"type:varchar(20);default:'none'"` // none, pending, processing, completed, failed
 	MergeError             *string        `json:"merge_error,omitempty" gorm:"type:text"`
 	IndividualTranscripts  *string        `json:"individual_transcripts,omitempty" gorm:"type:text"` // JSON-serialized map[string]*string
+	ObsidianSyncedAt       *time.Time     `json:"obsidian_synced_at,omitempty" gorm:"type:datetime"`
 	CreatedAt              time.Time      `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt              time.Time      `json:"updated_at" gorm:"autoUpdateTime"`
 	DeletedAt              gorm.DeletedAt `json:"deleted_at,omitempty" gorm:"index" swaggertype:"string"`
@@ -220,6 +221,7 @@ type LLMConfig struct {
 	OpenAIBaseURL *string   `json:"openai_base_url,omitempty" gorm:"type:text"` // For OpenAI custom endpoint
 	APIKey        *string   `json:"api_key,omitempty" gorm:"type:text"`         // For OpenAI (encrypted)
 	IsActive      bool      `json:"is_active" gorm:"type:boolean;default:false"`
+	Model         *string   `json:"model,omitempty" gorm:"type:varchar(100)"` // Selected model name (e.g., "llama3.2:3b")
 	CreatedAt     time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt     time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }

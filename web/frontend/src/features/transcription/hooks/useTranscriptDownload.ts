@@ -1,4 +1,5 @@
 import type { Transcript } from "@/features/transcription/hooks/useAudioDetail";
+import { formatSpeakerLabel } from "@/lib/speaker-utils";
 
 export function useTranscriptDownload() {
 
@@ -30,7 +31,7 @@ export function useTranscriptDownload() {
     };
 
     const getDisplaySpeakerName = (originalSpeaker: string, mappings: Record<string, string>) => {
-        return mappings[originalSpeaker] || originalSpeaker;
+        return mappings[originalSpeaker] || formatSpeakerLabel(originalSpeaker);
     };
 
     const downloadSRT = (transcript: Transcript, filenameBase: string, speakerMappings: Record<string, string>) => {

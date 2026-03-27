@@ -13,6 +13,8 @@ import {
 	X,
 	FolderInput,
 	BookMarked,
+	Sparkles,
+	Type,
 } from "lucide-react";
 import { WandAdvancedIcon } from "@/components/icons/WandAdvancedIcon";
 
@@ -48,6 +50,7 @@ import { useAudioListInfinite, type AudioFile } from "@/features/transcription/h
 import { useTranscriptionEvents } from "@/features/transcription/hooks/useTranscriptionEvents";
 import { useFolders, useMoveToFolder } from "@/features/transcription/hooks/useFolders";
 import { useBatchDelete, useBatchMove, useBatchStart } from "@/features/transcription/hooks/useBatchActions";
+import { useToast } from "@/components/ui/toast";
 
 const JobStatusMonitor = memo(function JobStatusMonitor({ jobId }: { jobId: string }) {
 	useTranscriptionEvents(jobId);
@@ -74,6 +77,7 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 }: AudioFilesTableProps) {
 	const navigate = useNavigate();
 	const { getAuthHeaders } = useAuth();
+	const { toast } = useToast();
 	const { shouldShowHint, markHintShown } = useSwipeHint();
 	const { data: folders = [] } = useFolders();
 	const moveToFolder = useMoveToFolder();
@@ -260,6 +264,10 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 	const [transcribeDDialogOpen, setTranscribeDDialogOpen] = useState(false);
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const [trackProgress, setTrackProgress] = useState<Record<string, any>>({});
+
+	// AI action loading states
+	const [summaryGenerating, setSummaryGenerating] = useState<Set<string>>(new Set());
+	const [titleGenerating, setTitleGenerating] = useState<Set<string>>(new Set());
 
 	// Dialog state management
 	const [stopDialogOpen, setStopDialogOpen] = useState(false);
@@ -550,12 +558,14 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 			});
 			if (!response.ok) {
 				const data = await response.json().catch(() => null);
-				alert(data?.error || "Failed to publish to Obsidian");
+				toast({ title: "Obsidian sync failed", description: data?.error || "Failed to publish" });
+			} else {
+				toast({ title: "Synced to Obsidian" });
 			}
 		} catch {
-			alert("Error publishing to Obsidian");
+			toast({ title: "Obsidian sync failed", description: "Network error" });
 		}
-	}, [getAuthHeaders]);
+	}, [getAuthHeaders, toast]);
 
 	// Handle move to folder for a single file
 	const handleMoveToFolder = useCallback(async (jobId: string, folder: string) => {
@@ -581,6 +591,166 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 			setBulkActionLoading(false);
 		}
 	}, [rowSelection, batchMove]);
+
+	// Handle AI Summary generation for a single file
+	const handleGenerateSummary = useCallback(async (jobId: string) => {
+		setSummaryGenerating(prev => new Set(prev).add(jobId));
+		try {
+			// 1. Fetch LLM config for the model name
+			const configRes = await fetch("/api/v1/llm/config", {
+				headers: getAuthHeaders(),
+			});
+			if (!configRes.ok) {
+				toast({ title: "LLM not configured", description: "Set up an LLM provider in Settings first." });
+				return;
+			}
+			const llmConfig = await configRes.json();
+			if (!llmConfig?.is_active) {
+				toast({ title: "LLM not active", description: "Enable your LLM provider in Settings first." });
+				return;
+			}
+
+			// 2. Fetch transcript content
+			const transcriptRes = await fetch(`/api/v1/transcription/${jobId}`, {
+				headers: getAuthHeaders(),
+			});
+			if (!transcriptRes.ok) {
+				toast({ title: "Failed to load transcript" });
+				return;
+			}
+			const transcriptData = await transcriptRes.json();
+			const transcriptText = transcriptData?.transcript_text || "";
+			if (!transcriptText.trim()) {
+				toast({ title: "No transcript text", description: "Transcription has no text to summarize." });
+				return;
+			}
+
+			// 3. Fetch summary templates to find the default
+			const templatesRes = await fetch("/api/v1/summaries/", {
+				headers: getAuthHeaders(),
+			});
+			const templates = templatesRes.ok ? await templatesRes.json() : [];
+			if (!templates.length) {
+				toast({ title: "No summary templates", description: "Create a summary template in Settings first." });
+				return;
+			}
+
+			// Use the first template as default
+			const template = templates[0];
+
+			// 4. Call summarize endpoint
+			const combinedContent = `Transcript:\n${transcriptText}\n\nInstructions:\n${template.prompt}`;
+			const res = await fetch("/api/v1/summarize", {
+				method: "POST",
+				headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+				body: JSON.stringify({
+					model: template.model,
+					content: combinedContent,
+					transcription_id: jobId,
+					template_id: template.id,
+				}),
+			});
+
+			if (!res.ok) {
+				toast({ title: "Summary failed", description: "Failed to generate summary." });
+				return;
+			}
+
+			// Consume the stream to completion
+			if (res.body) {
+				const reader = res.body.getReader();
+				while (true) {
+					const { done } = await reader.read();
+					if (done) break;
+				}
+			}
+
+			toast({ title: "Summary generated" });
+			refetch();
+		} catch {
+			toast({ title: "Summary failed", description: "Network error." });
+		} finally {
+			setSummaryGenerating(prev => {
+				const next = new Set(prev);
+				next.delete(jobId);
+				return next;
+			});
+		}
+	}, [getAuthHeaders, toast, refetch]);
+
+	// Handle AI Title generation for a single file
+	const handleGenerateTitle = useCallback(async (jobId: string) => {
+		setTitleGenerating(prev => new Set(prev).add(jobId));
+		try {
+			const response = await fetch(`/api/v1/transcription/${jobId}/title/auto`, {
+				method: "POST",
+				headers: { ...getAuthHeaders() },
+			});
+
+			if (!response.ok) {
+				toast({ title: "Title generation failed", description: "Could not generate title." });
+				return;
+			}
+
+			const updated = await response.json();
+			const generatedTitle = typeof updated?.title === "string" ? updated.title.trim() : "";
+			if (generatedTitle) {
+				toast({ title: "Title generated", description: generatedTitle });
+			}
+			refetch();
+		} catch {
+			toast({ title: "Title generation failed", description: "Network error." });
+		} finally {
+			setTitleGenerating(prev => {
+				const next = new Set(prev);
+				next.delete(jobId);
+				return next;
+			});
+		}
+	}, [getAuthHeaders, toast, refetch]);
+
+	// Handle bulk AI Summary generation
+	const handleBulkGenerateSummary = useCallback(async () => {
+		const selectedIds = Object.keys(rowSelection);
+		// Filter to only completed transcriptions
+		const completedIds = selectedIds.filter(id => {
+			const job = data.find(j => j.id === id);
+			return job?.status === "completed";
+		});
+		if (completedIds.length === 0) {
+			toast({ title: "No completed transcriptions selected" });
+			return;
+		}
+
+		setBulkActionLoading(true);
+		try {
+			await Promise.all(completedIds.map(id => handleGenerateSummary(id)));
+		} finally {
+			setBulkActionLoading(false);
+			setRowSelection({});
+		}
+	}, [rowSelection, data, handleGenerateSummary, toast]);
+
+	// Handle bulk AI Title generation
+	const handleBulkGenerateTitle = useCallback(async () => {
+		const selectedIds = Object.keys(rowSelection);
+		const completedIds = selectedIds.filter(id => {
+			const job = data.find(j => j.id === id);
+			return job?.status === "completed";
+		});
+		if (completedIds.length === 0) {
+			toast({ title: "No completed transcriptions selected" });
+			return;
+		}
+
+		setBulkActionLoading(true);
+		try {
+			await Promise.all(completedIds.map(id => handleGenerateTitle(id)));
+		} finally {
+			setBulkActionLoading(false);
+			setRowSelection({});
+		}
+	}, [rowSelection, data, handleGenerateTitle, toast]);
 
 	// Modified handlers to support bulk actions
 	const onStartTranscribe = (params: WhisperXParams) => {
@@ -926,23 +1096,84 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 											</DropdownMenu>
 
 											{/* Publish to Obsidian (completed only) */}
-											{file.status === "completed" && (
-												<Tooltip>
-													<TooltipTrigger asChild>
-														<Button
-															variant="ghost"
-															size="icon"
-															onClick={() => handlePublishToObsidian(file.id)}
-															className="h-9 w-9 rounded-lg text-gray-400 hover:text-purple-600 hover:bg-purple-50 cursor-pointer transition-colors"
-														>
-															<BookMarked className="h-5 w-5" strokeWidth={2} />
-														</Button>
-													</TooltipTrigger>
-													<TooltipContent>Publish to Obsidian</TooltipContent>
-												</Tooltip>
-											)}
+											{file.status === "completed" && (() => {
+												const synced = file.obsidian_synced_at;
+												const updated = file.updated_at;
+												// 10s tolerance: writing obsidian_synced_at also bumps updated_at via GORM autoUpdateTime
+												const isStale = synced && updated && (new Date(updated).getTime() - new Date(synced).getTime()) > 10000;
+												const isSynced = !!synced && !isStale;
+												const tooltipText = isSynced
+													? "Synced to Obsidian"
+													: isStale
+														? "Obsidian copy is outdated — click to re-sync"
+														: "Publish to Obsidian";
+												const colorClass = isSynced
+													? "text-green-500 hover:text-green-600 hover:bg-green-50"
+													: isStale
+														? "text-yellow-500 hover:text-yellow-600 hover:bg-yellow-50"
+														: "text-gray-400 hover:text-purple-600 hover:bg-purple-50";
+												return (
+													<Tooltip>
+														<TooltipTrigger asChild>
+															<Button
+																variant="ghost"
+																size="icon"
+																onClick={() => handlePublishToObsidian(file.id)}
+																className={cn("h-9 w-9 rounded-lg cursor-pointer transition-colors", colorClass)}
+															>
+																<BookMarked className="h-5 w-5" strokeWidth={2} />
+															</Button>
+														</TooltipTrigger>
+														<TooltipContent>{tooltipText}</TooltipContent>
+													</Tooltip>
+												);
+											})()}
 
-											{(file.status === "processing" || file.status === "pending") ? (
+											{/* AI Summary (completed only) */}
+										{file.status === "completed" && (
+											<Tooltip>
+												<TooltipTrigger asChild>
+													<Button
+														variant="ghost"
+														size="icon"
+														onClick={() => handleGenerateSummary(file.id)}
+														disabled={summaryGenerating.has(file.id)}
+														className="h-9 w-9 rounded-lg text-gray-400 hover:text-[var(--brand-solid)] hover:bg-[var(--brand-light)] cursor-pointer transition-colors"
+													>
+														{summaryGenerating.has(file.id) ? (
+															<Loader2 className="h-5 w-5 animate-spin" strokeWidth={2} />
+														) : (
+															<Sparkles className="h-5 w-5" strokeWidth={2} />
+														)}
+													</Button>
+												</TooltipTrigger>
+												<TooltipContent>Generate Summary</TooltipContent>
+											</Tooltip>
+										)}
+
+										{/* AI Title (completed only) */}
+										{file.status === "completed" && (
+											<Tooltip>
+												<TooltipTrigger asChild>
+													<Button
+														variant="ghost"
+														size="icon"
+														onClick={() => handleGenerateTitle(file.id)}
+														disabled={titleGenerating.has(file.id)}
+														className="h-9 w-9 rounded-lg text-gray-400 hover:text-[var(--brand-solid)] hover:bg-[var(--brand-light)] cursor-pointer transition-colors"
+													>
+														{titleGenerating.has(file.id) ? (
+															<Loader2 className="h-5 w-5 animate-spin" strokeWidth={2} />
+														) : (
+															<Type className="h-5 w-5" strokeWidth={2} />
+														)}
+													</Button>
+												</TooltipTrigger>
+												<TooltipContent>Generate Title</TooltipContent>
+											</Tooltip>
+										)}
+
+										{(file.status === "processing" || file.status === "pending") ? (
 												<Tooltip>
 													<TooltipTrigger asChild>
 														<Button
@@ -1064,6 +1295,42 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 								))}
 							</DropdownMenuContent>
 						</DropdownMenu>
+
+						<div className="h-4 w-px bg-[var(--border-subtle)] mx-1" />
+
+						{/* Bulk AI Summary */}
+						<Tooltip>
+							<TooltipTrigger asChild>
+								<Button
+									variant="ghost"
+									size="icon"
+									onClick={handleBulkGenerateSummary}
+									disabled={bulkActionLoading}
+									className="h-9 w-9 rounded-full hover:bg-[var(--brand-light)] hover:text-[var(--brand-solid)] transition-colors"
+								>
+									<Sparkles className="h-4 w-4" />
+								</Button>
+							</TooltipTrigger>
+							<TooltipContent>Generate Summary</TooltipContent>
+						</Tooltip>
+
+						{/* Bulk AI Title */}
+						<Tooltip>
+							<TooltipTrigger asChild>
+								<Button
+									variant="ghost"
+									size="icon"
+									onClick={handleBulkGenerateTitle}
+									disabled={bulkActionLoading}
+									className="h-9 w-9 rounded-full hover:bg-[var(--brand-light)] hover:text-[var(--brand-solid)] transition-colors"
+								>
+									<Type className="h-4 w-4" />
+								</Button>
+							</TooltipTrigger>
+							<TooltipContent>Generate Title</TooltipContent>
+						</Tooltip>
+
+						<div className="h-4 w-px bg-[var(--border-subtle)] mx-1" />
 
 						{/* Bulk Delete */}
 						<Tooltip>

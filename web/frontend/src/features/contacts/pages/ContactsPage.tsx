@@ -27,6 +27,7 @@ import {
   useDeleteSnippet,
   useExtractSignature,
   useReindexContacts,
+  useRescanContact,
   useUpdateContact,
   useUploadSignature,
   useUploadSnippet,
@@ -148,6 +149,7 @@ export function ContactsPage() {
   const uploadSignature = useUploadSignature(selectedContactID);
   const deleteSignature = useDeleteSignature(selectedContactID);
   const extractSignature = useExtractSignature(selectedContactID);
+  const rescanContact = useRescanContact(selectedContactID);
 
   const setErrorBanner = (error: unknown, fallback: string) => {
     const message = error instanceof Error ? error.message : fallback;
@@ -557,6 +559,19 @@ export function ContactsPage() {
                         <X className="h-4 w-4" />
                         Clear Signature
                       </Button>
+                      {selectedContact.signature_status === "ready" && (
+                        <Button
+                          variant="outline"
+                          onClick={() => rescanContact.mutate(undefined, {
+                            onSuccess: () => setBanner({ type: "success", message: "Retroactive scan started." }),
+                            onError: (error) => setErrorBanner(error, "Failed to start retroactive scan"),
+                          })}
+                          disabled={rescanContact.isPending}
+                        >
+                          <RefreshCcw className={`h-4 w-4 ${rescanContact.isPending ? "animate-spin" : ""}`} />
+                          {rescanContact.isPending ? "Scanning..." : "Re-scan Past Transcriptions"}
+                        </Button>
+                      )}
                     </div>
                     <input
                       ref={signatureInputRef}

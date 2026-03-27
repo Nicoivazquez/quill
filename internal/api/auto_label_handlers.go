@@ -7,6 +7,7 @@ import (
 
 	"quill/internal/contacts"
 	"quill/internal/database"
+	"quill/internal/llm"
 	"quill/internal/transcription"
 	"quill/pkg/logger"
 )
@@ -114,7 +115,17 @@ func (h *Handler) AutoLabelSpeakersForJob(ctx context.Context, jobID string) err
 		h.speakerMappingRepo,
 		database.DB,
 	)
-	result, err := autoLabelService.LabelSpeakers(ctx, vault.ID, vault.Path, jobID, speakerEmbeddings)
+
+	// Optionally inject LLM caller for voice+LLM fusion scoring.
+	if caller := h.buildSpeakerIDLLMCaller(ctx); caller != nil {
+		autoLabelService.SetLLMCaller(caller)
+	}
+
+	transcriptText := ""
+	if job.Transcript != nil {
+		transcriptText = *job.Transcript
+	}
+	result, err := autoLabelService.LabelSpeakers(ctx, vault.ID, vault.Path, jobID, speakerEmbeddings, transcriptText)
 	if err != nil {
 		return fmt.Errorf("auto-label: label speakers: %w", err)
 	}
@@ -148,6 +159,34 @@ func (h *Handler) AutoLabelSpeakersForJob(ctx context.Context, jobID string) err
 	)
 
 	return nil
+}
+
+// buildSpeakerIDLLMCaller attempts to build a contacts.LLMCaller from the
+// configured LLM service. Returns nil if no LLM is available (voice-only
+// matching will be used as a fallback).
+func (h *Handler) buildSpeakerIDLLMCaller(ctx context.Context) contacts.LLMCaller {
+	svc, _, err := h.getLLMServiceForAutoTitle(ctx)
+	if err != nil {
+		return nil
+	}
+
+	model, err := h.resolveAutoTitleModel(ctx, svc, "")
+	if err != nil {
+		return nil
+	}
+
+	return func(callCtx context.Context, prompt string) (string, error) {
+		resp, err := svc.ChatCompletion(callCtx, model, []llm.ChatMessage{
+			{Role: "user", Content: prompt},
+		}, 0.1)
+		if err != nil {
+			return "", err
+		}
+		if len(resp.Choices) == 0 {
+			return "", fmt.Errorf("LLM returned no choices")
+		}
+		return resp.Choices[0].Message.Content, nil
+	}
 }
 
 func toSpeakerMatchResponses(matches []contacts.SpeakerMatch) []speakerMatchResponse {

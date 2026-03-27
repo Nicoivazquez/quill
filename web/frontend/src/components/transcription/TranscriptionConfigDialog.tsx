@@ -645,7 +645,12 @@ interface ConfigProps {
 }
 
 function WhisperConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
-    const diarizationMode = getDiarizationMode(params);
+    const [diarizationMode, setDiarizationMode] = useState<DiarizationMode>(() => getDiarizationMode(params));
+
+    const handleDiarizationModeChange = (mode: DiarizationMode) => {
+        setDiarizationMode(mode);
+        applyDiarizationMode(updateParam, mode);
+    };
 
     return (
         <div className="space-y-6">
@@ -724,7 +729,7 @@ function WhisperConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
                                 <FormField label="Diarization Mode" description={PARAM_DESCRIPTIONS.diarize_model}>
                                     <Select
                                         value={diarizationMode}
-                                        onValueChange={(v) => applyDiarizationMode(updateParam, v as DiarizationMode)}
+                                        onValueChange={(v) => handleDiarizationModeChange(v as DiarizationMode)}
                                     >
                                         <SelectTrigger className={selectTriggerClassName}>
                                             <SelectValue />
@@ -935,7 +940,12 @@ function WhisperConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
 }
 
 function ParakeetConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
-    const diarizationMode = getDiarizationMode(params);
+    const [diarizationMode, setDiarizationMode] = useState<DiarizationMode>(() => getDiarizationMode(params));
+
+    const handleDiarizationModeChange = (mode: DiarizationMode) => {
+        setDiarizationMode(mode);
+        applyDiarizationMode(updateParam, mode);
+    };
 
     return (
         <div className="space-y-6">
@@ -1000,7 +1010,7 @@ function ParakeetConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
                                 <FormField label="Diarization Mode" description={PARAM_DESCRIPTIONS.diarize_model}>
                                     <Select
                                         value={diarizationMode}
-                                        onValueChange={(v) => applyDiarizationMode(updateParam, v as DiarizationMode)}
+                                        onValueChange={(v) => handleDiarizationModeChange(v as DiarizationMode)}
                                     >
                                         <SelectTrigger className={selectTriggerClassName}>
                                             <SelectValue />
@@ -1106,7 +1116,12 @@ function ParakeetConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
 }
 
 function CanaryConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
-    const diarizationMode = getDiarizationMode(params);
+    const [diarizationMode, setDiarizationMode] = useState<DiarizationMode>(() => getDiarizationMode(params));
+
+    const handleDiarizationModeChange = (mode: DiarizationMode) => {
+        setDiarizationMode(mode);
+        applyDiarizationMode(updateParam, mode);
+    };
 
     return (
         <div className="space-y-6">
@@ -1145,7 +1160,7 @@ function CanaryConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
                                 <FormField label="Diarization Mode" description={PARAM_DESCRIPTIONS.diarize_model}>
                                     <Select
                                         value={diarizationMode}
-                                        onValueChange={(v) => applyDiarizationMode(updateParam, v as DiarizationMode)}
+                                        onValueChange={(v) => handleDiarizationModeChange(v as DiarizationMode)}
                                     >
                                         <SelectTrigger className={selectTriggerClassName}>
                                             <SelectValue />
