@@ -628,6 +628,48 @@ func (h *Handler) ExtractContactSignature(c *gin.Context) {
 	})
 }
 
+// RetroactiveScanForContact triggers a manual retroactive speaker identification
+// scan for a contact. It matches the contact's voice signature against speakers
+// in all past diarized transcriptions.
+func (h *Handler) RetroactiveScanForContact(c *gin.Context) {
+	vault, err := getActiveVault()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No active vault configured"})
+		return
+	}
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid contact ID"})
+		return
+	}
+	contact, err := h.contactRepo.GetByIDInVault(c.Request.Context(), vault.ID, uint(id))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Contact not found"})
+		return
+	}
+	if contact.SignatureStatus != "ready" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Contact voice signature is not ready"})
+		return
+	}
+	if h.contactManager == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Contact manager is unavailable"})
+		return
+	}
+
+	// Inject LLM caller for voice+LLM fusion scoring if available.
+	if caller := h.buildSpeakerIDLLMCaller(c.Request.Context()); caller != nil {
+		h.contactManager.SetRetroactiveScanLLMCaller(caller)
+	}
+
+	result, scanErr := h.contactManager.RetroactiveScanForContact(c.Request.Context(), contact.ID)
+	if scanErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": scanErr.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
 func (h *Handler) GetContactFiles(c *gin.Context) {
 	vault, err := getActiveVault()
 	if err != nil {

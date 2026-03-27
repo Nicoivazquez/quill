@@ -34,10 +34,14 @@ export function useSpeakerMappings(audioId: string, enabled: boolean) {
             if (!response.ok) throw new Error("Failed to fetch speaker mappings");
             const mappings: SpeakerMapping[] = await response.json();
 
-            // Convert to lookup object for easier consumption
+            // Convert to lookup object for easier consumption.
+            // Skip mappings where custom_name equals the raw label (no real rename)
+            // so the UI falls through to the friendly "Speaker A/B/C" format.
             const mappingObj: Record<string, string> = {};
             mappings.forEach(mapping => {
-                mappingObj[mapping.original_speaker] = mapping.custom_name;
+                if (mapping.custom_name && mapping.custom_name !== mapping.original_speaker) {
+                    mappingObj[mapping.original_speaker] = mapping.custom_name;
+                }
             });
             return mappingObj;
         },

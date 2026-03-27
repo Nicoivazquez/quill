@@ -42,20 +42,48 @@ type Manager struct {
 	syncService   *SyncService
 	watcher       *Watcher
 
-	embeddingWorker embeddingRunner
-	workerStarted   bool
-	retryStop       chan struct{}
-	retryWG         sync.WaitGroup
-	retryStarted    bool
+	embeddingWorker  embeddingRunner
+	workerStarted    bool
+	retryStop        chan struct{}
+	retryWG          sync.WaitGroup
+	retryStarted     bool
+	retroactiveScan  *RetroactiveScanService
 }
 
 func NewManager(db *gorm.DB, repo repository.ContactRepository, whisperXEnv string) *Manager {
-	return &Manager{
+	worker := NewEmbeddingWorker(db, repo, whisperXEnv)
+
+	jobRepo := repository.NewJobRepository(db)
+	speakerMapRepo := repository.NewSpeakerMappingRepository(db)
+	retroScan := NewRetroactiveScanService(jobRepo, repo, speakerMapRepo, db)
+
+	m := &Manager{
 		db:              db,
 		repo:            repo,
 		whisperXEnv:     strings.TrimSpace(whisperXEnv),
-		embeddingWorker: NewEmbeddingWorker(db, repo, whisperXEnv),
+		embeddingWorker: worker,
+		retroactiveScan: retroScan,
 	}
+
+	worker.SetOnContactReady(func(contactID uint) {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			defer cancel()
+			result, err := m.retroactiveScan.ScanForContact(ctx, contactID)
+			if err != nil {
+				logger.Warn("retroactive scan failed", "contact_id", contactID, "error", err)
+				return
+			}
+			logger.Info("retroactive scan completed",
+				"contact_id", contactID,
+				"jobs_scanned", result.JobsScanned,
+				"auto_assigned", result.AutoAssigned,
+				"suggestions", result.Suggestions,
+			)
+		}()
+	})
+
+	return m
 }
 
 func (m *Manager) Start(ctx context.Context) error {
@@ -268,6 +296,32 @@ func (m *Manager) DeleteContactFiles(ctx context.Context, contact *models.Contac
 	}
 	fileService := NewFileService(vault.Path)
 	return fileService.DeleteContactFolder(contact)
+}
+
+// SetRetroactiveScanExtractor sets the production speaker embedding extraction
+// function used by the retroactive scan service. Call this after creating the
+// Manager, before starting it.
+func (m *Manager) SetRetroactiveScanExtractor(fn SpeakerEmbeddingExtractor) {
+	if m.retroactiveScan != nil {
+		m.retroactiveScan.SetExtractor(fn)
+	}
+}
+
+// SetRetroactiveScanLLMCaller injects an LLM caller for voice+LLM fusion
+// scoring during retroactive scanning.
+func (m *Manager) SetRetroactiveScanLLMCaller(caller LLMCaller) {
+	if m.retroactiveScan != nil {
+		m.retroactiveScan.SetLLMCaller(caller)
+	}
+}
+
+// RetroactiveScanForContact exposes the retroactive scan to the API layer
+// for manual re-scan triggers.
+func (m *Manager) RetroactiveScanForContact(ctx context.Context, contactID uint) (*RetroactiveScanResult, error) {
+	if m.retroactiveScan == nil || m.retroactiveScan.extractFunc == nil {
+		return &RetroactiveScanResult{}, nil
+	}
+	return m.retroactiveScan.ScanForContact(ctx, contactID)
 }
 
 func (m *Manager) vaultByID(ctx context.Context, vaultID uint) (*models.Vault, error) {

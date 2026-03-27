@@ -151,7 +151,7 @@ func TestLabelSpeakers_AutoAssignedMappingsHaveConfidence(t *testing.T) {
 
 	result, err := svc.LabelSpeakers(context.Background(), 1, vaultPath, "job-full-pipeline", map[string][]float64{
 		"speaker_00": speakerEmb,
-	})
+	}, "")
 	if err != nil {
 		t.Fatalf("LabelSpeakers: %v", err)
 	}

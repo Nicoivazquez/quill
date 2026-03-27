@@ -112,8 +112,58 @@ func Initialize(dbPath string) error {
 		return fmt.Errorf("failed to create unique constraint for speaker mappings: %v", err)
 	}
 
+	// Seed default summary template if none exist
+	if err := seedDefaultSummaryTemplate(DB); err != nil {
+		return fmt.Errorf("failed to seed default summary template: %v", err)
+	}
+
 	return nil
 }
+
+// seedDefaultSummaryTemplate creates a "Meeting Notes" template if no templates exist yet.
+func seedDefaultSummaryTemplate(db *gorm.DB) error {
+	var count int64
+	if err := db.Model(&models.SummaryTemplate{}).Count(&count).Error; err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+
+	desc := "Structured meeting notes with summary, decisions, action items, and next steps."
+	template := models.SummaryTemplate{
+		Name:               "Meeting Notes",
+		Description:        &desc,
+		Prompt:             defaultMeetingNotesPrompt,
+		IncludeSpeakerInfo: true,
+	}
+	return db.Create(&template).Error
+}
+
+const defaultMeetingNotesPrompt = `You are a skilled meeting analyst. Analyze the following transcript and produce structured meeting notes in Markdown format.
+
+## Summary
+Write a 2-3 sentence executive overview. Lead with the most important outcome or decision, then provide essential context.
+
+## Key Topics Discussed
+Group the discussion into thematic topics (not chronological order). For each topic, summarize the main points in 1-3 sentences. Use sub-bullets for supporting details.
+
+## Decisions Made
+List each decision as a bullet point. Include who made or endorsed the decision if identifiable, and note the rationale when it was discussed. Omit this section if no decisions were made.
+
+## Action Items
+List each action item using this format:
+- **[Owner]**: Task description *(Deadline, if mentioned)*
+Use **[Unassigned]** when no owner is clear. Omit this section if no action items were discussed.
+
+## Open Questions & Next Steps
+List unresolved questions, deferred topics, and planned follow-ups. Include deadlines or dates if stated. Omit this section if none apply.
+
+Guidelines:
+- Be concise and factual. Keep the output readable in under 2 minutes.
+- Use speakers' names when available for attribution.
+- Do not invent or infer information not present in the transcript.
+- Omit any section that has no relevant content rather than writing "None" or "N/A".`
 
 // Close closes the database connection gracefully
 func Close() error {

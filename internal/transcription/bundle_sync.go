@@ -155,6 +155,10 @@ func (s *BundleSyncService) SyncFromFilesystem(ctx context.Context) (BundleSyncR
 				result.Skipped++
 				continue
 			}
+		} else {
+			// No metadata.json on disk — nothing to update from
+			result.Skipped++
+			continue
 		}
 
 		if updateErr := s.updateFromMetadata(ctx, existing, meta, bundle); updateErr != nil {
@@ -306,19 +310,39 @@ func (s *BundleSyncService) importBundle(ctx context.Context, meta *BundleMetada
 }
 
 func (s *BundleSyncService) updateFromMetadata(ctx context.Context, job *models.TranscriptionJob, meta *BundleMetadata, bundle ScannedBundle) error {
-	if meta.Title != "" {
+	changed := false
+
+	if meta.Title != "" && (job.Title == nil || *job.Title != meta.Title) {
 		job.Title = &meta.Title
+		changed = true
 	}
 	if meta.Folder != "" {
-		job.Folder = &meta.Folder
+		if job.Folder == nil || *job.Folder != meta.Folder {
+			job.Folder = &meta.Folder
+			changed = true
+		}
 	} else if bundle.Folder != "" {
-		job.Folder = &bundle.Folder
+		if job.Folder == nil || *job.Folder != bundle.Folder {
+			job.Folder = &bundle.Folder
+			changed = true
+		}
 	}
-	job.Diarization = meta.Diarization
-	job.IsMultiTrack = meta.IsMultiTrack
+	if job.Diarization != meta.Diarization {
+		job.Diarization = meta.Diarization
+		changed = true
+	}
+	if job.IsMultiTrack != meta.IsMultiTrack {
+		job.IsMultiTrack = meta.IsMultiTrack
+		changed = true
+	}
 
-	if err := s.jobRepo.Update(ctx, job); err != nil {
-		return fmt.Errorf("updating job: %w", err)
+	// Only update job record if fields actually changed, to avoid bumping
+	// updated_at via GORM autoUpdateTime (which would make Obsidian sync
+	// status appear stale on every restart).
+	if changed {
+		if err := s.jobRepo.Update(ctx, job); err != nil {
+			return fmt.Errorf("updating job: %w", err)
+		}
 	}
 
 	// Replace speaker mappings

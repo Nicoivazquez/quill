@@ -281,6 +281,7 @@ type LLMConfigRequest struct {
 	OpenAIBaseURL *string `json:"openai_base_url,omitempty"`
 	APIKey        *string `json:"api_key,omitempty"`
 	IsActive      bool    `json:"is_active"`
+	Model         *string `json:"model,omitempty"`
 }
 
 // LLMConfigResponse represents the LLM configuration response
@@ -291,6 +292,7 @@ type LLMConfigResponse struct {
 	OpenAIBaseURL *string `json:"openai_base_url,omitempty"`
 	HasAPIKey     bool    `json:"has_api_key"` // Don't return actual API key
 	IsActive      bool    `json:"is_active"`
+	Model         *string `json:"model,omitempty"`
 	CreatedAt     string  `json:"created_at"`
 	UpdatedAt     string  `json:"updated_at"`
 }
@@ -1492,6 +1494,7 @@ func (h *Handler) AutoGenerateTranscriptionTitle(c *gin.Context) {
 
 	// Respect the same user-level toggle used for chat auto titling.
 	if !h.isAutoTranscriptionTitleEnabled(c) {
+		logger.Debug("Auto-title API skipped: user setting disabled", "job_id", jobID)
 		c.JSON(http.StatusOK, gin.H{
 			"id":         job.ID,
 			"title":      job.Title,
@@ -1504,6 +1507,8 @@ func (h *Handler) AutoGenerateTranscriptionTitle(c *gin.Context) {
 
 	// Do not overwrite likely user-defined titles.
 	if !isLikelyDefaultTranscriptionTitle(job) {
+		logger.Debug("Auto-title API skipped: title appears user-defined",
+			"job_id", jobID, "title", job.Title, "audio_path", job.AudioPath)
 		c.JSON(http.StatusOK, gin.H{
 			"id":         job.ID,
 			"title":      job.Title,
@@ -1543,22 +1548,33 @@ func (h *Handler) AutoGenerateTranscriptionTitleForJob(ctx context.Context, jobI
 	}
 
 	if job.Status != models.StatusCompleted {
+		logger.Debug("Auto-title skipped: job not completed", "job_id", jobID, "status", job.Status)
 		return nil
 	}
 	if job.Transcript == nil || strings.TrimSpace(*job.Transcript) == "" {
+		logger.Debug("Auto-title skipped: no transcript content", "job_id", jobID)
 		return nil
 	}
 	if !isLikelyDefaultTranscriptionTitle(job) {
+		titleVal := ""
+		if job.Title != nil {
+			titleVal = *job.Title
+		}
+		logger.Debug("Auto-title skipped: title appears user-defined",
+			"job_id", jobID, "title", titleVal, "audio_path", job.AudioPath)
 		return nil
 	}
 	if !h.isAnyAutoTranscriptionTitleEnabled(ctx) {
+		logger.Debug("Auto-title skipped: no user has auto-title enabled", "job_id", jobID)
 		return nil
 	}
 
 	title, modelName, err := h.generateAndPersistTranscriptionTitle(ctx, job, "")
 	if err != nil {
-		// No active LLM is a normal state; skip without surfacing as hard error.
+		// No active LLM is a normal state; log so users know why it was skipped.
 		if strings.Contains(strings.ToLower(err.Error()), "no active llm configuration") {
+			logger.Warn("Auto-title skipped: no LLM configured. Add an OpenAI or Ollama provider in Settings → LLM to enable auto-titling.",
+				"job_id", jobID)
 			return nil
 		}
 		return err
@@ -1654,8 +1670,9 @@ func (h *Handler) resolveAutoTitleModel(ctx context.Context, svc llm.Service, pr
 	}
 
 	for _, modelName := range availableModels {
-		if strings.TrimSpace(modelName) != "" {
-			return strings.TrimSpace(modelName), nil
+		n := strings.TrimSpace(modelName)
+		if n != "" && !isEmbeddingModel(n) {
+			return n, nil
 		}
 	}
 
@@ -1664,6 +1681,19 @@ func (h *Handler) resolveAutoTitleModel(ctx context.Context, svc llm.Service, pr
 	}
 
 	return "", fmt.Errorf("no available model found for title generation")
+}
+
+// isEmbeddingModel returns true for model names that are known embedding-only
+// models (not usable for chat/generation). This prevents auto-title from
+// accidentally picking an embedding model as the fallback.
+func isEmbeddingModel(name string) bool {
+	lower := strings.ToLower(name)
+	for _, kw := range []string{"embed", "nomic-bert", "bge-", "e5-", "gte-"} {
+		if strings.Contains(lower, kw) {
+			return true
+		}
+	}
+	return false
 }
 
 func buildLLMServiceFromConfig(cfg models.LLMConfig) (llm.Service, string, bool) {
@@ -1993,8 +2023,32 @@ func isLikelyDefaultTranscriptionTitle(job *models.TranscriptionJob) bool {
 	if strings.EqualFold(title, "YouTube Audio") {
 		return true
 	}
+	// Detect timestamp-based titles like "2026-02-10_16_57_40" or "2026-02-10 16-57-40".
+	// These are auto-generated from recording filenames and should not block auto-titling.
+	if looksLikeTimestamp(title) {
+		return true
+	}
 
 	return false
+}
+
+// looksLikeTimestamp returns true when the title is purely a date/time stamp
+// (e.g. "2026-02-10_16_57_40", "2026-02-10 16-57-40", "20260210_165740").
+// It checks that the title is composed entirely of digits and common separators
+// and contains at least 8 digits (YYYYMMDD minimum).
+func looksLikeTimestamp(s string) bool {
+	digits := 0
+	for _, r := range s {
+		switch {
+		case r >= '0' && r <= '9':
+			digits++
+		case r == '-' || r == '_' || r == ' ' || r == ':' || r == '.':
+			// allowed separators
+		default:
+			return false
+		}
+	}
+	return digits >= 8
 }
 
 func buildTranscriptTitleSource(transcript string) string {
@@ -2733,6 +2787,7 @@ func (h *Handler) GetLLMConfig(c *gin.Context) {
 		OpenAIBaseURL: config.OpenAIBaseURL,
 		HasAPIKey:     config.APIKey != nil && *config.APIKey != "",
 		IsActive:      config.IsActive,
+		Model:         config.Model,
 		CreatedAt:     config.CreatedAt.Format("2006-01-02 15:04:05"),
 		UpdatedAt:     config.UpdatedAt.Format("2006-01-02 15:04:05"),
 	}
@@ -2818,6 +2873,7 @@ func (h *Handler) SaveLLMConfig(c *gin.Context) {
 			OpenAIBaseURL: req.OpenAIBaseURL,
 			APIKey:        apiKeyToSave,
 			IsActive:      req.IsActive,
+			Model:         req.Model,
 		}
 
 		if err := h.llmConfigRepo.Create(c.Request.Context(), config); err != nil {
@@ -2831,6 +2887,7 @@ func (h *Handler) SaveLLMConfig(c *gin.Context) {
 		existingConfig.OpenAIBaseURL = req.OpenAIBaseURL
 		existingConfig.APIKey = apiKeyToSave
 		existingConfig.IsActive = req.IsActive
+		existingConfig.Model = req.Model
 
 		if err := h.llmConfigRepo.Update(c.Request.Context(), existingConfig); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update LLM configuration"})
@@ -2860,11 +2917,45 @@ func (h *Handler) SaveLLMConfig(c *gin.Context) {
 		OpenAIBaseURL: config.OpenAIBaseURL,
 		HasAPIKey:     config.APIKey != nil && *config.APIKey != "",
 		IsActive:      config.IsActive,
+		Model:         config.Model,
 		CreatedAt:     config.CreatedAt.Format("2006-01-02 15:04:05"),
 		UpdatedAt:     config.UpdatedAt.Format("2006-01-02 15:04:05"),
 	}
 
 	c.JSON(http.StatusOK, response)
+}
+
+// @Summary List available Ollama models
+// @Description Fetch the list of models from an Ollama server
+// @Tags llm
+// @Produce json
+// @Param base_url query string true "Ollama server base URL"
+// @Success 200 {object} map[string][]string
+// @Failure 400 {object} map[string]string
+// @Failure 502 {object} map[string]string
+// @Security BearerAuth
+// @Router /api/v1/llm/ollama/models [get]
+func (h *Handler) ListOllamaModels(c *gin.Context) {
+	baseURL := strings.TrimSpace(c.Query("base_url"))
+	if baseURL == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "base_url query parameter is required"})
+		return
+	}
+
+	normalizedURL, err := normalizeLLMBaseURL(baseURL)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid base URL: " + err.Error()})
+		return
+	}
+
+	svc := llm.NewOllamaService(normalizedURL)
+	models, err := svc.GetModels(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to fetch models from Ollama: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"models": models})
 }
 
 // generateSecureAPIKey generates a cryptographically secure API key

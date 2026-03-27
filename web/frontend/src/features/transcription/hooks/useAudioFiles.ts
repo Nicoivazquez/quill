@@ -15,6 +15,8 @@ export interface AudioFile {
     speakers?: number;
     duration?: number;
     folder?: string;
+    updated_at?: string;
+    obsidian_synced_at?: string;
 }
 
 export interface AudioFilesResponse {

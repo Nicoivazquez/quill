@@ -306,6 +306,33 @@ export function useDeleteSignature(contactID: number | null) {
   });
 }
 
+export function useRescanContact(contactID: number | null) {
+  const { getAuthHeaders } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      if (!contactID) {
+        throw new Error("No contact selected");
+      }
+      const response = await fetch(`/api/v1/contacts/${contactID}/rescan`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+      });
+      if (!response.ok) {
+        return parseError(response, "Failed to start retroactive scan");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: contactsKeys.all });
+      if (contactID) {
+        queryClient.invalidateQueries({ queryKey: contactsKeys.detail(contactID) });
+      }
+    },
+  });
+}
+
 export function useExtractSignature(contactID: number | null) {
   const { getAuthHeaders } = useAuth();
   const queryClient = useQueryClient();

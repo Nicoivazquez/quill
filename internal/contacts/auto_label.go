@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"quill/internal/models"
 	"quill/internal/repository"
@@ -27,6 +28,11 @@ type AutoLabelResult struct {
 	Unmatched []string
 }
 
+// LLMCaller is a function that sends a prompt to an LLM and returns the
+// response text.  Inject via SetLLMCaller to enable LLM-assisted speaker
+// identification (voice + LLM fusion scoring).
+type LLMCaller func(ctx context.Context, prompt string) (string, error)
+
 // AutoLabelService orchestrates the speaker auto-identification pipeline after
 // a transcription job completes.
 //
@@ -35,8 +41,10 @@ type AutoLabelResult struct {
 //  2. Load each contact's embedding vector from disk.
 //  3. Obtain per-speaker embeddings for the completed transcription (see note).
 //  4. Run MatchSpeakers to find the best contact per speaker.
-//  5. For auto-tier matches, persist SpeakerMapping rows.
-//  6. Return the result so the caller can push an SSE notification.
+//  5. Optionally fuse voice scores with LLM contextual analysis (if LLMCaller
+//     is set and transcript text is provided).
+//  6. For auto-tier matches, persist SpeakerMapping rows.
+//  7. Return the result so the caller can push an SSE notification.
 //
 // Speaker embedding source (current implementation):
 // The diarization pipeline does not yet emit per-speaker embedding files.
@@ -49,6 +57,7 @@ type AutoLabelService struct {
 	contactRepo    repository.ContactRepository
 	speakerMapRepo repository.SpeakerMappingRepository
 	db             *gorm.DB
+	llmCaller      LLMCaller
 }
 
 // NewAutoLabelService creates a ready-to-use AutoLabelService.
@@ -62,6 +71,14 @@ func NewAutoLabelService(
 		speakerMapRepo: speakerMapRepo,
 		db:             db,
 	}
+}
+
+// SetLLMCaller injects an LLM caller for voice+LLM fusion scoring.
+// When set (and transcript text is provided to LabelSpeakers), the service
+// will query the LLM for contextual speaker guesses and fuse the scores
+// with voice embeddings using FuseScores (60:40 voice:LLM weighting).
+func (s *AutoLabelService) SetLLMCaller(caller LLMCaller) {
+	s.llmCaller = caller
 }
 
 // LabelSpeakers runs the full auto-identification pipeline for a single vault.
@@ -84,6 +101,7 @@ func (s *AutoLabelService) LabelSpeakers(
 	vaultPath string,
 	jobID string,
 	speakerEmbeddings map[string][]float64,
+	transcriptText string,
 ) (*AutoLabelResult, error) {
 	result := &AutoLabelResult{
 		AutoAssigned: []SpeakerMatch{},
@@ -148,10 +166,50 @@ func (s *AutoLabelService) LabelSpeakers(
 	// Step 3: match speakers against contacts.
 	matchResult := MatchSpeakers(speakerEmbeddings, contactEmbeddings)
 
-	result.Unmatched = matchResult.Unmatched
+	// Step 3b: optionally fuse voice scores with LLM contextual analysis.
+	fusedMatches := matchResult.Matches
+	fusedUnmatched := matchResult.Unmatched
+
+	if s.llmCaller != nil && strings.TrimSpace(transcriptText) != "" {
+		speakerLabels := make([]string, 0, len(speakerEmbeddings))
+		for label := range speakerEmbeddings {
+			speakerLabels = append(speakerLabels, label)
+		}
+		contactNames := make([]string, 0, len(contactEmbeddings))
+		for _, ce := range contactEmbeddings {
+			contactNames = append(contactNames, ce.ContactName)
+		}
+
+		prompt := BuildSpeakerIDPrompt(transcriptText, speakerLabels, contactNames)
+		llmResponse, llmErr := s.llmCaller(ctx, prompt)
+		if llmErr != nil {
+			logger.Warn("auto-label: LLM call failed, falling back to voice-only",
+				"job_id", jobID, "error", llmErr)
+		} else {
+			guesses := ParseLLMSpeakerGuesses(llmResponse, speakerLabels)
+			fusedMatches = FuseScores(matchResult.Matches, guesses)
+
+			// Rebuild unmatched list: speakers not present in fused matches
+			// or with scores below the minimum threshold.
+			matched := make(map[string]struct{}, len(fusedMatches))
+			for _, fm := range fusedMatches {
+				if fm.Tier != TierUnknown {
+					matched[fm.Speaker] = struct{}{}
+				}
+			}
+			fusedUnmatched = []string{}
+			for label := range speakerEmbeddings {
+				if _, ok := matched[label]; !ok {
+					fusedUnmatched = append(fusedUnmatched, label)
+				}
+			}
+		}
+	}
+
+	result.Unmatched = fusedUnmatched
 
 	// Step 4: split matches by tier; persist auto-tier mappings.
-	for _, m := range matchResult.Matches {
+	for _, m := range fusedMatches {
 		switch m.Tier {
 		case TierAutoAssign:
 			result.AutoAssigned = append(result.AutoAssigned, m)

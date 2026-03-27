@@ -274,6 +274,7 @@ func SetupRoutes(handler *Handler, authService *auth.AuthService) *gin.Engine {
 			contacts.POST("/:id/signature", handler.UploadContactSignature)
 			contacts.DELETE("/:id/signature", handler.DeleteContactSignature)
 			contacts.POST("/:id/signature/extract", handler.ExtractContactSignature)
+			contacts.POST("/:id/rescan", handler.RetroactiveScanForContact)
 		}
 
 		// Search routes (require authentication)
@@ -308,6 +309,7 @@ func SetupRoutes(handler *Handler, authService *auth.AuthService) *gin.Engine {
 		{
 			llm.GET("/config", handler.GetLLMConfig)
 			llm.POST("/config", handler.SaveLLMConfig)
+			llm.GET("/ollama/models", handler.ListOllamaModels)
 		}
 
 		// Summarization templates routes (require authentication)

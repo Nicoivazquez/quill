@@ -2,18 +2,8 @@ import { forwardRef, useRef, useState, useCallback, useEffect, useMemo } from 'r
 import { useKaraokeHighlight, computeWordOffsets, findActiveWordIndex } from '@/features/transcription/hooks/useKaraokeHighlight';
 import { cn } from '@/lib/utils';
 import { useIsDesktop } from '@/hooks/useIsDesktop';
+import { speakerIndexToLabel } from '@/lib/speaker-utils';
 import type { Note } from '@/types/note';
-
-function speakerIndexToLabel(index: number): string {
-    let n = index + 1;
-    let label = "";
-    while (n > 0) {
-        const rem = (n - 1) % 26;
-        label = String.fromCharCode(65 + rem) + label;
-        n = Math.floor((n - 1) / 26);
-    }
-    return `Speaker ${label}`;
-}
 
 function formatSegmentTime(value: unknown): string {
     const numericValue = typeof value === "number" ? value : Number(value);

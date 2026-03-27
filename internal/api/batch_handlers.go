@@ -168,7 +168,7 @@ func (h *Handler) moveJobToFolder(ctx context.Context, jobID, folder string) err
 
 func (h *Handler) BatchStartTranscriptions(c *gin.Context) {
 	var req struct {
-		IDs    []string            `json:"ids"`
+		IDs    []string              `json:"ids"`
 		Params models.WhisperXParams `json:"params"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -179,6 +179,15 @@ func (h *Handler) BatchStartTranscriptions(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("ids must contain 1-%d items", maxBatchSize)})
 		return
 	}
+
+	// Normalize and validate diarization params (same as single-start path)
+	normalizedDiarizeModel, validDiarizeModel := normalizeDiarizeModel(req.Params.DiarizeModel)
+	if !validDiarizeModel {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid diarize_model. Must be 'pyannote' or 'nvidia_sortformer'"})
+		return
+	}
+	req.Params.DiarizeModel = normalizedDiarizeModel
+	fallbackDiarizationModelIfTokenMissing(&req.Params, "batch_start_transcriptions", h.config.HFToken)
 
 	ctx := c.Request.Context()
 	results := make([]batchResult, 0, len(req.IDs))
