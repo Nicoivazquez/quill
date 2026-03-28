@@ -282,9 +282,20 @@ function buildBackendEnv(port: number): NodeJS.ProcessEnv {
     env.QUILL_WHISPER_CPP_BIN = whisperCppPath;
   }
 
-  // Pass through transcription backend selection (whisperx, mlx_whisper, whisper_cpp)
+  // Transcription backend selection (whisperx, mlx_whisper, whisper_cpp).
+  // Auto-detect Apple Silicon and default to mlx_whisper for best performance.
   if (process.env.TRANSCRIPTION_BACKEND) {
     env.TRANSCRIPTION_BACKEND = process.env.TRANSCRIPTION_BACKEND;
+  } else if (process.platform === "darwin" && process.arch === "arm64") {
+    env.TRANSCRIPTION_BACKEND = "mlx_whisper";
+  }
+
+  // Whisper model to pre-download during startup warmup.
+  // Defaults to large-v3-turbo for MLX Whisper (Apple Silicon best quality/speed).
+  if (process.env.WHISPER_MODEL) {
+    env.WHISPER_MODEL = process.env.WHISPER_MODEL;
+  } else if (env.TRANSCRIPTION_BACKEND === "mlx_whisper") {
+    env.WHISPER_MODEL = "large-v3-turbo";
   }
 
   return env;

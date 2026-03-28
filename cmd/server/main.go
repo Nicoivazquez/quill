@@ -213,7 +213,7 @@ func main() {
 	}
 	defer bundleManager.Stop()
 
-	runtimeWarmup := transcription.NewDesktopRuntimeWarmupManagerWithBackend(deferModelInit, "small", cfg.TranscriptionBackend)
+	runtimeWarmup := transcription.NewDesktopRuntimeWarmupManagerWithBackend(deferModelInit, cfg.WhisperModel, cfg.TranscriptionBackend)
 	defer runtimeWarmup.Stop()
 
 	// Initialize multi-track processor

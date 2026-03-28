@@ -24,10 +24,6 @@ requires-python = ">=3.10"
 dependencies = [
     "mlx-whisper>=0.4.0",
 ]
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
 `
 
 // MLXWhisperAdapter implements TranscriptionAdapter using mlx-whisper on Apple Silicon.

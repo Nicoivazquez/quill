@@ -45,6 +45,8 @@ type Config struct {
 
 	// Transcription backend: "whisperx" (default), "mlx_whisper", "whisper_cpp"
 	TranscriptionBackend string
+	// Whisper model to pre-download during warmup (e.g. "small", "large-v3-turbo")
+	WhisperModel string
 }
 
 // Load loads configuration from environment variables and .env file
@@ -76,6 +78,7 @@ func Load() *Config {
 		OpenAIAPIKey:          getEnv("OPENAI_API_KEY", ""),
 		HFToken:               getEnv("HF_TOKEN", ""),
 		TranscriptionBackend:  getEnv("TRANSCRIPTION_BACKEND", "whisperx"),
+		WhisperModel:          getEnv("WHISPER_MODEL", "small"),
 	}
 }
 
