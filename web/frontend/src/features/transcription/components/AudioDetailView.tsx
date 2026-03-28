@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import { useAudioDetail, useUpdateTitle, useTranscript, type TranscriptSegment } from "@/features/transcription/hooks/useAudioDetail";
 import { useSpeakerMappings } from "@/features/transcription/hooks/useTranscriptionSpeakers";
 import { useTranscriptDownload } from "@/features/transcription/hooks/useTranscriptDownload";
+import { useTranscriptionEvents } from "@/features/transcription/hooks/useTranscriptionEvents";
 
 // Sub-components
 import { TranscriptSection } from "./audio-detail/TranscriptSection";
@@ -73,6 +74,9 @@ export const AudioDetailView = function AudioDetailView({ audioId: propAudioId }
     const { data: summaryTemplates = [] } = useSummaryTemplates();
     const { data: existingSummary, isLoading: existingSummaryLoading } = useExistingSummary(audioId || "");
     const { generateSummary: generateAutoSummary } = useSummarizer(audioId || "");
+
+    // SSE: listen for real-time job updates (status changes, completion)
+    useTranscriptionEvents(audioId || null);
 
     const autoSummaryTriggeredRef = useRef<string | null>(null);
     const autoTitleTriggeredRef = useRef<string | null>(null);
@@ -188,6 +192,16 @@ export const AudioDetailView = function AudioDetailView({ audioId: propAudioId }
             cancelled = true;
         };
     }, [getAuthHeaders]);
+
+    // Fallback: when polling detects completion, refetch transcript if it's still null
+    const prevStatusRef = useRef<string | undefined>();
+    useEffect(() => {
+        const prev = prevStatusRef.current;
+        prevStatusRef.current = audioFile?.status;
+        if (prev && prev !== "completed" && audioFile?.status === "completed") {
+            queryClient.invalidateQueries({ queryKey: ["transcript", audioId] });
+        }
+    }, [audioFile?.status, audioId, queryClient]);
 
     useEffect(() => {
         autoSummaryTriggeredRef.current = null;

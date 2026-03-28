@@ -111,6 +111,14 @@ export const useTranscriptionEvents = (jobId: string | null) => {
             if (event.type === 'job_update') {
                 const payload = event.payload as JobUpdateEvent['payload'];
 
+                // When a job completes, invalidate the transcript + detail queries
+                // so the detail page picks up the new content automatically.
+                if (payload.status === 'completed' || payload.status === 'failed') {
+                    queryClient.invalidateQueries({ queryKey: ['transcript', payload.job_id] });
+                    queryClient.invalidateQueries({ queryKey: ['audio', payload.job_id] });
+                    queryClient.invalidateQueries({ queryKey: ['executionData', payload.job_id] });
+                }
+
                 // Optimistically update the list
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 queryClient.setQueriesData({ queryKey: ['audioFiles'] }, (oldData: any) => {
