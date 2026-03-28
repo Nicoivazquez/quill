@@ -149,6 +149,8 @@ func SetupRoutes(handler *Handler, authService *auth.AuthService) *gin.Engine {
 			transcription.PUT("/:id/title", handler.UpdateTranscriptionTitle)
 			transcription.POST("/:id/title/auto", handler.AutoGenerateTranscriptionTitle)
 			transcription.GET("/:id/summary", handler.GetSummaryForTranscription)
+			transcription.GET("/:id/summaries", handler.ListSummariesForTranscription)
+			transcription.DELETE("/:id/summaries/:summaryId", handler.DeleteSummary)
 			transcription.POST("/:id/materialize", handler.MaterializeTranscriptArtifacts)
 			transcription.GET("/:id", handler.GetTranscriptionJob)
 			transcription.DELETE("/:id", handler.DeleteTranscriptionJob)
@@ -231,6 +233,8 @@ func SetupRoutes(handler *Handler, authService *auth.AuthService) *gin.Engine {
 			vaults.DELETE("/:id", handler.DeleteVault)
 			vaults.POST("/:id/activate", handler.ActivateVault)
 			vaults.POST("/:id/rehydrate", handler.RehydrateVault)
+			vaults.GET("/integrity", handler.GetVaultIntegrity)
+			vaults.POST("/integrity/repair", handler.RepairVaultPaths)
 		}
 
 		// Obsidian bridge routes
@@ -321,6 +325,7 @@ func SetupRoutes(handler *Handler, authService *auth.AuthService) *gin.Engine {
 			summaries.GET("/:id", handler.GetSummaryTemplate)
 			summaries.PUT("/:id", handler.UpdateSummaryTemplate)
 			summaries.DELETE("/:id", handler.DeleteSummaryTemplate)
+			summaries.POST("/:id/default", handler.SetDefaultSummaryTemplate)
 			summaries.GET("/settings", handler.GetSummarySettings)
 			summaries.POST("/settings", handler.SaveSummarySettings)
 		}

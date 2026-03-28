@@ -145,8 +145,8 @@ const applyDiarizationMode = (
 };
 
 const DEFAULT_PARAMS: WhisperXParams = {
-    model_family: "whisper",
-    model: "small",
+    model_family: "mlx_whisper",
+    model: "large-v3-turbo",
     model_cache_only: false,
     device: "cpu",
     device_index: 0,
@@ -188,8 +188,7 @@ const DEFAULT_PARAMS: WhisperXParams = {
 };
 
 const WHISPER_MODELS = [
-    "tiny", "tiny.en", "base", "base.en", "small", "small.en",
-    "medium", "medium.en", "large", "large-v1", "large-v2", "large-v3"
+    "small", "small.en", "medium", "medium.en", "large-v3", "large-v3-turbo"
 ];
 
 const LANGUAGES = [
@@ -535,7 +534,13 @@ export const TranscriptionConfigDialog = memo(function TranscriptionConfigDialog
                             </SelectTrigger>
                             <SelectContent className={selectContentClassName}>
                                 <SelectItem value="whisper" className={selectItemClassName}>
-                                    Whisper
+                                    WhisperX
+                                </SelectItem>
+                                <SelectItem value="mlx_whisper" className={selectItemClassName}>
+                                    MLX Whisper (Apple Silicon)
+                                </SelectItem>
+                                <SelectItem value="whisper_cpp" className={selectItemClassName}>
+                                    Whisper.cpp (Cross-platform)
                                 </SelectItem>
                                 <SelectItem value="nvidia_parakeet" className={selectItemClassName}>
                                     NVIDIA Parakeet
@@ -594,6 +599,15 @@ export const TranscriptionConfigDialog = memo(function TranscriptionConfigDialog
                             validationMessage={validationMessage}
                             availableModels={availableModels}
                             onValidate={validateAPIKey}
+                        />
+                    )}
+
+                    {(params.model_family === "mlx_whisper" || params.model_family === "whisper_cpp") && (
+                        <MLXOrCppConfig
+                            params={params}
+                            updateParam={updateParam}
+                            isMultiTrack={isMultiTrack}
+                            family={params.model_family}
                         />
                     )}
 
@@ -1347,6 +1361,191 @@ function OpenAIConfig({
                 <InfoBanner variant="warning" title="Limited Features">
                     Word-level timestamps are only supported by whisper-1. Synchronized playback won't be available.
                 </InfoBanner>
+            )}
+        </div>
+    );
+}
+
+function MLXOrCppConfig({ params, updateParam, isMultiTrack, family }: ConfigProps & { family: string }) {
+    const isMLX = family === "mlx_whisper";
+    const [diarizationMode, setDiarizationMode] = useState<DiarizationMode>(() => getDiarizationMode(params));
+
+    const handleDiarizationModeChange = (mode: DiarizationMode) => {
+        setDiarizationMode(mode);
+        applyDiarizationMode(updateParam, mode);
+    };
+
+    return (
+        <div className="space-y-6">
+            <InfoBanner variant="info" title={isMLX ? "Apple Silicon Optimized" : "Cross-Platform Engine"}>
+                {isMLX
+                    ? "MLX Whisper uses Apple's Metal Performance Shaders for fast transcription on M1-M4 Macs. Speaker diarization runs separately."
+                    : "Whisper.cpp runs on any platform — Metal on Mac, CUDA on Linux/Windows, CPU fallback everywhere. Speaker diarization runs separately."
+                }
+            </InfoBanner>
+
+            <Section title="Model Settings">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <FormField label="Model Size" description="Whisper model size. Larger models are more accurate but slower.">
+                        <Select value={params.model || "large-v3-turbo"} onValueChange={(v) => updateParam('model', v)}>
+                            <SelectTrigger className={selectTriggerClassName}>
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className={selectContentClassName}>
+                                {WHISPER_MODELS.map((m) => (
+                                    <SelectItem key={m} value={m} className={selectItemClassName}>{m}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </FormField>
+
+                    <FormField label="Language" description="Source language (auto-detect if unset)">
+                        <Select value={params.language || "auto"} onValueChange={(v) => updateParam('language', v === "auto" ? undefined : v)}>
+                            <SelectTrigger className={selectTriggerClassName}>
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className={selectContentClassName}>
+                                {LANGUAGES.map((l) => (
+                                    <SelectItem key={l.value} value={l.value} className={selectItemClassName}>{l.label}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </FormField>
+
+                    <FormField label="Task" description="Transcribe in the original language or translate to English">
+                        <Select value={params.task} onValueChange={(v) => updateParam('task', v)}>
+                            <SelectTrigger className={selectTriggerClassName}>
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className={selectContentClassName}>
+                                <SelectItem value="transcribe" className={selectItemClassName}>Transcribe</SelectItem>
+                                <SelectItem value="translate" className={selectItemClassName}>Translate to English</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </FormField>
+                </div>
+            </Section>
+
+            {/* Speaker Diarization */}
+            {!isMultiTrack && (
+                <Section title="Speaker Diarization" description="Diarization runs via a separate model (Sortformer/PyAnnote) and is merged after transcription.">
+                    <div className="space-y-4">
+                        <div className="flex items-center gap-3">
+                            <Switch
+                                id="diarize-mlx-cpp"
+                                checked={params.diarize}
+                                onCheckedChange={(v) => updateParam('diarize', v)}
+                            />
+                            <label htmlFor="diarize-mlx-cpp" className="text-sm text-[var(--text-primary)] cursor-pointer">
+                                Enable speaker identification
+                            </label>
+                        </div>
+
+                        {params.diarize && (
+                            <div className="p-4 bg-[var(--bg-main)] rounded-xl border border-[var(--border-subtle)] space-y-4">
+                                <FormField label="Diarization Mode" description={PARAM_DESCRIPTIONS.diarize_model}>
+                                    <Select
+                                        value={diarizationMode}
+                                        onValueChange={(v) => handleDiarizationModeChange(v as DiarizationMode)}
+                                    >
+                                        <SelectTrigger className={selectTriggerClassName}>
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent className={selectContentClassName}>
+                                            <SelectItem value="local_no_token" className={selectItemClassName}>Local (no token)</SelectItem>
+                                            <SelectItem value="high_accuracy" className={selectItemClassName}>High-accuracy (your token)</SelectItem>
+                                            <SelectItem value="cloud_server_token" className={selectItemClassName}>Cloud (server token)</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </FormField>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <FormField label="Min Speakers" optional>
+                                        <Input
+                                            type="number"
+                                            min={1}
+                                            max={20}
+                                            placeholder="Auto"
+                                            value={params.min_speakers || ""}
+                                            onChange={(e) => updateParam('min_speakers', e.target.value ? parseInt(e.target.value) : undefined)}
+                                            className={inputClassName}
+                                        />
+                                    </FormField>
+                                    <FormField label="Max Speakers" optional>
+                                        <Input
+                                            type="number"
+                                            min={1}
+                                            max={20}
+                                            placeholder="Auto"
+                                            value={params.max_speakers || ""}
+                                            onChange={(e) => updateParam('max_speakers', e.target.value ? parseInt(e.target.value) : undefined)}
+                                            className={inputClassName}
+                                        />
+                                    </FormField>
+                                </div>
+
+                                {diarizationMode === "high_accuracy" && (
+                                    <>
+                                        <FormField label="Hugging Face Token" description={PARAM_DESCRIPTIONS.hf_token}>
+                                            <Input
+                                                type="password"
+                                                placeholder="hf_..."
+                                                value={params.hf_token || ""}
+                                                onChange={(e) => updateParam('hf_token', e.target.value || undefined)}
+                                                className={inputClassName}
+                                            />
+                                        </FormField>
+                                        <HuggingFaceTokenSetupGuide />
+                                    </>
+                                )}
+
+                                {(diarizationMode === "high_accuracy" || diarizationMode === "cloud_server_token") && (
+                                    <>
+                                        <div className="pt-3 border-t border-[var(--border-subtle)]">
+                                            <p className="text-xs text-[var(--text-tertiary)] mb-3">Voice Detection Tuning (for noisy/distant audio)</p>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <FormField label="VAD Onset" description={PARAM_DESCRIPTIONS.vad_onset}>
+                                                    <Input
+                                                        type="number"
+                                                        min={0.1}
+                                                        max={0.9}
+                                                        step={0.05}
+                                                        value={params.vad_onset}
+                                                        onChange={(e) => updateParam('vad_onset', parseFloat(e.target.value) || 0.5)}
+                                                        className={inputClassName}
+                                                    />
+                                                </FormField>
+                                                <FormField label="VAD Offset" description={PARAM_DESCRIPTIONS.vad_offset}>
+                                                    <Input
+                                                        type="number"
+                                                        min={0.1}
+                                                        max={0.9}
+                                                        step={0.05}
+                                                        value={params.vad_offset}
+                                                        onChange={(e) => updateParam('vad_offset', parseFloat(e.target.value) || 0.363)}
+                                                        className={inputClassName}
+                                                    />
+                                                </FormField>
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
+
+                                {diarizationMode === "cloud_server_token" && (
+                                    <p className="text-xs text-[var(--text-tertiary)]">
+                                        Uses server `HF_TOKEN` for Pyannote. If server token is missing, the backend falls back to NVIDIA Sortformer.
+                                    </p>
+                                )}
+
+                                {diarizationMode === "local_no_token" && (
+                                    <p className="text-xs text-[var(--text-tertiary)]">
+                                        NVIDIA Sortformer does not require a Hugging Face token.
+                                    </p>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </Section>
             )}
         </div>
     );

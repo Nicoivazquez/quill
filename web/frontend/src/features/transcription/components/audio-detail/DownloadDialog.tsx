@@ -19,14 +19,14 @@ interface DownloadDialogProps {
     audioId: string;
     isOpen: boolean;
     onClose: (open: boolean) => void;
-    initialFormat?: 'txt' | 'json';
+    initialFormat?: 'txt' | 'json' | 'md';
 }
 
 export function DownloadDialog({ audioId, isOpen, onClose, initialFormat = 'txt' }: DownloadDialogProps) {
     const { data: transcript } = useTranscript(audioId, true);
     const { data: audioFile } = useAudioDetail(audioId);
     const { data: speakerMappings = {} } = useSpeakerMappings(audioId, true);
-    const { downloadTXT, downloadJSON } = useTranscriptDownload();
+    const { downloadTXT, downloadJSON, downloadMarkdown } = useTranscriptDownload();
 
     const [includeSpeakerLabels, setIncludeSpeakerLabels] = useState(true);
     const [includeTimestamps, setIncludeTimestamps] = useState(true);
@@ -43,6 +43,8 @@ export function DownloadDialog({ audioId, isOpen, onClose, initialFormat = 'txt'
 
         if (initialFormat === 'txt') {
             downloadTXT(transcript, filenameBase, speakerMappings, { includeSpeakerLabels, includeTimestamps });
+        } else if (initialFormat === 'md') {
+            downloadMarkdown(transcript, filenameBase, speakerMappings, { includeSpeakerLabels, includeTimestamps });
         } else {
             downloadJSON(transcript, filenameBase, speakerMappings, { includeSpeakerLabels, includeTimestamps });
         }

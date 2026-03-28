@@ -223,6 +223,7 @@ function buildBackendEnv(port: number): NodeJS.ProcessEnv {
   const ffmpegPath = resolveBundledToolPath("ffmpeg");
   const ffprobePath = resolveBundledToolPath("ffprobe");
   const ytDlpPath = resolveBundledToolPath("yt-dlp");
+  const whisperCppPath = resolveBundledToolPath("whisper-cpp");
   const bundledLibPath = resolveBundledToolPath("lib");
   const bundledWhisperxZipPath = resolveBundledToolPath(BUNDLED_WHISPERX_ZIP_RELATIVE_PATH);
   const bundledWhisperxZipExists = fs.existsSync(bundledWhisperxZipPath);
@@ -252,7 +253,6 @@ function buildBackendEnv(port: number): NodeJS.ProcessEnv {
     QUILL_WHISPERX_ZIP_SHA256: whisperxZipSHA256,
     HF_HOME: path.join(cacheRoot, "huggingface"),
     HUGGINGFACE_HUB_CACHE: path.join(cacheRoot, "huggingface", "hub"),
-    TRANSFORMERS_CACHE: path.join(cacheRoot, "huggingface", "transformers"),
     XDG_CACHE_HOME: path.join(cacheRoot, "xdg"),
     TORCH_HOME: path.join(cacheRoot, "torch"),
     NEMO_HOME: path.join(cacheRoot, "nemo"),
@@ -277,6 +277,14 @@ function buildBackendEnv(port: number): NodeJS.ProcessEnv {
   }
   if (fs.existsSync(ytDlpPath)) {
     env.QUILL_YTDLP_BIN = ytDlpPath;
+  }
+  if (fs.existsSync(whisperCppPath)) {
+    env.QUILL_WHISPER_CPP_BIN = whisperCppPath;
+  }
+
+  // Pass through transcription backend selection (whisperx, mlx_whisper, whisper_cpp)
+  if (process.env.TRANSCRIPTION_BACKEND) {
+    env.TRANSCRIPTION_BACKEND = process.env.TRANSCRIPTION_BACKEND;
   }
 
   return env;

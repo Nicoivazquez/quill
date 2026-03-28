@@ -201,7 +201,9 @@ func (s *BundleSyncService) SyncFromFilesystem(ctx context.Context) (BundleSyncR
 func (s *BundleSyncService) importBundle(ctx context.Context, meta *BundleMetadata, bundle ScannedBundle) error {
 	audioPath := findAudioFile(bundle.Dir)
 	if audioPath == "" {
-		return fmt.Errorf("no audio file in %s", bundle.Dir)
+		// Audio-less bundles are allowed (audio may have been lost or never moved).
+		// Import with empty audio path so the transcript/notes/summaries are accessible.
+		logger.Warn("bundle sync: no audio file in bundle, importing anyway", "dir", bundle.Dir)
 	}
 
 	jsonPath := filepath.Join(bundle.Dir, "transcript.json")
@@ -311,6 +313,31 @@ func (s *BundleSyncService) importBundle(ctx context.Context, meta *BundleMetada
 
 func (s *BundleSyncService) updateFromMetadata(ctx context.Context, job *models.TranscriptionJob, meta *BundleMetadata, bundle ScannedBundle) error {
 	changed := false
+
+	// Path reconciliation: if the bundle moved on disk (e.g. manual rename/move),
+	// recompute all paths to match the actual directory.
+	if job.ArtifactDir != nil && *job.ArtifactDir != "" && filepath.Clean(*job.ArtifactDir) != filepath.Clean(bundle.Dir) {
+		oldDir := *job.ArtifactDir
+		newDir := bundle.Dir
+		job.ArtifactDir = &newDir
+		job.AudioPath = rebasePath(job.AudioPath, oldDir, newDir)
+		if job.TranscriptJSONPath != nil {
+			p := rebasePath(*job.TranscriptJSONPath, oldDir, newDir)
+			job.TranscriptJSONPath = &p
+		}
+		if job.TranscriptMarkdownPath != nil {
+			p := rebasePath(*job.TranscriptMarkdownPath, oldDir, newDir)
+			job.TranscriptMarkdownPath = &p
+		}
+		// Also discover audio if path doesn't resolve
+		if _, err := os.Stat(job.AudioPath); err != nil {
+			if found := findAudioFile(newDir); found != "" {
+				job.AudioPath = found
+			}
+		}
+		changed = true
+		logger.Info("bundle sync: reconciled paths", "id", meta.ID, "old_dir", oldDir, "new_dir", newDir)
+	}
 
 	if meta.Title != "" && (job.Title == nil || *job.Title != meta.Title) {
 		job.Title = &meta.Title
@@ -424,6 +451,22 @@ func (s *BundleSyncService) MarkSelfWrite(metadataPath string, mtimeNS int64) {
 	s.mu.Lock()
 	s.selfWrite[normalized] = mtimeNS
 	s.mu.Unlock()
+}
+
+// rebasePath replaces oldDir prefix with newDir in path.
+// If path doesn't start with oldDir, returns the basename under newDir.
+func rebasePath(path, oldDir, newDir string) string {
+	cleanPath := filepath.Clean(path)
+	cleanOld := filepath.Clean(oldDir)
+	if strings.HasPrefix(cleanPath, cleanOld+string(filepath.Separator)) {
+		rel := strings.TrimPrefix(cleanPath, cleanOld+string(filepath.Separator))
+		return filepath.Join(newDir, rel)
+	}
+	if cleanPath == cleanOld {
+		return newDir
+	}
+	// Fallback: use the filename under the new dir
+	return filepath.Join(newDir, filepath.Base(path))
 }
 
 func (s *BundleSyncService) isSelfWrite(metadataPath string, mtimeNS int64) bool {

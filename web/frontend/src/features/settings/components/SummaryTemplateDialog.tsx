@@ -16,6 +16,7 @@ export interface SummaryTemplate {
   model?: string;
   prompt: string;
   include_speaker_info?: boolean;
+  is_default?: boolean;
   created_at?: string;
   updated_at?: string;
 }

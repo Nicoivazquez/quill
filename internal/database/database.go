@@ -136,6 +136,7 @@ func seedDefaultSummaryTemplate(db *gorm.DB) error {
 		Description:        &desc,
 		Prompt:             defaultMeetingNotesPrompt,
 		IncludeSpeakerInfo: true,
+		IsDefault:          true,
 	}
 	return db.Create(&template).Error
 }

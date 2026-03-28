@@ -142,5 +142,44 @@ export function useTranscriptDownload() {
         downloadFile(JSON.stringify(jsonData, null, 2), `${filenameBase}.json`, 'application/json');
     };
 
-    return { downloadSRT, downloadTXT, downloadJSON };
+    const downloadMarkdown = (
+        transcript: Transcript,
+        filenameBase: string,
+        speakerMappings: Record<string, string>,
+        options: { includeTimestamps: boolean; includeSpeakerLabels: boolean }
+    ) => {
+        if (!transcript) return;
+
+        let content = `# ${filenameBase}\n\n`;
+
+        if (!options.includeSpeakerLabels && !options.includeTimestamps) {
+            content += transcript.text;
+        } else if (transcript.segments) {
+            let lastSpeaker = '';
+            transcript.segments.forEach((segment) => {
+                const speaker = segment.speaker
+                    ? getDisplaySpeakerName(segment.speaker, speakerMappings)
+                    : '';
+
+                if (options.includeSpeakerLabels && speaker && speaker !== lastSpeaker) {
+                    content += `\n**${speaker}**`;
+                    if (options.includeTimestamps) {
+                        content += ` _[${formatTimestamp(segment.start)}]_`;
+                    }
+                    content += '\n\n';
+                    lastSpeaker = speaker;
+                } else if (options.includeTimestamps && (!options.includeSpeakerLabels || !speaker)) {
+                    content += `_[${formatTimestamp(segment.start)}]_ `;
+                }
+
+                content += segment.text.trim() + ' ';
+            });
+        } else {
+            content += transcript.text;
+        }
+
+        downloadFile(content.trim(), `${filenameBase}.md`, 'text/markdown');
+    };
+
+    return { downloadSRT, downloadTXT, downloadJSON, downloadMarkdown };
 }

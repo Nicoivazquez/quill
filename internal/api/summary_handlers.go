@@ -16,6 +16,7 @@ type SummaryTemplateRequest struct {
 	Model              string  `json:"model" binding:"required,min=1"`
 	Prompt             string  `json:"prompt" binding:"required,min=1"`
 	IncludeSpeakerInfo *bool   `json:"include_speaker_info"`
+	IsDefault          *bool   `json:"is_default"`
 }
 
 type SummarySettingsRequest struct {
@@ -77,9 +78,18 @@ func (h *Handler) CreateSummaryTemplate(c *gin.Context) {
 	if req.IncludeSpeakerInfo != nil {
 		item.IncludeSpeakerInfo = *req.IncludeSpeakerInfo
 	}
+	if req.IsDefault != nil {
+		item.IsDefault = *req.IsDefault
+	}
 	if err := h.summaryRepo.Create(c.Request.Context(), item); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create template"})
 		return
+	}
+	if item.IsDefault {
+		if err := h.summaryRepo.SetDefaultTemplate(c.Request.Context(), item.ID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to set default template"})
+			return
+		}
 	}
 	c.JSON(http.StatusCreated, item)
 }
@@ -142,10 +152,19 @@ func (h *Handler) UpdateSummaryTemplate(c *gin.Context) {
 	if req.IncludeSpeakerInfo != nil {
 		item.IncludeSpeakerInfo = *req.IncludeSpeakerInfo
 	}
+	if req.IsDefault != nil {
+		item.IsDefault = *req.IsDefault
+	}
 	item.UpdatedAt = time.Now()
 	if err := h.summaryRepo.Update(c.Request.Context(), item); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update template"})
 		return
+	}
+	if item.IsDefault {
+		if err := h.summaryRepo.SetDefaultTemplate(c.Request.Context(), item.ID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to set default template"})
+			return
+		}
 	}
 	c.JSON(http.StatusOK, item)
 }
@@ -242,4 +261,31 @@ func (h *Handler) SaveSummarySettings(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, SummarySettingsResponse{DefaultModel: s.DefaultModel})
+}
+
+// SetDefaultSummaryTemplate marks a template as the default
+// @Summary Set default summary template
+// @Description Set a template as the default for auto-summarization
+// @Tags summaries
+// @Produce json
+// @Param id path string true "Template ID"
+// @Success 200 {object} models.SummaryTemplate
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /api/v1/summaries/{id}/default [post]
+func (h *Handler) SetDefaultSummaryTemplate(c *gin.Context) {
+	id := c.Param("id")
+	item, err := h.summaryRepo.FindByID(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Template not found"})
+		return
+	}
+	if err := h.summaryRepo.SetDefaultTemplate(c.Request.Context(), id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to set default template"})
+		return
+	}
+	item.IsDefault = true
+	c.JSON(http.StatusOK, item)
 }

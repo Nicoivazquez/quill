@@ -844,7 +844,7 @@ func (h *Handler) SubmitJob(c *gin.Context) {
 		diarize = getFormBoolWithDefault(c, "diarize", false)
 	}
 	params := models.WhisperXParams{
-		Model:       getFormValueWithDefault(c, "model", "base"),
+		Model:       getFormValueWithDefault(c, "model", "small"),
 		BatchSize:   getFormIntWithDefault(c, "batch_size", 16),
 		ComputeType: getFormValueWithDefault(c, "compute_type", "int8"),
 		Device:      getFormValueWithDefault(c, "device", "cpu"),
@@ -1084,6 +1084,15 @@ func (h *Handler) ListTranscriptionJobs(c *gin.Context) {
 		return
 	}
 
+	// Compute HasAudio for each job
+	for i := range jobs {
+		if jobs[i].AudioPath != "" {
+			if _, statErr := os.Stat(jobs[i].AudioPath); statErr == nil {
+				jobs[i].HasAudio = true
+			}
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"jobs": jobs,
 		"pagination": gin.H{
@@ -1138,6 +1147,13 @@ func (h *Handler) GetTranscriptionJob(c *gin.Context) {
 		return
 	}
 
+	// Compute HasAudio
+	if job.AudioPath != "" {
+		if _, statErr := os.Stat(job.AudioPath); statErr == nil {
+			job.HasAudio = true
+		}
+	}
+
 	c.JSON(http.StatusOK, job)
 }
 
@@ -1176,6 +1192,11 @@ func (h *Handler) StartTranscription(c *gin.Context) {
 	job.Transcript = nil
 	job.Summary = nil
 	job.ErrorMessage = nil
+
+	// Clear stale speaker mappings so re-transcription starts fresh
+	if err := h.speakerMappingRepo.DeleteByJobID(c.Request.Context(), jobID); err != nil {
+		logger.Warn("failed to clear speaker mappings for re-transcription", "job_id", jobID, "error", err)
+	}
 
 	// Save updated job
 	if err := h.jobRepo.Update(c.Request.Context(), job); err != nil {
@@ -2196,38 +2217,29 @@ func (h *Handler) GetAudioFile(c *gin.Context) {
 		return
 	}
 
-	// Debug logging
-	fmt.Printf("DEBUG: GetAudioFile for job %s\n", jobID)
-	fmt.Printf("DEBUG: Job status: %s\n", job.Status)
-	fmt.Printf("DEBUG: Audio path: '%s'\n", job.AudioPath)
+	logger.Debug("GetAudioFile", "job_id", jobID, "status", job.Status, "audio_path", job.AudioPath)
 
 	// For multi-track jobs, prefer merged audio if available
 	audioPath := job.AudioPath
 	if job.IsMultiTrack && job.MergedAudioPath != nil && *job.MergedAudioPath != "" {
-		// Check if merged audio file exists
 		if _, err := os.Stat(*job.MergedAudioPath); err == nil {
 			audioPath = *job.MergedAudioPath
-			fmt.Printf("DEBUG: Using merged audio: %s\n", audioPath)
+			logger.Debug("using merged audio", "path", audioPath)
 		} else {
-			fmt.Printf("DEBUG: Merged audio not found, falling back to original: %s\n", job.AudioPath)
+			logger.Debug("merged audio not found, falling back", "original", job.AudioPath)
 		}
 	}
 
-	// Check if audio file exists
 	if audioPath == "" {
-		fmt.Printf("DEBUG: Audio path is empty\n")
 		c.JSON(http.StatusNotFound, gin.H{"error": "Audio file path not found"})
 		return
 	}
 
-	// Check if file exists on filesystem
 	if _, err := os.Stat(audioPath); os.IsNotExist(err) {
-		fmt.Printf("DEBUG: Audio file does not exist on disk: %s\n", audioPath)
+		logger.Debug("audio file missing on disk", "path", audioPath)
 		c.JSON(http.StatusNotFound, gin.H{"error": "Audio file not found on disk"})
 		return
 	}
-
-	fmt.Printf("DEBUG: Audio file exists, serving: %s\n", audioPath)
 
 	// Set appropriate content type based on file extension
 	ext := filepath.Ext(job.AudioPath)

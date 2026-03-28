@@ -130,6 +130,56 @@ func buildRenameResult(dir string) (BundleRenameResult, error) {
 	return result, nil
 }
 
+// CopyAudioToBundle copies an audio file into the bundle directory as "audio.{ext}".
+// Unlike MoveAudioToBundle, the source file is preserved.
+// Returns the new path of the audio file in the bundle.
+func CopyAudioToBundle(audioPath, bundleDir string) (string, error) {
+	if _, err := os.Stat(audioPath); err != nil {
+		return "", fmt.Errorf("source audio not found: %w", err)
+	}
+
+	ext := filepath.Ext(audioPath)
+	targetPath := filepath.Join(bundleDir, "audio"+ext)
+
+	// If already at the target location, no-op
+	absAudio, _ := filepath.Abs(audioPath)
+	absTarget, _ := filepath.Abs(targetPath)
+	if absAudio == absTarget {
+		return audioPath, nil
+	}
+
+	if err := os.MkdirAll(bundleDir, 0755); err != nil {
+		return "", fmt.Errorf("creating bundle dir: %w", err)
+	}
+
+	if err := copyFile(audioPath, targetPath); err != nil {
+		return "", fmt.Errorf("copying audio to bundle: %w", err)
+	}
+
+	return targetPath, nil
+}
+
+// VerifyAudioInBundle checks that an audio.* file exists in the bundle directory.
+func VerifyAudioInBundle(bundleDir string) error {
+	entries, err := os.ReadDir(bundleDir)
+	if err != nil {
+		return fmt.Errorf("reading bundle dir: %w", err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "audio.") {
+			info, infoErr := e.Info()
+			if infoErr != nil {
+				return fmt.Errorf("stat audio file: %w", infoErr)
+			}
+			if info.Size() == 0 {
+				return fmt.Errorf("audio file is empty: %s", e.Name())
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("no audio file found in bundle %s", bundleDir)
+}
+
 func copyFile(src, dst string) error {
 	in, err := os.Open(src)
 	if err != nil {

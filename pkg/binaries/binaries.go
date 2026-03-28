@@ -28,3 +28,8 @@ func FFprobe() string {
 func YtDLP() string {
 	return resolve("QUILL_YTDLP_BIN", "yt-dlp")
 }
+
+// WhisperCpp returns the configured whisper.cpp executable path.
+func WhisperCpp() string {
+	return resolve("QUILL_WHISPER_CPP_BIN", "whisper-cpp")
+}

@@ -213,7 +213,6 @@ func configureRuntimeCacheEnv(envRoot string) {
 	cacheRoot := filepath.Join(envRoot, "cache")
 	setEnv("HF_HOME", filepath.Join(cacheRoot, "huggingface"))
 	setEnv("HUGGINGFACE_HUB_CACHE", filepath.Join(cacheRoot, "huggingface", "hub"))
-	setEnv("TRANSFORMERS_CACHE", filepath.Join(cacheRoot, "huggingface", "transformers"))
 	setEnv("XDG_CACHE_HOME", filepath.Join(cacheRoot, "xdg"))
 	setEnv("TORCH_HOME", filepath.Join(cacheRoot, "torch"))
 	setEnv("NEMO_HOME", filepath.Join(cacheRoot, "nemo"))

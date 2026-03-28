@@ -213,7 +213,7 @@ func main() {
 	}
 	defer bundleManager.Stop()
 
-	runtimeWarmup := transcription.NewDesktopRuntimeWarmupManager(deferModelInit, "small")
+	runtimeWarmup := transcription.NewDesktopRuntimeWarmupManagerWithBackend(deferModelInit, "small", cfg.TranscriptionBackend)
 	defer runtimeWarmup.Stop()
 
 	// Initialize multi-track processor
@@ -369,9 +369,17 @@ func registerAdapters(cfg *config.Config) {
 	// Dedicated environment path for Voxtral (Mistral AI model)
 	voxtralEnvPath := filepath.Join(cfg.WhisperXEnv, "voxtral")
 
+	// Dedicated environment paths for new adapters
+	mlxWhisperEnvPath := filepath.Join(cfg.WhisperXEnv, "mlx-whisper")
+	whisperCppEnvPath := filepath.Join(cfg.WhisperXEnv, "whisper-cpp")
+
 	// Register transcription adapters
 	registry.RegisterTranscriptionAdapter("whisperx",
 		adapters.NewWhisperXAdapter(cfg.WhisperXEnv))
+	registry.RegisterTranscriptionAdapter("mlx_whisper",
+		adapters.NewMLXWhisperAdapter(mlxWhisperEnvPath))
+	registry.RegisterTranscriptionAdapter("whisper_cpp",
+		adapters.NewWhisperCppAdapter(whisperCppEnvPath))
 	registry.RegisterTranscriptionAdapter("parakeet",
 		adapters.NewParakeetAdapter(nvidiaEnvPath))
 	registry.RegisterTranscriptionAdapter("canary",

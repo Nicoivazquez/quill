@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { Trash2, FileText } from "lucide-react";
+import { Trash2, FileText, Star } from "lucide-react";
 import type { SummaryTemplate } from "./SummaryTemplateDialog";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 
@@ -49,6 +49,16 @@ export function SummaryTemplatesTable({ onEdit, refreshTrigger = 0, disabled = f
     }
   };
 
+  const handleSetDefault = async (id: string) => {
+    setOpenPop(prev => ({ ...prev, [id]: false }));
+    try {
+      const res = await fetch(`/api/v1/summaries/${id}/default`, { method: 'POST', headers: { ...getAuthHeaders() } });
+      if (res.ok) {
+        setItems(prev => prev.map(i => ({ ...i, is_default: i.id === id })));
+      }
+    } catch { /* ignore */ }
+  };
+
   const formatDate = (d?: string) => d ? new Date(d).toLocaleString() : '';
 
   if (loading) {
@@ -85,6 +95,11 @@ export function SummaryTemplatesTable({ onEdit, refreshTrigger = 0, disabled = f
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-3">
                   <h3 className="text-sm font-medium text-[var(--text-primary)] truncate">{tpl.name}</h3>
+                  {tpl.is_default && (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-[var(--brand-light)] text-[var(--brand-solid)] whitespace-nowrap">
+                      <Star className="h-2.5 w-2.5 fill-current" /> Default
+                    </span>
+                  )}
                   <span className="text-xs text-[var(--text-tertiary)] whitespace-nowrap">{formatDate(tpl.created_at)}</span>
                 </div>
                 {tpl.description && (
@@ -100,7 +115,12 @@ export function SummaryTemplatesTable({ onEdit, refreshTrigger = 0, disabled = f
                       ⋮
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-32 bg-[var(--bg-card)] border-[var(--border-subtle)] p-1 text-[var(--text-primary)]">
+                  <PopoverContent className="w-40 bg-[var(--bg-card)] border-[var(--border-subtle)] p-1 text-[var(--text-primary)]">
+                    {!tpl.is_default && (
+                      <Button variant="ghost" size="sm" className="w-full justify-start h-7 text-xs hover:bg-[var(--brand-light)] text-[var(--text-primary)]" onClick={() => handleSetDefault(tpl.id!)}>
+                        <Star className="mr-2 h-3 w-3" /> Set as Default
+                      </Button>
+                    )}
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
                         <Button variant="ghost" size="sm" className="w-full justify-start h-7 text-xs hover:bg-[var(--error)]/10 text-[var(--error)] hover:text-[var(--error)]" disabled={deleting.has(tpl.id!)}>

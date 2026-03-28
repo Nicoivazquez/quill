@@ -175,6 +175,9 @@ func (h *Handler) UpdateSpeakerMappings(c *gin.Context) {
 	// Best-effort auto-publish to Obsidian with updated speaker names.
 	AutoPublishToObsidian(job)
 
+	// Best-effort: regenerate summaries that include speaker info.
+	h.regenerateSpeakerSummaries(job, updatedMappings)
+
 	// Convert to response format
 	response := make([]SpeakerMappingResponse, len(updatedMappings))
 	for i, mapping := range updatedMappings {
@@ -267,6 +270,9 @@ func (h *Handler) PromoteSpeakerSuggestion(c *gin.Context) {
 
 	// Best-effort auto-publish to Obsidian with updated speaker names.
 	AutoPublishToObsidian(job)
+
+	// Best-effort: regenerate summaries that include speaker info.
+	h.regenerateSpeakerSummaries(job, allMappings)
 
 	// Build response with the single promoted mapping.
 	resp := SpeakerMappingsUpdateResponse{

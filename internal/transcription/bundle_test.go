@@ -347,6 +347,128 @@ func TestRenameBundleDir_DiscoverAudioExtension(t *testing.T) {
 	}
 }
 
+// ---------- CopyAudioToBundle tests ----------
+
+func TestCopyAudioToBundle_CopiesFile(t *testing.T) {
+	srcDir := t.TempDir()
+	bundleDir := t.TempDir()
+
+	content := []byte("audio data for copy test")
+	srcPath := filepath.Join(srcDir, "recording.mp3")
+	if err := os.WriteFile(srcPath, content, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	newPath, err := CopyAudioToBundle(srcPath, bundleDir)
+	if err != nil {
+		t.Fatalf("CopyAudioToBundle error: %v", err)
+	}
+
+	expectedPath := filepath.Join(bundleDir, "audio.mp3")
+	if newPath != expectedPath {
+		t.Errorf("new path = %q, want %q", newPath, expectedPath)
+	}
+
+	// File should exist at new location
+	got, err := os.ReadFile(newPath)
+	if err != nil {
+		t.Fatalf("reading copied file: %v", err)
+	}
+	if string(got) != string(content) {
+		t.Error("content mismatch after copy")
+	}
+
+	// Source file should still exist (copy, not move)
+	if _, err := os.Stat(srcPath); err != nil {
+		t.Errorf("source file should still exist after copy: %v", err)
+	}
+}
+
+func TestCopyAudioToBundle_SourceNotExist(t *testing.T) {
+	bundleDir := t.TempDir()
+	_, err := CopyAudioToBundle("/nonexistent/audio.mp3", bundleDir)
+	if err == nil {
+		t.Fatal("expected error for nonexistent source, got nil")
+	}
+}
+
+func TestCopyAudioToBundle_CreatesBundleDir(t *testing.T) {
+	srcDir := t.TempDir()
+	bundleDir := filepath.Join(t.TempDir(), "nested", "bundle")
+
+	srcPath := filepath.Join(srcDir, "test.wav")
+	if err := os.WriteFile(srcPath, []byte("wav data"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	newPath, err := CopyAudioToBundle(srcPath, bundleDir)
+	if err != nil {
+		t.Fatalf("CopyAudioToBundle error: %v", err)
+	}
+
+	if _, err := os.Stat(newPath); err != nil {
+		t.Errorf("file not found at new path after dir creation: %v", err)
+	}
+}
+
+func TestCopyAudioToBundle_AlreadyInBundle(t *testing.T) {
+	bundleDir := t.TempDir()
+	srcPath := filepath.Join(bundleDir, "audio.mp3")
+	if err := os.WriteFile(srcPath, []byte("data"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	newPath, err := CopyAudioToBundle(srcPath, bundleDir)
+	if err != nil {
+		t.Fatalf("CopyAudioToBundle error: %v", err)
+	}
+	if newPath != srcPath {
+		t.Errorf("expected same path when already in bundle, got %q", newPath)
+	}
+}
+
+// ---------- VerifyAudioInBundle tests ----------
+
+func TestVerifyAudioInBundle_Found(t *testing.T) {
+	bundleDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bundleDir, "audio.mp3"), []byte("audio"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := VerifyAudioInBundle(bundleDir); err != nil {
+		t.Errorf("expected no error, got: %v", err)
+	}
+}
+
+func TestVerifyAudioInBundle_NotFound(t *testing.T) {
+	bundleDir := t.TempDir()
+	// Write a non-audio file
+	if err := os.WriteFile(filepath.Join(bundleDir, "transcript.json"), []byte("{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := VerifyAudioInBundle(bundleDir); err == nil {
+		t.Fatal("expected error when no audio file, got nil")
+	}
+}
+
+func TestVerifyAudioInBundle_EmptyFile(t *testing.T) {
+	bundleDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bundleDir, "audio.wav"), []byte(""), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := VerifyAudioInBundle(bundleDir); err == nil {
+		t.Fatal("expected error for empty audio file, got nil")
+	}
+}
+
+func TestVerifyAudioInBundle_BadDir(t *testing.T) {
+	if err := VerifyAudioInBundle("/nonexistent/dir"); err == nil {
+		t.Fatal("expected error for nonexistent dir, got nil")
+	}
+}
+
 func TestMoveAudioToBundle_AlreadyInBundle(t *testing.T) {
 	bundleDir := t.TempDir()
 

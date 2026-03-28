@@ -619,7 +619,17 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 				return;
 			}
 			const transcriptData = await transcriptRes.json();
-			const transcriptText = transcriptData?.transcript_text || "";
+			// The API returns `transcript` as a JSON string — parse it to extract plain text
+			let transcriptText = "";
+			if (transcriptData?.transcript) {
+				try {
+					const parsed = JSON.parse(transcriptData.transcript);
+					transcriptText = parsed?.text || "";
+				} catch {
+					// If it's not JSON, use it as-is
+					transcriptText = transcriptData.transcript;
+				}
+			}
 			if (!transcriptText.trim()) {
 				toast({ title: "No transcript text", description: "Transcription has no text to summarize." });
 				return;

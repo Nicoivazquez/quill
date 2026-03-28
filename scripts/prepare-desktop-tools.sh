@@ -395,6 +395,9 @@ ffprobe_source="$(resolve_tool_path "ffprobe" "QUILL_FFPROBE_SOURCE")"
 ytdlp_source="$(resolve_tool_path "yt-dlp" "QUILL_YTDLP_SOURCE")"
 whisperx_source="$(resolve_whisperx_archive)"
 
+# whisper-cpp is optional — only bundled if available on PATH or explicitly set
+whisper_cpp_source="${QUILL_WHISPER_CPP_SOURCE:-$(command -v whisper-cpp || true)}"
+
 verify_checksum "uv" "$uv_source" "${QUILL_UV_SHA256:-}"
 verify_checksum "ffmpeg" "$ffmpeg_source" "${QUILL_FFMPEG_SHA256:-}"
 verify_checksum "ffprobe" "$ffprobe_source" "${QUILL_FFPROBE_SHA256:-}"
@@ -408,6 +411,13 @@ if [[ "$ytdlp_source" != "$OUT_DIR/yt-dlp" ]]; then
   bundle_tool "yt-dlp" "$ytdlp_source"
 fi
 bundle_whisperx_archive "$whisperx_source"
+
+if [[ -n "$whisper_cpp_source" && -f "$whisper_cpp_source" ]]; then
+  verify_checksum "whisper-cpp" "$whisper_cpp_source" "${QUILL_WHISPER_CPP_SHA256:-}"
+  bundle_tool "whisper-cpp" "$whisper_cpp_source"
+else
+  echo "whisper-cpp not found — skipping (set QUILL_WHISPER_CPP_SOURCE to bundle it)"
+fi
 
 bundle_macos_ffmpeg_runtime
 codesign_macos_ffmpeg_runtime

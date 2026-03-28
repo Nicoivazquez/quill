@@ -14,6 +14,7 @@ import { useIsDesktop } from "@/hooks/useIsDesktop";
 import { X, StickyNote } from "lucide-react";
 import { computeWordOffsets } from "@/features/transcription/hooks/useKaraokeHighlight";
 import type { Transcript } from "@/features/transcription/hooks/useAudioDetail";
+import type { TranscriptMode } from "@/components/transcript/TranscriptView";
 import { cn } from "@/lib/utils";
 
 interface TranscriptSectionProps {
@@ -25,7 +26,7 @@ interface TranscriptSectionProps {
     // Lifted State Props
     transcript: Transcript | undefined;
     speakerMappings: Record<string, string>;
-    transcriptMode: 'compact' | 'expanded';
+    transcriptMode: TranscriptMode;
     autoScrollEnabled: boolean;
     notesOpen: boolean;
     setNotesOpen: (open: boolean) => void;

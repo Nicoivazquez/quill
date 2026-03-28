@@ -5,7 +5,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
-import { Loader2, Users, Save, X, Sparkles, Check, UserPlus } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Loader2, Users, Save, X, Sparkles, Check, UserPlus, RefreshCw, ChevronDown } from 'lucide-react';
 import { useToast } from '@/components/ui/toast';
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { useQueryClient } from "@tanstack/react-query";
@@ -25,6 +32,37 @@ interface SpeakerRenameDialogProps {
 }
 
 const MAX_CONTACT_SUGGESTIONS = 8;
+
+const MODEL_FAMILIES = [
+  { value: "mlx_whisper", label: "MLX Whisper (Apple Silicon)" },
+  { value: "whisper", label: "WhisperX" },
+  { value: "whisper_cpp", label: "Whisper.cpp" },
+  { value: "nvidia_parakeet", label: "NVIDIA Parakeet" },
+  { value: "nvidia_canary", label: "NVIDIA Canary" },
+  { value: "mistral_voxtral", label: "Mistral Voxtral" },
+  { value: "openai", label: "OpenAI (Cloud)" },
+] as const;
+
+const WHISPER_MODELS = ["small", "small.en", "medium", "medium.en", "large-v3", "large-v3-turbo"];
+
+function getModelsForFamily(family: string): string[] {
+  switch (family) {
+    case "whisper":
+    case "mlx_whisper":
+    case "whisper_cpp":
+      return WHISPER_MODELS;
+    case "nvidia_parakeet":
+      return ["parakeet-ctc-1.1b", "parakeet-tdt-1.1b"];
+    case "nvidia_canary":
+      return ["canary-1b"];
+    case "mistral_voxtral":
+      return ["mistral-voxtral-latest"];
+    case "openai":
+      return ["whisper-1"];
+    default:
+      return WHISPER_MODELS;
+  }
+}
 
 function normalize(value: string | null | undefined): string {
   return (value ?? "").trim().toLowerCase();
@@ -48,6 +86,11 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
   const [activeSpeaker, setActiveSpeaker] = useState<string | null>(null);
   const [highlightedSuggestionIndex, setHighlightedSuggestionIndex] = useState(0);
   const [promotedSpeakers, setPromotedSpeakers] = useState<Set<string>>(new Set());
+  const [retranscribeOpen, setRetranscribeOpen] = useState(false);
+  const [retranscribeFamily, setRetranscribeFamily] = useState("mlx_whisper");
+  const [retranscribeModel, setRetranscribeModel] = useState("large-v3-turbo");
+  const [retranscribeNumSpeakers, setRetranscribeNumSpeakers] = useState("");
+  const [isRetranscribing, setIsRetranscribing] = useState(false);
   const promoteMutation = usePromoteSpeakerSuggestion();
   const createContactMutation = useCreateContact();
   const contactsQuery = useContacts("", open);
@@ -334,6 +377,45 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
     }
   };
 
+  const handleRetranscribe = async () => {
+    setIsRetranscribing(true);
+    try {
+      const numSpeakers = retranscribeNumSpeakers ? parseInt(retranscribeNumSpeakers, 10) : undefined;
+      const params: Record<string, unknown> = {
+        model_family: retranscribeFamily,
+        model: retranscribeModel,
+        diarize: true,
+        diarize_model: "nvidia_sortformer",
+      };
+      if (numSpeakers && numSpeakers > 0) {
+        params.min_speakers = numSpeakers;
+        params.max_speakers = numSpeakers;
+      }
+
+      const response = await fetch(`/api/v1/transcription/${transcriptionId}/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify(params),
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || `Re-transcription failed: ${response.statusText}`);
+      }
+
+      // Invalidate queries so polling picks up the new processing status
+      queryClient.invalidateQueries({ queryKey: ["audio", transcriptionId] });
+      queryClient.invalidateQueries({ queryKey: ["audioFiles"] });
+
+      toast({ title: "Re-transcription started", description: "The audio is being re-transcribed with updated settings." });
+      onOpenChange(false);
+    } catch (err) {
+      toast({ title: "Re-transcription failed", description: err instanceof Error ? err.message : "Unknown error" });
+    } finally {
+      setIsRetranscribing(false);
+    }
+  };
+
   const speakers = Object.keys(speakerMappings).sort();
 
   // A speaker is "locked" if it was auto-assigned or previously promoted
@@ -349,6 +431,8 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
       setHighlightedSuggestionIndex(0);
       setPromotedSpeakers(new Set());
       setMappingDetails(new Map());
+      setRetranscribeOpen(false);
+      setRetranscribeNumSpeakers("");
     }
   }, [open]);
 
@@ -572,6 +656,96 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
                     </div>
                   );
                 })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Re-transcribe Section */}
+        {!isLoading && speakers.length > 0 && (
+          <div className="border-t border-[var(--border-subtle)] pt-3">
+            <button
+              type="button"
+              onClick={() => setRetranscribeOpen(!retranscribeOpen)}
+              className="flex items-center gap-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors w-full"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              <span>Re-transcribe with different settings</span>
+              <ChevronDown className={`h-3.5 w-3.5 ml-auto transition-transform ${retranscribeOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {retranscribeOpen && (
+              <div className="mt-3 space-y-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-[var(--text-tertiary)]">Model</Label>
+                  <Select
+                    value={retranscribeFamily}
+                    onValueChange={(v) => {
+                      setRetranscribeFamily(v);
+                      const models = getModelsForFamily(v);
+                      setRetranscribeModel(models[models.length - 1]);
+                    }}
+                  >
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MODEL_FAMILIES.map((f) => (
+                        <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-[var(--text-tertiary)]">Model Size</Label>
+                  <Select value={retranscribeModel} onValueChange={setRetranscribeModel}>
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {getModelsForFamily(retranscribeFamily).map((m) => (
+                        <SelectItem key={m} value={m}>{m}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-[var(--text-tertiary)]">Number of Speakers (optional)</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={20}
+                    placeholder="Auto-detect"
+                    value={retranscribeNumSpeakers}
+                    onChange={(e) => setRetranscribeNumSpeakers(e.target.value)}
+                    className="h-8 text-sm"
+                  />
+                  <p className="text-xs text-[var(--text-tertiary)]">
+                    Set the exact number of speakers for more accurate diarization.
+                  </p>
+                </div>
+
+                <Button
+                  onClick={handleRetranscribe}
+                  disabled={isRetranscribing}
+                  variant="outline"
+                  className="w-full"
+                  size="sm"
+                >
+                  {isRetranscribing ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                      Starting...
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="h-4 w-4 mr-1.5" />
+                      Re-transcribe
+                    </>
+                  )}
+                </Button>
               </div>
             )}
           </div>

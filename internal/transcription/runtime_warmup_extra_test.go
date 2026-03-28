@@ -356,6 +356,94 @@ func TestRuntimeWarmupManager_CancellationBetweenSteps(t *testing.T) {
 	}
 }
 
+// TestBuildTranscriptionWarmupSteps_WhisperX verifies the default WhisperX backend
+// produces the expected step IDs and titles.
+func TestBuildTranscriptionWarmupSteps_WhisperX(t *testing.T) {
+	steps := buildTranscriptionWarmupSteps(ModelWhisperX, "small")
+	if len(steps) != 2 {
+		t.Fatalf("expected 2 steps for whisperx, got %d", len(steps))
+	}
+	if steps[0].ID != "whisperx-runtime" {
+		t.Errorf("step[0].ID = %q, want whisperx-runtime", steps[0].ID)
+	}
+	if steps[1].ID != "whisperx-model" {
+		t.Errorf("step[1].ID = %q, want whisperx-model", steps[1].ID)
+	}
+	for _, s := range steps {
+		if !s.Required {
+			t.Errorf("step %q must be required", s.ID)
+		}
+	}
+}
+
+// TestBuildTranscriptionWarmupSteps_MLXWhisper verifies the MLX Whisper backend steps.
+func TestBuildTranscriptionWarmupSteps_MLXWhisper(t *testing.T) {
+	steps := buildTranscriptionWarmupSteps(ModelMLXWhisper, "large-v3-turbo")
+	if len(steps) != 2 {
+		t.Fatalf("expected 2 steps for mlx_whisper, got %d", len(steps))
+	}
+	if steps[0].ID != "mlx-whisper-runtime" {
+		t.Errorf("step[0].ID = %q, want mlx-whisper-runtime", steps[0].ID)
+	}
+	if steps[1].ID != "mlx-whisper-model" {
+		t.Errorf("step[1].ID = %q, want mlx-whisper-model", steps[1].ID)
+	}
+	if steps[1].Title != "Downloading MLX Whisper model (large-v3-turbo)" {
+		t.Errorf("step[1].Title = %q, unexpected", steps[1].Title)
+	}
+}
+
+// TestBuildTranscriptionWarmupSteps_WhisperCpp verifies the whisper.cpp backend steps.
+func TestBuildTranscriptionWarmupSteps_WhisperCpp(t *testing.T) {
+	steps := buildTranscriptionWarmupSteps(ModelWhisperCpp, "medium")
+	if len(steps) != 2 {
+		t.Fatalf("expected 2 steps for whisper_cpp, got %d", len(steps))
+	}
+	if steps[0].ID != "whisper-cpp-runtime" {
+		t.Errorf("step[0].ID = %q, want whisper-cpp-runtime", steps[0].ID)
+	}
+	if steps[1].ID != "whisper-cpp-model" {
+		t.Errorf("step[1].ID = %q, want whisper-cpp-model", steps[1].ID)
+	}
+	if steps[1].Title != "Downloading whisper.cpp model (medium)" {
+		t.Errorf("step[1].Title = %q, unexpected", steps[1].Title)
+	}
+}
+
+// TestBuildTranscriptionWarmupSteps_EmptyBackendDefaultsToWhisperX verifies fallback behavior.
+func TestBuildTranscriptionWarmupSteps_EmptyBackendDefaultsToWhisperX(t *testing.T) {
+	steps := buildTranscriptionWarmupSteps("", "small")
+	if len(steps) != 2 {
+		t.Fatalf("expected 2 steps for empty backend (default), got %d", len(steps))
+	}
+	if steps[0].ID != "whisperx-runtime" {
+		t.Errorf("empty backend should default to whisperx, got step[0].ID = %q", steps[0].ID)
+	}
+}
+
+// TestNewDesktopRuntimeWarmupManagerWithBackend_StepCounts verifies that the
+// full manager created with a backend has transcription steps + shared steps.
+func TestNewDesktopRuntimeWarmupManagerWithBackend_StepCounts(t *testing.T) {
+	tests := []struct {
+		backend       string
+		expectedTotal int // 2 transcription + 2 shared (titanet + sortformer)
+	}{
+		{ModelWhisperX, 4},
+		{ModelMLXWhisper, 4},
+		{ModelWhisperCpp, 4},
+		{"", 4}, // defaults to whisperx
+	}
+	for _, tt := range tests {
+		t.Run(tt.backend, func(t *testing.T) {
+			manager := NewDesktopRuntimeWarmupManagerWithBackend(false, "small", tt.backend)
+			snapshot := manager.Snapshot()
+			if snapshot.TotalSteps != tt.expectedTotal {
+				t.Errorf("backend=%q: expected %d total steps, got %d", tt.backend, tt.expectedTotal, snapshot.TotalSteps)
+			}
+		})
+	}
+}
+
 // TestRuntimeWarmupManager_ConcurrentSnapshot verifies that concurrent
 // Snapshot() calls while Start/Stop happens do not cause a race.
 func TestRuntimeWarmupManager_ConcurrentSnapshot(t *testing.T) {

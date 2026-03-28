@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useParams, useNavigate } from "react-router-dom";
-import { MoreVertical, Edit2, Activity, FileText, Bot, Check, Loader2, List, AlignLeft, ArrowDownCircle, StickyNote, MessageCircle, FileImage, FileJson, Clock, AlertCircle, Users } from "lucide-react";
+import { MoreVertical, Edit2, Activity, FileText, Bot, Check, Loader2, List, AlignLeft, ArrowDownCircle, StickyNote, MessageCircle, FileImage, FileJson, FileDown, Clock, AlertCircle, Users, Layers } from "lucide-react";
 import { Header } from "@/components/Header";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -49,12 +49,12 @@ export const AudioDetailView = function AudioDetailView({ audioId: propAudioId }
     const [newTitle, setNewTitle] = useState("");
 
     // Lifted Transcript State
-    const [transcriptMode, setTranscriptMode] = useState<"compact" | "expanded">("compact");
+    const [transcriptMode, setTranscriptMode] = useState<"plain" | "timeline" | "compacted">("plain");
     const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
     const [notesOpen, setNotesOpen] = useState(false);
     const [speakerRenameOpen, setSpeakerRenameOpen] = useState(false);
     const [downloadDialogOpen, setDownloadDialogOpen] = useState(false);
-    const [downloadFormat, setDownloadFormat] = useState<'txt' | 'json'>('txt');
+    const [downloadFormat, setDownloadFormat] = useState<'txt' | 'json' | 'md'>('txt');
 
     // Dialog States
     const [executionDialogOpen, setExecutionDialogOpen] = useState(false);
@@ -193,14 +193,14 @@ export const AudioDetailView = function AudioDetailView({ audioId: propAudioId }
         autoSummaryTriggeredRef.current = null;
         autoTitleTriggeredRef.current = null;
         autoSpeakerViewAppliedRef.current = null;
-        setTranscriptMode("compact");
+        setTranscriptMode("plain");
     }, [audioId]);
 
     useEffect(() => {
         if (!audioId || !transcript?.segments?.some((segment: TranscriptSegment) => !!segment.speaker)) return;
         if (autoSpeakerViewAppliedRef.current === audioId) return;
 
-        setTranscriptMode("expanded");
+        setTranscriptMode("compacted");
         autoSpeakerViewAppliedRef.current = audioId;
     }, [audioId, transcript]);
 
@@ -213,7 +213,8 @@ export const AudioDetailView = function AudioDetailView({ audioId: propAudioId }
         if (existingSummary?.content?.trim()) return;
         if (autoSummaryTriggeredRef.current === audioId) return;
 
-        const autoTemplate = summaryTemplates.find(template => !!template.id && !!template.model && !!template.prompt);
+        const autoTemplate = summaryTemplates.find(t => t.is_default && !!t.id && !!t.model && !!t.prompt)
+            || summaryTemplates.find(t => !!t.id && !!t.model && !!t.prompt);
         if (!autoTemplate) return;
 
         autoSummaryTriggeredRef.current = audioId;
@@ -296,11 +297,6 @@ export const AudioDetailView = function AudioDetailView({ audioId: propAudioId }
     const handleSetNotesOpen = (open: boolean) => {
         if (open) setChatOpen(false);
         setNotesOpen(open);
-    };
-
-    const handleSetChatOpen = (open: boolean) => {
-        if (open) setNotesOpen(false);
-        setChatOpen(open);
     };
 
 
@@ -428,6 +424,30 @@ export const AudioDetailView = function AudioDetailView({ audioId: propAudioId }
                                         {/* Action Menu */}
                                         {/* ... keeping existing Logic but updating Chat action ... */}
                                         <div className="flex items-center gap-2">
+                                            {/* AI Summary Button */}
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => setSummaryDialogOpen(true)}
+                                                className="rounded-[var(--radius-btn)] border-[var(--border-subtle)] shadow-sm bg-[var(--bg-card)] hover:bg-[var(--bg-muted-pane)] transition-all gap-2 px-3 text-[var(--brand-solid)]"
+                                            >
+                                                <Bot className="h-4 w-4" />
+                                                <span className="hidden sm:inline">AI Summary</span>
+                                            </Button>
+
+                                            {/* Rename Speakers Button — only when speakers exist */}
+                                            {transcript?.segments?.some((s: TranscriptSegment) => s.speaker) && (
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => setSpeakerRenameOpen(true)}
+                                                    className="rounded-[var(--radius-btn)] border-[var(--border-subtle)] shadow-sm bg-[var(--bg-card)] hover:bg-[var(--bg-muted-pane)] transition-all gap-2 px-3"
+                                                >
+                                                    <Users className="h-4 w-4" />
+                                                    <span className="hidden sm:inline">Rename Speakers</span>
+                                                </Button>
+                                            )}
+
                                             {/* Quick Chat Button */}
                                             <Button
                                                 variant="outline"
@@ -453,19 +473,32 @@ export const AudioDetailView = function AudioDetailView({ audioId: propAudioId }
                                                     </Button>
                                                 </DropdownMenuTrigger>
                                                 <DropdownMenuContent align="end" className="w-56 rounded-[var(--radius-card)] shadow-[var(--shadow-float)] border border-[var(--border-subtle)] bg-[var(--bg-card)] p-1.5">
-                                                    {/* ... (Menu Items same as before, update handlers) ... */}
-                                                    {/* Only show timeline view toggle if transcript has word-level timestamps */}
+                                                    {/* View Mode Switcher */}
+                                                    <DropdownMenuItem
+                                                        onClick={() => setTranscriptMode('plain')}
+                                                        className={cn("rounded-[8px] cursor-pointer", transcriptMode === 'plain' && "text-[var(--brand-solid)]")}
+                                                    >
+                                                        <AlignLeft className="mr-2 h-4 w-4 opacity-70" /> Plain Text
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuItem
+                                                        onClick={() => setTranscriptMode('compacted')}
+                                                        className={cn("rounded-[8px] cursor-pointer", transcriptMode === 'compacted' && "text-[var(--brand-solid)]")}
+                                                    >
+                                                        <Layers className="mr-2 h-4 w-4 opacity-70" /> Compacted View
+                                                    </DropdownMenuItem>
                                                     {transcript?.word_segments && transcript.word_segments.length > 0 ? (
-                                                        <DropdownMenuItem onClick={() => setTranscriptMode(transcriptMode === 'compact' ? 'expanded' : 'compact')} className="rounded-[8px] cursor-pointer">
-                                                            {transcriptMode === 'compact' ? <List className="mr-2 h-4 w-4 opacity-70" /> : <AlignLeft className="mr-2 h-4 w-4 opacity-70" />}
-                                                            {transcriptMode === 'compact' ? 'Timeline View' : 'Compact View'}
+                                                        <DropdownMenuItem
+                                                            onClick={() => setTranscriptMode('timeline')}
+                                                            className={cn("rounded-[8px] cursor-pointer", transcriptMode === 'timeline' && "text-[var(--brand-solid)]")}
+                                                        >
+                                                            <List className="mr-2 h-4 w-4 opacity-70" /> Timeline View
                                                         </DropdownMenuItem>
                                                     ) : (
                                                         <DropdownMenuItem disabled className="rounded-[8px] opacity-50 cursor-not-allowed">
-                                                            <List className="mr-2 h-4 w-4 opacity-70" />
-                                                            Timeline View (No timestamps)
+                                                            <List className="mr-2 h-4 w-4 opacity-70" /> Timeline View (No timestamps)
                                                         </DropdownMenuItem>
                                                     )}
+                                                    <DropdownMenuSeparator className="bg-[var(--border-subtle)] my-1" />
                                                     <DropdownMenuItem onClick={() => setAutoScrollEnabled(!autoScrollEnabled)} className="rounded-[8px] cursor-pointer">
                                                         <ArrowDownCircle className={cn("mr-2 h-4 w-4 opacity-70", autoScrollEnabled && "text-[var(--brand-solid)]")} />
                                                         Auto Scroll {autoScrollEnabled ? 'On' : 'Off'}
@@ -475,25 +508,14 @@ export const AudioDetailView = function AudioDetailView({ audioId: propAudioId }
                                                         Notes
                                                     </DropdownMenuItem>
                                                     <DropdownMenuSeparator className="bg-[var(--border-subtle)] my-1" />
-                                                    <DropdownMenuItem onClick={() => handleSetChatOpen(!chatOpen)} className="rounded-[8px] cursor-pointer">
-                                                        <MessageCircle className={cn("mr-2 h-4 w-4 opacity-70", chatOpen && "text-[var(--brand-solid)]")} />
-                                                        Chat with Audio
-                                                    </DropdownMenuItem>
-                                                    {transcript?.segments?.some((s: TranscriptSegment) => s.speaker) && (
-                                                        <DropdownMenuItem onClick={() => setSpeakerRenameOpen(true)} className="rounded-[8px] cursor-pointer">
-                                                            <Users className="mr-2 h-4 w-4 opacity-70" />
-                                                            Rename Speakers
-                                                        </DropdownMenuItem>
-                                                    )}
-                                                    <DropdownMenuItem onClick={() => setSummaryDialogOpen(true)} className="rounded-[8px] cursor-pointer text-[var(--brand-solid)] focus:text-[var(--brand-solid)] focus:bg-[var(--brand-light)]">
-                                                        <Bot className="mr-2 h-4 w-4" /> AI Summary
-                                                    </DropdownMenuItem>
-                                                    <DropdownMenuSeparator className="bg-[var(--border-subtle)] my-1" />
                                                     <DropdownMenuItem onClick={() => transcript && downloadSRT(transcript, audioFile?.title || 'transcript', speakerMappings)} className="rounded-[8px] cursor-pointer">
                                                         <FileImage className="mr-2 h-4 w-4 opacity-70" /> Download SRT
                                                     </DropdownMenuItem>
                                                     <DropdownMenuItem onClick={() => { setDownloadFormat('txt'); setDownloadDialogOpen(true); }} className="rounded-[8px] cursor-pointer">
                                                         <AlignLeft className="mr-2 h-4 w-4 opacity-70" /> Download Text
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuItem onClick={() => { setDownloadFormat('md'); setDownloadDialogOpen(true); }} className="rounded-[8px] cursor-pointer">
+                                                        <FileDown className="mr-2 h-4 w-4 opacity-70" /> Download Markdown
                                                     </DropdownMenuItem>
                                                     <DropdownMenuItem onClick={() => { setDownloadFormat('json'); setDownloadDialogOpen(true); }} className="rounded-[8px] cursor-pointer">
                                                         <FileJson className="mr-2 h-4 w-4 opacity-70" /> Download JSON

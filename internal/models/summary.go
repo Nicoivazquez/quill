@@ -15,6 +15,7 @@ type SummaryTemplate struct {
 	Model              string    `json:"model" gorm:"type:varchar(255);not null;default:''"`
 	Prompt             string    `json:"prompt" gorm:"type:text;not null"`
 	IncludeSpeakerInfo bool      `json:"include_speaker_info" gorm:"default:false"`
+	IsDefault          bool      `json:"is_default" gorm:"default:false"`
 	CreatedAt          time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt          time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
@@ -38,6 +39,7 @@ type Summary struct {
 	ID              string    `json:"id" gorm:"primaryKey;type:varchar(36)"`
 	TranscriptionID string    `json:"transcription_id" gorm:"type:varchar(36);index;not null"`
 	TemplateID      *string   `json:"template_id,omitempty" gorm:"type:varchar(36)"`
+	TemplateName    string    `json:"template_name" gorm:"type:varchar(255);not null;default:''"`
 	Model           string    `json:"model" gorm:"type:varchar(255);not null"`
 	Content         string    `json:"content" gorm:"type:text;not null"`
 	CreatedAt       time.Time `json:"created_at" gorm:"autoCreateTime"`

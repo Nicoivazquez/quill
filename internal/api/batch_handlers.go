@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"quill/internal/models"
+	"quill/internal/transcription"
 	"quill/pkg/logger"
 
 	"github.com/gin-gonic/gin"
@@ -141,11 +142,34 @@ func (h *Handler) BatchMoveTranscriptsToFolder(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"results": results})
 }
 
-// moveJobToFolder moves a single job to the specified folder.
+// moveJobToFolder moves a single job to the specified folder, both on disk and in DB.
 func (h *Handler) moveJobToFolder(ctx context.Context, jobID, folder string) error {
 	job, err := h.jobRepo.FindByID(ctx, jobID)
 	if err != nil {
 		return fmt.Errorf("Job not found")
+	}
+
+	// Move bundle on disk if we have an artifact directory
+	if job.ArtifactDir != nil && *job.ArtifactDir != "" {
+		newDir, moveErr := transcription.MoveBundleToFolder(*job.ArtifactDir, folder)
+		if moveErr != nil {
+			return fmt.Errorf("Failed to move bundle: %s", moveErr.Error())
+		}
+
+		// Update paths to reflect new location
+		if newDir != *job.ArtifactDir {
+			oldDir := *job.ArtifactDir
+			job.ArtifactDir = &newDir
+			job.AudioPath = updatePathForNewDir(job.AudioPath, oldDir, newDir)
+			if job.TranscriptJSONPath != nil {
+				newJSON := updatePathForNewDir(*job.TranscriptJSONPath, oldDir, newDir)
+				job.TranscriptJSONPath = &newJSON
+			}
+			if job.TranscriptMarkdownPath != nil {
+				newMD := updatePathForNewDir(*job.TranscriptMarkdownPath, oldDir, newDir)
+				job.TranscriptMarkdownPath = &newMD
+			}
+		}
 	}
 
 	var folderPtr *string

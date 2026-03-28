@@ -169,9 +169,16 @@ func (h *Handler) persistSummary(req SummarizeRequest, content string) {
 	if req.TranscriptionID == "" || content == "" {
 		return
 	}
+	templateName := ""
+	if req.TemplateID != nil && *req.TemplateID != "" {
+		if tmpl, err := h.summaryRepo.FindByID(context.Background(), *req.TemplateID); err == nil {
+			templateName = tmpl.Name
+		}
+	}
 	sum := &models.Summary{
 		TranscriptionID: req.TranscriptionID,
 		TemplateID:      req.TemplateID,
+		TemplateName:    templateName,
 		Model:           req.Model,
 		Content:         content,
 	}
@@ -244,4 +251,56 @@ func (h *Handler) GetSummaryForTranscription(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, s)
+}
+
+// ListSummariesForTranscription returns all summaries for a transcription
+// @Summary List all summaries for transcription
+// @Description Get all saved summaries for the given transcription ordered by creation time
+// @Tags summarize
+// @Produce json
+// @Param id path string true "Transcription ID"
+// @Success 200 {array} models.Summary
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /api/v1/transcription/{id}/summaries [get]
+func (h *Handler) ListSummariesForTranscription(c *gin.Context) {
+	tid := c.Param("id")
+	if tid == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Transcription ID required"})
+		return
+	}
+	summaries, err := h.summaryRepo.ListByTranscriptionID(c.Request.Context(), tid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch summaries"})
+		return
+	}
+	c.JSON(http.StatusOK, summaries)
+}
+
+// DeleteSummary deletes a single summary by ID
+// @Summary Delete a summary
+// @Description Delete an individual summary by its ID
+// @Tags summarize
+// @Produce json
+// @Param id path string true "Transcription ID"
+// @Param summaryId path string true "Summary ID"
+// @Success 204 {string} string "No Content"
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /api/v1/transcription/{id}/summaries/{summaryId} [delete]
+func (h *Handler) DeleteSummary(c *gin.Context) {
+	summaryID := c.Param("summaryId")
+	if summaryID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Summary ID required"})
+		return
+	}
+	if err := h.summaryRepo.DeleteSummary(c.Request.Context(), summaryID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete summary"})
+		return
+	}
+	c.Status(http.StatusNoContent)
 }

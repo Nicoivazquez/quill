@@ -83,7 +83,7 @@ func NewWhisperXAdapter(envPath string) *WhisperXAdapter {
 			Type:        "string",
 			Required:    false,
 			Default:     "small",
-			Options:     []string{"tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium", "medium.en", "large", "large-v1", "large-v2", "large-v3"},
+			Options:     []string{"small", "small.en", "medium", "medium.en", "large-v3", "large-v3-turbo"},
 			Description: "Whisper model size to use",
 			Group:       "basic",
 		},
@@ -301,11 +301,9 @@ func NewWhisperXAdapter(envPath string) *WhisperXAdapter {
 // GetSupportedModels returns the list of Whisper models supported
 func (w *WhisperXAdapter) GetSupportedModels() []string {
 	return []string{
-		"tiny", "tiny.en",
-		"base", "base.en",
 		"small", "small.en",
 		"medium", "medium.en",
-		"large", "large-v1", "large-v2", "large-v3",
+		"large-v3", "large-v3-turbo",
 	}
 }
 

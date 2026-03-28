@@ -42,6 +42,9 @@ type Config struct {
 
 	// Hugging Face configuration
 	HFToken string
+
+	// Transcription backend: "whisperx" (default), "mlx_whisper", "whisper_cpp"
+	TranscriptionBackend string
 }
 
 // Load loads configuration from environment variables and .env file
@@ -70,8 +73,9 @@ func Load() *Config {
 		WhisperXEnv:    getEnv("WHISPERX_ENV", "data/whisperx-env"),
 		SecureCookies:  getEnv("SECURE_COOKIES", defaultSecure) == "true",
 		AuthMode:       strings.ToLower(getEnv("AUTH_MODE", "local")),
-		OpenAIAPIKey:   getEnv("OPENAI_API_KEY", ""),
-		HFToken:        getEnv("HF_TOKEN", ""),
+		OpenAIAPIKey:          getEnv("OPENAI_API_KEY", ""),
+		HFToken:               getEnv("HF_TOKEN", ""),
+		TranscriptionBackend:  getEnv("TRANSCRIPTION_BACKEND", "whisperx"),
 	}
 }
 

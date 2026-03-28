@@ -53,9 +53,11 @@ interface Transcript {
     word_segments?: WordSegment[];
 }
 
+type TranscriptMode = 'plain' | 'timeline' | 'compacted';
+
 interface TranscriptViewProps {
     transcript: Transcript | null;
-    mode: 'compact' | 'expanded';
+    mode: TranscriptMode;
     currentWordIndex: number | null;
     currentTime: number;
     isPlaying: boolean;
@@ -199,7 +201,7 @@ export const TranscriptView = forwardRef<HTMLDivElement, TranscriptViewProps>(({
 
     // Auto-scroll to active segment during playback
     useEffect(() => {
-        if (mode !== 'expanded' || !autoScrollEnabled || !isPlaying) return;
+        if (mode === 'plain' || !autoScrollEnabled || !isPlaying) return;
         if (activeSegmentIndex < 0) return;
         // Only scroll when the segment actually changes
         if (activeSegmentIndex === prevActiveSegmentRef.current) return;
@@ -213,7 +215,7 @@ export const TranscriptView = forwardRef<HTMLDivElement, TranscriptViewProps>(({
 
     // 2. Highlight Effect for Expanded View
     useEffect(() => {
-        if (mode !== 'expanded' || !expandedData.length || !isPlaying) return;
+        if (mode === 'plain' || !expandedData.length || !isPlaying) return;
         if (typeof CSS === 'undefined' || !CSS.highlights) return;
 
         // Find the active segment and word
@@ -288,8 +290,8 @@ export const TranscriptView = forwardRef<HTMLDivElement, TranscriptViewProps>(({
         );
     }
 
-    // Render transcript with word-level highlighting for compact view
-    const renderCompactView = () => {
+    // Render plain text with word-level highlighting (no speaker info)
+    const renderPlainView = () => {
         if (!transcript.word_segments || transcript.word_segments.length === 0) {
             return <p className="text-lg leading-relaxed text-carbon-700 dark:text-carbon-300 whitespace-pre-wrap">{transcript.text}</p>;
         }
@@ -323,9 +325,9 @@ export const TranscriptView = forwardRef<HTMLDivElement, TranscriptViewProps>(({
         );
     };
 
-    const renderExpandedView = () => {
+    const renderTimelineView = () => {
         if (!transcript?.segments) {
-            return renderCompactView();
+            return renderPlainView();
         }
 
         return (
@@ -383,12 +385,95 @@ export const TranscriptView = forwardRef<HTMLDivElement, TranscriptViewProps>(({
         );
     };
 
+    // Compacted View: groups consecutive same-speaker segments into single paragraphs
+    const compactedGroups = useMemo(() => {
+        if (!transcript?.segments) return [];
+
+        const groups: Array<{
+            speaker: string;
+            startTime: number;
+            texts: string[];
+            segmentIndices: number[];
+        }> = [];
+
+        transcript.segments.forEach((segment, i) => {
+            const speaker = segment.speaker || '';
+            const lastGroup = groups[groups.length - 1];
+
+            if (lastGroup && lastGroup.speaker === speaker) {
+                lastGroup.texts.push(segment.text.trim());
+                lastGroup.segmentIndices.push(i);
+            } else {
+                groups.push({
+                    speaker,
+                    startTime: segment.start,
+                    texts: [segment.text.trim()],
+                    segmentIndices: [i],
+                });
+            }
+        });
+
+        return groups;
+    }, [transcript?.segments]);
+
+    const renderCompactedView = () => {
+        if (!transcript?.segments || compactedGroups.length === 0) {
+            return renderPlainView();
+        }
+
+        return (
+            <div className="space-y-6">
+                {compactedGroups.map((group, gi) => (
+                    <div key={gi} className="space-y-1">
+                        {group.speaker && (
+                            <div className="flex items-center gap-2 text-sm font-medium text-carbon-600 dark:text-carbon-400 select-none">
+                                <span>{getDisplaySpeakerName(group.speaker)}</span>
+                                <span className="font-mono text-[10px] text-carbon-400 dark:text-carbon-500">
+                                    {formatSegmentTime(group.startTime)}
+                                </span>
+                            </div>
+                        )}
+                        <p
+                            className={cn(
+                                "text-base text-primary leading-relaxed whitespace-pre-wrap font-reading select-text",
+                                isDesktop && isModifierPressed ? 'cursor-pointer' : 'cursor-text'
+                            )}
+                            style={{
+                                WebkitUserSelect: 'text',
+                                userSelect: 'text',
+                                WebkitTapHighlightColor: 'transparent',
+                                touchAction: 'pan-y pinch-zoom',
+                                WebkitTouchCallout: 'default'
+                            }}
+                            data-transcript-text
+                        >
+                            {group.texts.join(' ')}
+                        </p>
+                    </div>
+                ))}
+            </div>
+        );
+    };
+
+    const renderView = () => {
+        switch (mode) {
+            case 'plain':
+                return renderPlainView();
+            case 'compacted':
+                return renderCompactedView();
+            case 'timeline':
+                return renderTimelineView();
+            default:
+                return renderPlainView();
+        }
+    };
+
     return (
         <div
             ref={ref}
             className={cn("w-full max-w-none font-literata mt-4", className)}
         >
-            {mode === 'compact' ? renderCompactView() : renderExpandedView()}
+            {renderView()}
 
             {/* CSS for the Highlight API - Global for both views */}
             <style>{`
@@ -405,3 +490,5 @@ export const TranscriptView = forwardRef<HTMLDivElement, TranscriptViewProps>(({
 });
 
 TranscriptView.displayName = 'TranscriptView';
+
+export type { TranscriptMode };

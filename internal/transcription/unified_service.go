@@ -38,6 +38,10 @@ const (
 	FamilyWhisper              = "whisper"
 	FamilyOpenAI               = "openai"
 	FamilyMistralVoxtral       = "mistral_voxtral"
+	FamilyMLXWhisper           = "mlx_whisper"
+	FamilyWhisperCpp           = "whisper_cpp"
+	ModelMLXWhisper            = "mlx_whisper"
+	ModelWhisperCpp            = "whisper_cpp"
 	DiarizeSortformer          = "nvidia_sortformer"
 	OutputFormatJSON           = "json"
 )
@@ -409,6 +413,10 @@ func (u *UnifiedTranscriptionService) selectModels(params models.WhisperXParams)
 		transcriptionModelID = ModelOpenAI
 	case FamilyMistralVoxtral:
 		transcriptionModelID = ModelVoxtral
+	case FamilyMLXWhisper:
+		transcriptionModelID = ModelMLXWhisper
+	case FamilyWhisperCpp:
+		transcriptionModelID = ModelWhisperCpp
 	default:
 		transcriptionModelID = ModelWhisperX // Default fallback
 	}
@@ -587,6 +595,10 @@ func (u *UnifiedTranscriptionService) convertParametersForModel(params models.Wh
 		return u.convertToOpenAIParams(params)
 	case ModelVoxtral:
 		return u.convertToVoxtralParams(params)
+	case ModelMLXWhisper:
+		return u.convertToMLXWhisperParams(params)
+	case ModelWhisperCpp:
+		return u.convertToWhisperCppParams(params)
 	default:
 		// Fallback to legacy conversion
 		return u.parametersToMap(params)
@@ -629,6 +641,37 @@ func (u *UnifiedTranscriptionService) convertToVoxtralParams(params models.Whisp
 	// Max new tokens
 	if params.MaxNewTokens != nil {
 		paramMap["max_new_tokens"] = *params.MaxNewTokens
+	}
+
+	return paramMap
+}
+
+// convertToMLXWhisperParams converts to MLX Whisper-specific parameters
+func (u *UnifiedTranscriptionService) convertToMLXWhisperParams(params models.WhisperXParams) map[string]interface{} {
+	paramMap := map[string]interface{}{
+		"model":     params.Model,
+		"task":      params.Task,
+		"beam_size": params.BeamSize,
+	}
+
+	if params.Language != nil {
+		paramMap["language"] = *params.Language
+	}
+
+	return paramMap
+}
+
+// convertToWhisperCppParams converts to whisper.cpp-specific parameters
+func (u *UnifiedTranscriptionService) convertToWhisperCppParams(params models.WhisperXParams) map[string]interface{} {
+	paramMap := map[string]interface{}{
+		"model":     params.Model,
+		"task":      params.Task,
+		"threads":   params.Threads,
+		"beam_size": params.BeamSize,
+	}
+
+	if params.Language != nil {
+		paramMap["language"] = *params.Language
 	}
 
 	return paramMap
@@ -1100,12 +1143,22 @@ func (u *UnifiedTranscriptionService) materializeTranscriptArtifacts(ctx context
 		return err
 	}
 
-	// Move audio file into the bundle directory for self-contained artifacts
+	// Move audio file into the bundle directory for self-contained artifacts.
+	// This is fatal — a bundle without audio is broken.
 	if job.AudioPath != "" {
-		if newAudioPath, moveErr := MoveAudioToBundle(job.AudioPath, targetDir); moveErr == nil {
-			job.AudioPath = newAudioPath
+		newAudioPath, moveErr := MoveAudioToBundle(job.AudioPath, targetDir)
+		if moveErr != nil {
+			// Fallback: try copy instead of move (source may be on a different filesystem or read-only)
+			newAudioPath, moveErr = CopyAudioToBundle(job.AudioPath, targetDir)
 		}
-		// Non-fatal: if move fails (e.g. file already deleted), keep original path
+		if moveErr != nil {
+			return fmt.Errorf("failed to move/copy audio to bundle: %w", moveErr)
+		}
+		// Verify the audio file actually landed in the bundle
+		if verifyErr := VerifyAudioInBundle(targetDir); verifyErr != nil {
+			return fmt.Errorf("audio verification failed after move: %w", verifyErr)
+		}
+		job.AudioPath = newAudioPath
 	}
 
 	job.ArtifactDir = &targetDir

@@ -69,7 +69,7 @@ export function Settings() {
           onValueChange={setActiveTab}
           className="space-y-4 sm:space-y-6"
         >
-          <TabsList className="grid w-full grid-cols-8 items-center h-auto bg-[var(--bg-muted-pane)] border border-[var(--border-subtle)] p-1 rounded-[var(--radius-btn)]">
+          <TabsList className="grid w-full grid-cols-7 items-center h-auto bg-[var(--bg-muted-pane)] border border-[var(--border-subtle)] p-1 rounded-[var(--radius-btn)]">
             <TabsTrigger
               value="transcription"
               aria-label="Transcription"
@@ -78,14 +78,15 @@ export function Settings() {
               <SettingsIcon className="h-4 w-4" />
               <span className="hidden sm:inline">Transcription</span>
             </TabsTrigger>
-            <TabsTrigger
+            {/* Account tab hidden for now — will be enabled later */}
+            {false && <TabsTrigger
               value="account"
               aria-label="Account"
               className="flex items-center justify-center gap-2 h-9 py-1.5 data-[state=active]:bg-[var(--bg-card)] data-[state=active]:border data-[state=active]:border-[var(--border-subtle)] data-[state=active]:text-[var(--text-primary)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] font-medium rounded-[calc(var(--radius-btn)-2px)] text-xs sm:text-sm transition-all"
             >
               <User className="h-4 w-4" />
               <span className="hidden sm:inline">Account</span>
-            </TabsTrigger>
+            </TabsTrigger>}
             <TabsTrigger
               value="apikeys"
               aria-label="API Keys"

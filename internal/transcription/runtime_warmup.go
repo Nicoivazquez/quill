@@ -67,9 +67,16 @@ type runtimeWarmupStepDefinition struct {
 	Run      func(context.Context) error
 }
 
+// whisperWarmable is the full WhisperX interface (4-param WarmModel: ctx, model, device, computeType).
 type whisperWarmable interface {
 	PrepareEnvironment(context.Context) error
 	WarmModel(context.Context, string, string, string) error
+}
+
+// simpleWarmable is used by MLX Whisper and whisper.cpp (2-param WarmModel: ctx, model).
+type simpleWarmable interface {
+	PrepareEnvironment(context.Context) error
+	WarmModel(context.Context, string) error
 }
 
 type RuntimeWarmupManager struct {
@@ -84,37 +91,25 @@ type RuntimeWarmupManager struct {
 }
 
 func NewDesktopRuntimeWarmupManager(enabled bool, whisperModel string) *RuntimeWarmupManager {
+	return NewDesktopRuntimeWarmupManagerWithBackend(enabled, whisperModel, "")
+}
+
+// NewDesktopRuntimeWarmupManagerWithBackend creates a warmup manager for the specified
+// transcription backend. Supported backends: "whisperx" (default), "mlx_whisper", "whisper_cpp".
+func NewDesktopRuntimeWarmupManagerWithBackend(enabled bool, whisperModel, backend string) *RuntimeWarmupManager {
 	modelName := strings.TrimSpace(whisperModel)
 	if modelName == "" {
 		modelName = "small"
 	}
+	if backend == "" {
+		backend = ModelWhisperX
+	}
 
-	manager := newRuntimeWarmupManager(enabled, []runtimeWarmupStepDefinition{
-		{
-			ID:       "whisperx-runtime",
-			Title:    "Installing local transcription runtime",
-			Required: true,
-			Run: func(ctx context.Context) error {
-				adapter, err := resolveWhisperWarmable()
-				if err != nil {
-					return err
-				}
-				return adapter.PrepareEnvironment(ctx)
-			},
-		},
-		{
-			ID:       "whisperx-model",
-			Title:    fmt.Sprintf("Downloading default speech model (%s)", modelName),
-			Required: true,
-			Run: func(ctx context.Context) error {
-				adapter, err := resolveWhisperWarmable()
-				if err != nil {
-					return err
-				}
-				return adapter.WarmModel(ctx, modelName, "cpu", "float32")
-			},
-		},
-		{
+	steps := buildTranscriptionWarmupSteps(backend, modelName)
+
+	// Add voice-signature and diarization steps (shared across all backends)
+	steps = append(steps,
+		runtimeWarmupStepDefinition{
 			ID:       "titanet",
 			Title:    "Preparing local voice-signature tools",
 			Required: false,
@@ -122,7 +117,7 @@ func NewDesktopRuntimeWarmupManager(enabled bool, whisperModel string) *RuntimeW
 				return contacts.PrepareTitaNetRuntime(ctx, registryNVIDIAEnv())
 			},
 		},
-		{
+		runtimeWarmupStepDefinition{
 			ID:       "sortformer",
 			Title:    "Preparing local speaker diarization tools",
 			Required: false,
@@ -134,13 +129,104 @@ func NewDesktopRuntimeWarmupManager(enabled bool, whisperModel string) *RuntimeW
 				return adapter.PrepareEnvironment(ctx)
 			},
 		},
-	})
+	)
+
+	manager := newRuntimeWarmupManager(enabled, steps)
 
 	if enabled {
-		logger.Info("Desktop runtime warmup configured", "whisper_model", modelName)
+		logger.Info("Desktop runtime warmup configured", "backend", backend, "whisper_model", modelName)
 	}
 
 	return manager
+}
+
+// buildTranscriptionWarmupSteps returns the runtime + model warmup steps for the given backend.
+func buildTranscriptionWarmupSteps(backend, modelName string) []runtimeWarmupStepDefinition {
+	switch backend {
+	case ModelMLXWhisper:
+		return []runtimeWarmupStepDefinition{
+			{
+				ID:       "mlx-whisper-runtime",
+				Title:    "Installing MLX Whisper runtime",
+				Required: true,
+				Run: func(ctx context.Context) error {
+					adapter, err := resolveSimpleWarmable(ModelMLXWhisper)
+					if err != nil {
+						return err
+					}
+					return adapter.PrepareEnvironment(ctx)
+				},
+			},
+			{
+				ID:       "mlx-whisper-model",
+				Title:    fmt.Sprintf("Downloading MLX Whisper model (%s)", modelName),
+				Required: true,
+				Run: func(ctx context.Context) error {
+					adapter, err := resolveSimpleWarmable(ModelMLXWhisper)
+					if err != nil {
+						return err
+					}
+					return adapter.WarmModel(ctx, modelName)
+				},
+			},
+		}
+
+	case ModelWhisperCpp:
+		return []runtimeWarmupStepDefinition{
+			{
+				ID:       "whisper-cpp-runtime",
+				Title:    "Preparing whisper.cpp runtime",
+				Required: true,
+				Run: func(ctx context.Context) error {
+					adapter, err := resolveSimpleWarmable(ModelWhisperCpp)
+					if err != nil {
+						return err
+					}
+					return adapter.PrepareEnvironment(ctx)
+				},
+			},
+			{
+				ID:       "whisper-cpp-model",
+				Title:    fmt.Sprintf("Downloading whisper.cpp model (%s)", modelName),
+				Required: true,
+				Run: func(ctx context.Context) error {
+					adapter, err := resolveSimpleWarmable(ModelWhisperCpp)
+					if err != nil {
+						return err
+					}
+					return adapter.WarmModel(ctx, modelName)
+				},
+			},
+		}
+
+	default: // ModelWhisperX
+		return []runtimeWarmupStepDefinition{
+			{
+				ID:       "whisperx-runtime",
+				Title:    "Installing local transcription runtime",
+				Required: true,
+				Run: func(ctx context.Context) error {
+					adapter, err := resolveWhisperWarmable()
+					if err != nil {
+						return err
+					}
+					return adapter.PrepareEnvironment(ctx)
+				},
+			},
+			{
+				ID:       "whisperx-model",
+				Title:    fmt.Sprintf("Downloading default speech model (%s)", modelName),
+				Required: true,
+				Run: func(ctx context.Context) error {
+					adapter, err := resolveWhisperWarmable()
+					if err != nil {
+						return err
+					}
+					return adapter.WarmModel(ctx, modelName, "cpu", "float32")
+				},
+			},
+		}
+	}
 }
 
 func newRuntimeWarmupManager(enabled bool, stepDefs []runtimeWarmupStepDefinition) *RuntimeWarmupManager {
@@ -418,6 +504,20 @@ func resolveWhisperWarmable() (whisperWarmable, error) {
 	warmable, ok := adapter.(whisperWarmable)
 	if !ok {
 		return nil, fmt.Errorf("whisperx adapter does not support runtime warmup")
+	}
+
+	return warmable, nil
+}
+
+func resolveSimpleWarmable(modelID string) (simpleWarmable, error) {
+	adapter, err := registry.GetRegistry().GetTranscriptionAdapter(modelID)
+	if err != nil {
+		return nil, fmt.Errorf("%s adapter unavailable: %w", modelID, err)
+	}
+
+	warmable, ok := adapter.(simpleWarmable)
+	if !ok {
+		return nil, fmt.Errorf("%s adapter does not support runtime warmup", modelID)
 	}
 
 	return warmable, nil

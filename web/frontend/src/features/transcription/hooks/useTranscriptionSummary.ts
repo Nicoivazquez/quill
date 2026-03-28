@@ -8,6 +8,18 @@ export interface SummaryTemplate {
     model: string;
     prompt: string;
     include_speaker_info?: boolean;
+    is_default?: boolean;
+}
+
+export interface SavedSummary {
+    id: string;
+    transcription_id: string;
+    template_id?: string;
+    template_name: string;
+    model: string;
+    content: string;
+    created_at: string;
+    updated_at: string;
 }
 
 export function useSummaryTemplates() {
@@ -37,6 +49,21 @@ export function useExistingSummary(audioId: string) {
             return response.json() as Promise<{ content: string }>;
         },
         retry: false,
+    });
+}
+
+export function useAllSummaries(audioId: string) {
+    const { getAuthHeaders } = useAuth();
+    return useQuery({
+        queryKey: ["summaries", audioId],
+        queryFn: async () => {
+            const response = await fetch(`/api/v1/transcription/${audioId}/summaries`, {
+                headers: getAuthHeaders(),
+            });
+            if (!response.ok) return [];
+            return response.json() as Promise<SavedSummary[]>;
+        },
+        enabled: !!audioId,
     });
 }
 
@@ -87,8 +114,9 @@ export function useSummarizer(audioId: string) {
                 if (chunk) setStreamContent(prev => prev + chunk);
             }
 
-            // Invalidate summary query after successful generation
+            // Invalidate summary queries after successful generation
             queryClient.invalidateQueries({ queryKey: ["summary", audioId] });
+            queryClient.invalidateQueries({ queryKey: ["summaries", audioId] });
 
         } catch (e) {
             setError(e instanceof Error ? e.message : "Summary generation failed");

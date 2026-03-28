@@ -423,6 +423,9 @@ type SummaryRepository interface {
 	GetLatestSummary(ctx context.Context, transcriptionID string) (*models.Summary, error)
 	ListByTranscriptionID(ctx context.Context, transcriptionID string) ([]models.Summary, error)
 	DeleteByTranscriptionID(ctx context.Context, transcriptionID string) error
+	GetDefaultTemplate(ctx context.Context) (*models.SummaryTemplate, error)
+	SetDefaultTemplate(ctx context.Context, id string) error
+	DeleteSummary(ctx context.Context, id string) error
 }
 
 type summaryRepository struct {
@@ -471,6 +474,28 @@ func (r *summaryRepository) ListByTranscriptionID(ctx context.Context, transcrip
 
 func (r *summaryRepository) DeleteByTranscriptionID(ctx context.Context, transcriptionID string) error {
 	return r.db.WithContext(ctx).Where("transcription_id = ?", transcriptionID).Delete(&models.Summary{}).Error
+}
+
+func (r *summaryRepository) GetDefaultTemplate(ctx context.Context) (*models.SummaryTemplate, error) {
+	var template models.SummaryTemplate
+	err := r.db.WithContext(ctx).Where("is_default = ?", true).First(&template).Error
+	if err != nil {
+		return nil, err
+	}
+	return &template, nil
+}
+
+func (r *summaryRepository) SetDefaultTemplate(ctx context.Context, id string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&models.SummaryTemplate{}).Where("is_default = ?", true).Update("is_default", false).Error; err != nil {
+			return err
+		}
+		return tx.Model(&models.SummaryTemplate{}).Where("id = ?", id).Update("is_default", true).Error
+	})
+}
+
+func (r *summaryRepository) DeleteSummary(ctx context.Context, id string) error {
+	return r.db.WithContext(ctx).Where("id = ?", id).Delete(&models.Summary{}).Error
 }
 
 // ChatRepository handles chat sessions and messages
