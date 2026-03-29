@@ -1085,7 +1085,9 @@ func (h *Handler) ListTranscriptionJobs(c *gin.Context) {
 	}
 
 	// Compute HasAudio for each job
+	jobIDs := make([]string, len(jobs))
 	for i := range jobs {
+		jobIDs[i] = jobs[i].ID
 		if jobs[i].AudioPath != "" {
 			if _, statErr := os.Stat(jobs[i].AudioPath); statErr == nil {
 				jobs[i].HasAudio = true
@@ -1093,8 +1095,17 @@ func (h *Handler) ListTranscriptionJobs(c *gin.Context) {
 		}
 	}
 
+	// Count pending speaker suggestions per job for badge display.
+	pendingSuggestions := make(map[string]int)
+	if len(jobIDs) > 0 {
+		if counts, countErr := h.speakerMappingRepo.CountPendingSuggestions(c.Request.Context(), jobIDs); countErr == nil {
+			pendingSuggestions = counts
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"jobs": jobs,
+		"jobs":                 jobs,
+		"pending_suggestions":  pendingSuggestions,
 		"pagination": gin.H{
 			"page":  page,
 			"limit": limit,

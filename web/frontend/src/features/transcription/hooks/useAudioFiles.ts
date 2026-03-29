@@ -21,6 +21,7 @@ export interface AudioFile {
 
 export interface AudioFilesResponse {
     jobs: AudioFile[];
+    pending_suggestions?: Record<string, number>;
     pagination: {
         page: number;
         limit: number;

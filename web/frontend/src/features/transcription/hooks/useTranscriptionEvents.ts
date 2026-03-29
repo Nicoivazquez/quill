@@ -169,19 +169,17 @@ export const useTranscriptionEvents = (jobId: string | null) => {
             if (event.type === 'speaker_identification') {
                 const payload = event.payload as SpeakerIdentificationEvent;
 
-                // Cache suggestions for SpeakerRenameDialog to read
-                queryClient.setQueryData(
-                    ['speakerSuggestions', payload.job_id],
-                    payload,
-                );
-
-                // Auto-assigned speakers are already persisted as SpeakerMapping rows.
-                // Invalidate speaker mappings so the dialog picks them up on next open.
-                if (payload.auto_assigned.length > 0) {
-                    queryClient.invalidateQueries({
-                        queryKey: ['audioFiles'],
-                    });
-                }
+                // Suggestions and auto-assigned mappings are now persisted to the DB.
+                // Invalidate the DB-backed queries so hooks refetch fresh data.
+                queryClient.invalidateQueries({
+                    queryKey: ['speakerSuggestions', payload.job_id],
+                });
+                queryClient.invalidateQueries({
+                    queryKey: ['speakerMappings', payload.job_id],
+                });
+                queryClient.invalidateQueries({
+                    queryKey: ['audioFiles'],
+                });
             }
         };
 

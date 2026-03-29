@@ -208,17 +208,21 @@ func (s *AutoLabelService) LabelSpeakers(
 
 	result.Unmatched = fusedUnmatched
 
-	// Step 4: split matches by tier; persist auto-tier mappings.
+	// Step 4: split matches by tier; persist both auto and suggest-tier mappings.
 	for _, m := range fusedMatches {
 		switch m.Tier {
 		case TierAutoAssign:
 			result.AutoAssigned = append(result.AutoAssigned, m)
-			if err := s.persistMapping(ctx, jobID, m); err != nil {
+			if err := s.persistMapping(ctx, jobID, m, ""); err != nil {
 				logger.Warn("auto-label: failed to persist speaker mapping",
 					"job_id", jobID, "speaker", m.Speaker, "contact_id", m.ContactID, "error", err)
 			}
 		case TierSuggest:
 			result.Suggestions = append(result.Suggestions, m)
+			if err := s.persistMapping(ctx, jobID, m, "pending"); err != nil {
+				logger.Warn("auto-label: failed to persist suggestion mapping",
+					"job_id", jobID, "speaker", m.Speaker, "contact_id", m.ContactID, "error", err)
+			}
 		}
 	}
 
@@ -228,25 +232,31 @@ func (s *AutoLabelService) LabelSpeakers(
 // persistMapping writes a SpeakerMapping row linking the speaker label to the
 // matched contact for this job.  It checks for an existing mapping first and
 // skips creation if one already exists for this job+speaker combination.
-func (s *AutoLabelService) persistMapping(ctx context.Context, jobID string, m SpeakerMatch) error {
+// reviewStatus should be "" for auto-tier (immediately accepted) and "pending"
+// for suggest-tier (awaiting user review).
+func (s *AutoLabelService) persistMapping(ctx context.Context, jobID string, m SpeakerMatch, reviewStatus string) error {
 	// Check if a mapping already exists for this job+speaker combination.
 	existing, err := s.speakerMapRepo.ListByJob(ctx, jobID)
-	if err == nil {
-		for i := range existing {
-			if existing[i].OriginalSpeaker == m.Speaker {
-				// Already mapped — leave it alone.
-				return nil
-			}
+	if err != nil {
+		return fmt.Errorf("persistMapping: list existing: %w", err)
+	}
+	for i := range existing {
+		if existing[i].OriginalSpeaker == m.Speaker {
+			// Already mapped — leave it alone.
+			return nil
 		}
 	}
 
+	contactID := m.ContactID
 	mapping := &models.SpeakerMapping{
 		TranscriptionJobID: jobID,
 		OriginalSpeaker:    m.Speaker,
 		CustomName:         m.ContactName,
+		ContactID:          &contactID,
 		ConfidenceScore:    m.Score,
 		MatchSource:        "auto",
 		MatchTier:          string(m.Tier),
+		ReviewStatus:       reviewStatus,
 	}
 	return s.speakerMapRepo.Create(ctx, mapping)
 }

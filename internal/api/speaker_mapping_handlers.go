@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 
 	"quill/internal/models"
@@ -35,9 +36,16 @@ type SpeakerMappingResponse struct {
 	ID              uint    `json:"id"`
 	OriginalSpeaker string  `json:"original_speaker"`
 	CustomName      string  `json:"custom_name"`
+	ContactID       *uint   `json:"contact_id,omitempty"`
 	ConfidenceScore float64 `json:"confidence_score"`
 	MatchSource     string  `json:"match_source"`
 	MatchTier       string  `json:"match_tier"`
+	ReviewStatus    string  `json:"review_status"`
+}
+
+// DismissSuggestionRequest represents a request to dismiss a speaker suggestion
+type DismissSuggestionRequest struct {
+	MappingID uint `json:"mapping_id" binding:"required"`
 }
 
 type SpeakerMappingsUpdateResponse struct {
@@ -63,7 +71,7 @@ func (h *Handler) GetSpeakerMappings(c *gin.Context) {
 
 	// Verify the transcription job exists
 	if _, err := h.jobRepo.FindByID(c.Request.Context(), jobID); err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Transcription job not found"})
 			return
 		}
@@ -81,14 +89,7 @@ func (h *Handler) GetSpeakerMappings(c *gin.Context) {
 	// Convert to response format
 	response := make([]SpeakerMappingResponse, len(mappings))
 	for i, mapping := range mappings {
-		response[i] = SpeakerMappingResponse{
-			ID:              mapping.ID,
-			OriginalSpeaker: mapping.OriginalSpeaker,
-			CustomName:      mapping.CustomName,
-			ConfidenceScore: mapping.ConfidenceScore,
-			MatchSource:     mapping.MatchSource,
-			MatchTier:       mapping.MatchTier,
-		}
+		response[i] = speakerMappingToResponse(mapping)
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -121,7 +122,7 @@ func (h *Handler) UpdateSpeakerMappings(c *gin.Context) {
 	// Verify the transcription job exists
 	job, err := h.jobRepo.FindByID(c.Request.Context(), jobID)
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Transcription job not found"})
 			return
 		}
@@ -181,14 +182,7 @@ func (h *Handler) UpdateSpeakerMappings(c *gin.Context) {
 	// Convert to response format
 	response := make([]SpeakerMappingResponse, len(updatedMappings))
 	for i, mapping := range updatedMappings {
-		response[i] = SpeakerMappingResponse{
-			ID:              mapping.ID,
-			OriginalSpeaker: mapping.OriginalSpeaker,
-			CustomName:      mapping.CustomName,
-			ConfidenceScore: mapping.ConfidenceScore,
-			MatchSource:     mapping.MatchSource,
-			MatchTier:       mapping.MatchTier,
-		}
+		response[i] = speakerMappingToResponse(mapping)
 	}
 
 	c.JSON(http.StatusOK, SpeakerMappingsUpdateResponse{
@@ -224,7 +218,7 @@ func (h *Handler) PromoteSpeakerSuggestion(c *gin.Context) {
 	// Verify the transcription job exists.
 	job, err := h.jobRepo.FindByID(c.Request.Context(), jobID)
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Transcription job not found"})
 			return
 		}
@@ -233,13 +227,16 @@ func (h *Handler) PromoteSpeakerSuggestion(c *gin.Context) {
 	}
 
 	// Build the mapping with promotion metadata.
+	contactID := req.ContactID
 	mapping := models.SpeakerMapping{
 		TranscriptionJobID: jobID,
 		OriginalSpeaker:    req.OriginalSpeaker,
 		CustomName:         req.ContactName,
+		ContactID:          &contactID,
 		ConfidenceScore:    req.Score,
 		MatchSource:        "suggestion_promoted",
 		MatchTier:          "suggest",
+		ReviewStatus:       "accepted",
 	}
 
 	upserted, err := h.speakerMappingRepo.UpsertMapping(c.Request.Context(), jobID, mapping)
@@ -276,16 +273,111 @@ func (h *Handler) PromoteSpeakerSuggestion(c *gin.Context) {
 
 	// Build response with the single promoted mapping.
 	resp := SpeakerMappingsUpdateResponse{
-		Mappings: []SpeakerMappingResponse{{
-			ID:              upserted.ID,
-			OriginalSpeaker: upserted.OriginalSpeaker,
-			CustomName:      upserted.CustomName,
-			ConfidenceScore: upserted.ConfidenceScore,
-			MatchSource:     upserted.MatchSource,
-			MatchTier:       upserted.MatchTier,
-		}},
+		Mappings:         []SpeakerMappingResponse{speakerMappingToResponse(*upserted)},
 		ContactBootstrap: bootstrapSummary,
 	}
 
 	c.JSON(http.StatusOK, resp)
+}
+
+// GetSpeakerSuggestions returns pending speaker suggestions for a transcription.
+// @Summary Get pending speaker suggestions
+// @Description Returns suggest-tier speaker matches awaiting user review
+// @Tags transcription
+// @Produce json
+// @Param id path string true "Transcription Job ID"
+// @Success 200 {array} SpeakerMappingResponse
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Security BearerAuth
+// @Security ApiKeyAuth
+// @Router /api/v1/transcription/{id}/speakers/suggestions [get]
+func (h *Handler) GetSpeakerSuggestions(c *gin.Context) {
+	jobID := c.Param("id")
+
+	// Verify the transcription job exists.
+	if _, err := h.jobRepo.FindByID(c.Request.Context(), jobID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Transcription job not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get transcription job"})
+		return
+	}
+
+	suggestions, err := h.speakerMappingRepo.ListPendingSuggestions(c.Request.Context(), jobID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get speaker suggestions"})
+		return
+	}
+
+	response := make([]SpeakerMappingResponse, len(suggestions))
+	for i, s := range suggestions {
+		response[i] = speakerMappingToResponse(s)
+	}
+	c.JSON(http.StatusOK, response)
+}
+
+// DismissSpeakerSuggestion marks a pending suggestion as dismissed.
+// @Summary Dismiss a speaker suggestion
+// @Description Marks a suggest-tier match as dismissed so it no longer appears
+// @Tags transcription
+// @Accept json
+// @Produce json
+// @Param id path string true "Transcription Job ID"
+// @Param request body DismissSuggestionRequest true "Suggestion to dismiss"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Security BearerAuth
+// @Security ApiKeyAuth
+// @Router /api/v1/transcription/{id}/speakers/dismiss [post]
+func (h *Handler) DismissSpeakerSuggestion(c *gin.Context) {
+	jobID := c.Param("id")
+
+	var req DismissSuggestionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
+		return
+	}
+
+	// Verify the mapping belongs to this job (prevent IDOR).
+	mappings, err := h.speakerMappingRepo.ListByJob(c.Request.Context(), jobID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify suggestion ownership"})
+		return
+	}
+	found := false
+	for _, m := range mappings {
+		if m.ID == req.MappingID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Suggestion not found for this transcription"})
+		return
+	}
+
+	if err := h.speakerMappingRepo.UpdateReviewStatus(c.Request.Context(), req.MappingID, "dismissed"); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to dismiss suggestion"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": "dismissed"})
+}
+
+// speakerMappingToResponse converts a model to an API response.
+func speakerMappingToResponse(m models.SpeakerMapping) SpeakerMappingResponse {
+	return SpeakerMappingResponse{
+		ID:              m.ID,
+		OriginalSpeaker: m.OriginalSpeaker,
+		CustomName:      m.CustomName,
+		ContactID:       m.ContactID,
+		ConfidenceScore: m.ConfidenceScore,
+		MatchSource:     m.MatchSource,
+		MatchTier:       m.MatchTier,
+		ReviewStatus:    m.ReviewStatus,
+	}
 }

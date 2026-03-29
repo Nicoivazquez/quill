@@ -680,6 +680,9 @@ func (r *noteRepository) DeleteByTranscriptionID(ctx context.Context, transcript
 type SpeakerMappingRepository interface {
 	Repository[models.SpeakerMapping]
 	ListByJob(ctx context.Context, jobID string) ([]models.SpeakerMapping, error)
+	ListPendingSuggestions(ctx context.Context, jobID string) ([]models.SpeakerMapping, error)
+	CountPendingSuggestions(ctx context.Context, jobIDs []string) (map[string]int, error)
+	UpdateReviewStatus(ctx context.Context, id uint, status string) error
 	UpdateMappings(ctx context.Context, jobID string, mappings []models.SpeakerMapping) error
 	UpsertMapping(ctx context.Context, jobID string, mapping models.SpeakerMapping) (*models.SpeakerMapping, error)
 	DeleteByJobID(ctx context.Context, jobID string) error
@@ -716,9 +719,11 @@ func (r *speakerMappingRepository) UpsertMapping(ctx context.Context, jobID stri
 		if findErr == nil {
 			// Update existing row.
 			existing.CustomName = mapping.CustomName
+			existing.ContactID = mapping.ContactID
 			existing.ConfidenceScore = mapping.ConfidenceScore
 			existing.MatchSource = mapping.MatchSource
 			existing.MatchTier = mapping.MatchTier
+			existing.ReviewStatus = mapping.ReviewStatus
 			if err := tx.Save(&existing).Error; err != nil {
 				return err
 			}
@@ -743,7 +748,7 @@ func (r *speakerMappingRepository) UpsertMapping(ctx context.Context, jobID stri
 }
 
 func (r *speakerMappingRepository) UpdateMappings(ctx context.Context, jobID string, mappings []models.SpeakerMapping) error {
-	return r.db.Transaction(func(tx *gorm.DB) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Delete existing mappings for this job
 		if err := tx.Where("transcription_job_id = ?", jobID).Delete(&models.SpeakerMapping{}).Error; err != nil {
 			return err
@@ -757,6 +762,51 @@ func (r *speakerMappingRepository) UpdateMappings(ctx context.Context, jobID str
 		}
 		return nil
 	})
+}
+
+func (r *speakerMappingRepository) ListPendingSuggestions(ctx context.Context, jobID string) ([]models.SpeakerMapping, error) {
+	var mappings []models.SpeakerMapping
+	err := r.db.WithContext(ctx).
+		Where("transcription_job_id = ? AND review_status = ?", jobID, "pending").
+		Find(&mappings).Error
+	if err != nil {
+		return nil, err
+	}
+	return mappings, nil
+}
+
+func (r *speakerMappingRepository) CountPendingSuggestions(ctx context.Context, jobIDs []string) (map[string]int, error) {
+	if len(jobIDs) == 0 {
+		return map[string]int{}, nil
+	}
+
+	type countRow struct {
+		TranscriptionJobID string
+		Count              int
+	}
+	var rows []countRow
+	err := r.db.WithContext(ctx).
+		Model(&models.SpeakerMapping{}).
+		Select("transcription_job_id, COUNT(*) as count").
+		Where("transcription_job_id IN ? AND review_status = ?", jobIDs, "pending").
+		Group("transcription_job_id").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string]int, len(rows))
+	for _, row := range rows {
+		result[row.TranscriptionJobID] = row.Count
+	}
+	return result, nil
+}
+
+func (r *speakerMappingRepository) UpdateReviewStatus(ctx context.Context, id uint, status string) error {
+	return r.db.WithContext(ctx).
+		Model(&models.SpeakerMapping{}).
+		Where("id = ?", id).
+		Update("review_status", status).Error
 }
 
 // RefreshTokenRepository handles refresh token operations

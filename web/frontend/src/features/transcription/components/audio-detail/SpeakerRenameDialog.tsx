@@ -19,8 +19,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useContacts, useCreateContact } from "@/features/contacts/hooks/useContacts";
 import type { Contact } from "@/features/contacts/types";
 import type { SpeakerMapping, SpeakerMappingsUpdateResponse } from "@/features/transcription/hooks/useTranscriptionSpeakers";
-import { usePromoteSpeakerSuggestion } from "@/features/transcription/hooks/useTranscriptionSpeakers";
-import type { SpeakerIdentificationEvent, SpeakerSuggestion } from "@/features/transcription/hooks/useTranscriptionEvents";
+import { usePromoteSpeakerSuggestion, useSpeakerSuggestions, useDismissSpeakerSuggestion } from "@/features/transcription/hooks/useTranscriptionSpeakers";
 import { formatSpeakerLabel } from "@/lib/speaker-utils";
 
 interface SpeakerRenameDialogProps {
@@ -92,25 +91,23 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
   const [retranscribeNumSpeakers, setRetranscribeNumSpeakers] = useState("");
   const [isRetranscribing, setIsRetranscribing] = useState(false);
   const promoteMutation = usePromoteSpeakerSuggestion();
+  const dismissMutation = useDismissSpeakerSuggestion();
   const createContactMutation = useCreateContact();
   const contactsQuery = useContacts("", open);
   const contacts = useMemo(() => contactsQuery.data?.contacts ?? [], [contactsQuery.data?.contacts]);
 
-  // Read auto-label suggestions from React Query cache (populated by SSE)
-  const autoLabelData = queryClient.getQueryData<SpeakerIdentificationEvent>(
-    ['speakerSuggestions', transcriptionId],
-  );
+  // Fetch pending suggestions from DB-backed API (persisted, not ephemeral SSE)
+  const suggestionsQuery = useSpeakerSuggestions(transcriptionId, open);
 
-  // Build a lookup: speaker label -> best suggestion
+  // Build a lookup: speaker label -> best pending suggestion
   const voiceSuggestions = useMemo(() => {
-    const map = new Map<string, SpeakerSuggestion>();
-    if (!autoLabelData) return map;
-    // Suggestions (tier="suggest") are the ones we show as actionable chips
-    for (const s of autoLabelData.suggestions) {
-      map.set(s.speaker, s);
+    const map = new Map<string, SpeakerMapping>();
+    if (!suggestionsQuery.data) return map;
+    for (const s of suggestionsQuery.data) {
+      map.set(s.original_speaker, s);
     }
     return map;
-  }, [autoLabelData]);
+  }, [suggestionsQuery.data]);
   const topContacts = useMemo(
     () => [...contacts].sort((a, b) => a.name.localeCompare(b.name)).slice(0, MAX_CONTACT_SUGGESTIONS),
     [contacts],
@@ -422,8 +419,28 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
   const isLockedSpeaker = useCallback((speaker: string) => {
     if (promotedSpeakers.has(speaker)) return true;
     const detail = mappingDetails.get(speaker);
-    return detail?.match_source === 'auto';
+    return detail?.match_source === 'auto' || detail?.match_source === 'retroactive';
   }, [promotedSpeakers, mappingDetails]);
+
+  // Categorize speakers into three groups
+  const { autoAssigned, suggested, unassigned } = useMemo(() => {
+    const auto: string[] = [];
+    const suggest: string[] = [];
+    const unmapped: string[] = [];
+
+    for (const speaker of speakers) {
+      const detail = mappingDetails.get(speaker);
+      if (detail?.match_source === 'auto' || detail?.match_source === 'retroactive' || detail?.match_source === 'suggestion_promoted' || promotedSpeakers.has(speaker)) {
+        auto.push(speaker);
+      } else if (voiceSuggestions.has(speaker)) {
+        suggest.push(speaker);
+      } else {
+        unmapped.push(speaker);
+      }
+    }
+
+    return { autoAssigned: auto, suggested: suggest, unassigned: unmapped };
+  }, [speakers, mappingDetails, voiceSuggestions, promotedSpeakers]);
 
   useEffect(() => {
     if (!open) {
@@ -467,195 +484,235 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
                 </CardContent>
               </Card>
             ) : (
-              <div className="space-y-3 max-h-60 overflow-y-auto">
-                {speakers.map((speaker) => {
-                  const suggestions = getContactSuggestions(speakerMappings[speaker] ?? "", speaker);
-                  const voiceSuggestion = voiceSuggestions.get(speaker);
+              <div className="space-y-4 max-h-[400px] overflow-y-auto">
+                {/* ── Auto-assigned speakers ── */}
+                {autoAssigned.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <div className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                      <span className="text-xs font-medium text-green-600 dark:text-green-400 uppercase tracking-wider">
+                        Identified ({autoAssigned.length})
+                      </span>
+                    </div>
+                    {autoAssigned.map((speaker) => {
+                      const detail = mappingDetails.get(speaker);
+                      return (
+                        <div key={speaker} className="flex items-center gap-3 px-3 py-2 rounded-md bg-green-500/5 border border-green-500/20">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-muted-foreground">{formatSpeakerLabel(speaker)}</span>
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-green-500/10 text-green-600 dark:text-green-400 inline-flex items-center gap-1" data-testid={`badge-auto-${speaker}`}>
+                                <Check className="h-3 w-3" />
+                                {Math.round((detail?.confidence_score ?? 0) * 100)}%
+                              </span>
+                            </div>
+                            <div className="text-sm font-medium truncate">{speakerMappings[speaker] || detail?.custom_name}</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
 
-                  return (
-                    <div
-                      key={speaker}
-                      className="space-y-1"
-                    >
+                {/* ── Suggested speakers (pending review) ── */}
+                {suggested.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <div className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                      <span className="text-xs font-medium text-amber-600 dark:text-amber-400 uppercase tracking-wider">
+                        Suggestions ({suggested.length})
+                      </span>
+                    </div>
+                    {suggested.map((speaker) => {
+                      const suggestion = voiceSuggestions.get(speaker);
+                      if (!suggestion) return null;
+                      const isPromoting = promoteMutation.isPending && promoteMutation.variables?.originalSpeaker === speaker;
+                      const isDismissing = dismissMutation.isPending && dismissMutation.variables?.mappingId === suggestion.id;
+
+                      return (
+                        <div key={speaker} className="px-3 py-2 rounded-md bg-amber-500/5 border border-amber-500/20" data-testid={`suggestion-${speaker}`}>
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <span className="text-xs text-muted-foreground">{formatSpeakerLabel(speaker)}</span>
+                            <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                              {Math.round((suggestion.confidence_score ?? 0) * 100)}% match
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Sparkles className="h-4 w-4 text-amber-500 shrink-0" />
+                            <span className="text-sm font-medium flex-1">
+                              Is this <span className="text-amber-600 dark:text-amber-400">{suggestion.custom_name}</span>?
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 px-2 text-green-600 hover:text-green-700 hover:bg-green-500/10"
+                                disabled={isPromoting || isDismissing}
+                                onClick={() => {
+                                  promoteMutation.mutate(
+                                    {
+                                      transcriptionId,
+                                      originalSpeaker: speaker,
+                                      contactId: suggestion.contact_id!,
+                                      contactName: suggestion.custom_name,
+                                      score: suggestion.confidence_score ?? 0,
+                                    },
+                                    {
+                                      onSuccess: (data) => {
+                                        setSpeakerMappings((prev) => ({
+                                          ...prev,
+                                          [speaker]: suggestion.custom_name,
+                                        }));
+                                        setPromotedSpeakers((prev) => new Set(prev).add(speaker));
+                                        onSpeakerMappingsUpdate(data.mappings);
+                                        toast({
+                                          title: `Speaker assigned to ${suggestion.custom_name}`,
+                                          description: `Voice match with ${Math.round((suggestion.confidence_score ?? 0) * 100)}% confidence`,
+                                        });
+                                      },
+                                    },
+                                  );
+                                }}
+                              >
+                                {isPromoting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                                <span className="ml-1">Yes</span>
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 px-2 text-muted-foreground hover:text-red-600 hover:bg-red-500/10"
+                                disabled={isPromoting || isDismissing}
+                                onClick={() => {
+                                  if (!suggestion.id) return;
+                                  dismissMutation.mutate(
+                                    { transcriptionId, mappingId: suggestion.id },
+                                    {
+                                      onSuccess: () => {
+                                        toast({ title: `Suggestion dismissed for ${formatSpeakerLabel(speaker)}` });
+                                      },
+                                    },
+                                  );
+                                }}
+                              >
+                                {isDismissing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
+                                <span className="ml-1">No</span>
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* ── Unassigned speakers ── */}
+                {unassigned.length > 0 && (
+                  <div className="space-y-2">
+                    {(autoAssigned.length > 0 || suggested.length > 0) && (
                       <div className="flex items-center gap-2">
-                        <Label htmlFor={`speaker-${speaker}`} className="text-xs font-medium text-muted-foreground">
-                          {formatSpeakerLabel(speaker)}
-                        </Label>
-                        {promotedSpeakers.has(speaker) ? (
-                          <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-green-500/10 text-green-600 dark:text-green-400" data-testid={`badge-matched-${speaker}`}>
-                            <Check className="h-3 w-3" />
-                            Matched{mappingDetails.get(speaker)?.confidence_score ? ` ${Math.round(mappingDetails.get(speaker)!.confidence_score! * 100)}%` : ''}
-                          </span>
-                        ) : mappingDetails.get(speaker)?.match_source === 'auto' ? (
-                          <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400" data-testid={`badge-auto-${speaker}`}>
-                            <Sparkles className="h-3 w-3" />
-                            Auto {Math.round((mappingDetails.get(speaker)?.confidence_score ?? 0) * 100)}%
-                          </span>
-                        ) : voiceSuggestion && (
-                          <button
-                            type="button"
-                            disabled={promoteMutation.isPending && promoteMutation.variables?.originalSpeaker === speaker}
-                            onClick={() => {
-                              promoteMutation.mutate(
-                                {
-                                  transcriptionId,
-                                  originalSpeaker: speaker,
-                                  contactId: voiceSuggestion.contact_id,
-                                  contactName: voiceSuggestion.contact_name,
-                                  score: voiceSuggestion.score,
-                                },
-                                {
-                                  onSuccess: (data) => {
-                                    setSpeakerMappings((prev) => ({
-                                      ...prev,
-                                      [speaker]: voiceSuggestion.contact_name,
-                                    }));
-                                    setPromotedSpeakers((prev) => new Set(prev).add(speaker));
-                                    onSpeakerMappingsUpdate(data.mappings);
-                                    toast({
-                                      title: `Speaker assigned to ${voiceSuggestion.contact_name}`,
-                                      description: `Voice match with ${Math.round(voiceSuggestion.score * 100)}% confidence`,
-                                    });
-                                  },
-                                },
-                              );
-                            }}
-                            className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-[var(--brand-solid)]/10 text-[var(--brand-solid)] hover:bg-[var(--brand-solid)]/20 transition-colors"
-                            title={`Voice match: ${Math.round(voiceSuggestion.score * 100)}% confidence — click to apply`}
-                          >
-                            {promoteMutation.isPending && promoteMutation.variables?.originalSpeaker === speaker ? (
-                              <Loader2 className="h-3 w-3 animate-spin" />
-                            ) : (
-                              <Sparkles className="h-3 w-3" />
-                            )}
-                            {voiceSuggestion.contact_name} ({Math.round(voiceSuggestion.score * 100)}%)
-                          </button>
-                        )}
+                        <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40" />
+                        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                          Unassigned ({unassigned.length})
+                        </span>
                       </div>
-                      <Popover
-                        open={activeSpeaker === speaker}
-                        onOpenChange={(nextOpen) => {
-                          setActiveSpeaker((current) => {
-                            if (nextOpen) {
-                              return speaker;
-                            }
-                            return current === speaker ? null : current;
-                          });
-                          if (!nextOpen) {
-                            setHighlightedSuggestionIndex(0);
-                          }
-                        }}
-                      >
-                        <PopoverAnchor asChild>
-                          <Input
-                            id={`speaker-${speaker}`}
-                            value={speakerMappings[speaker] || ''}
-                            onChange={(e) => handleSpeakerNameChange(speaker, e.target.value)}
-                            onFocus={() => {
-                              if (!isLockedSpeaker(speaker)) {
-                                setActiveSpeaker(speaker);
-                                setHighlightedSuggestionIndex(0);
-                              }
+                    )}
+                    {unassigned.map((speaker) => {
+                      const suggestions = getContactSuggestions(speakerMappings[speaker] ?? "", speaker);
+
+                      return (
+                        <div key={speaker} className="space-y-1">
+                          <Label htmlFor={`speaker-${speaker}`} className="text-xs font-medium text-muted-foreground">
+                            {formatSpeakerLabel(speaker)}
+                          </Label>
+                          <Popover
+                            open={activeSpeaker === speaker}
+                            onOpenChange={(nextOpen) => {
+                              setActiveSpeaker((current) => {
+                                if (nextOpen) return speaker;
+                                return current === speaker ? null : current;
+                              });
+                              if (!nextOpen) setHighlightedSuggestionIndex(0);
                             }}
-                            onClick={() => {
-                              if (!isLockedSpeaker(speaker)) {
-                                setActiveSpeaker(speaker);
-                                setHighlightedSuggestionIndex(0);
-                              }
-                            }}
-                            onKeyDown={(event) => handleSpeakerInputKeyDown(event, speaker)}
-                            placeholder={`Enter custom name for ${formatSpeakerLabel(speaker)}`}
-                            readOnly={isLockedSpeaker(speaker)}
-                            className={`transition-all duration-200 focus:ring-2 focus:ring-primary/20 ${isLockedSpeaker(speaker) ? 'opacity-60 cursor-default' : ''}`}
-                          />
-                        </PopoverAnchor>
-                        <PopoverContent
-                          align="start"
-                          sideOffset={6}
-                          onOpenAutoFocus={(event) => event.preventDefault()}
-                          className="w-[var(--radix-popover-trigger-width)] p-0"
-                        >
-                          <div className="max-h-44 overflow-y-auto py-1">
-                            {contactsQuery.isLoading ? (
-                              <div className="px-3 py-2 text-xs text-[var(--text-tertiary)]">
-                                Loading contacts...
-                              </div>
-                            ) : (
-                              <>
-                                {suggestions.map((contact, index) => (
-                                  <button
-                                    type="button"
-                                    role="option"
-                                    aria-selected={index === highlightedSuggestionIndex}
-                                    key={contact.id}
-                                    onMouseEnter={() => setHighlightedSuggestionIndex(index)}
-                                    onMouseDown={(event) => {
-                                      event.preventDefault();
-                                      applyContactSuggestion(speaker, contact);
-                                    }}
-                                    className={`w-full px-3 py-2 text-left transition-colors ${index === highlightedSuggestionIndex
-                                      ? "bg-[var(--bg-muted-pane)]"
-                                      : "hover:bg-[var(--bg-muted-pane)]/70"
-                                      }`}
-                                  >
-                                    <div className="text-sm font-medium text-[var(--text-primary)]">
-                                      {contact.name}
-                                    </div>
-                                    {(contact.email || contact.phone) && (
-                                      <div className="text-xs text-[var(--text-secondary)]">
-                                        {contact.email || contact.phone}
-                                      </div>
-                                    )}
-                                  </button>
-                                ))}
-                                {isNewContactCandidate(speakerMappings[speaker] ?? "", speaker) && (() => {
-                                  const createIndex = suggestions.length;
-                                  const trimmedName = (speakerMappings[speaker] ?? "").trim();
-                                  return (
-                                    <>
-                                      {suggestions.length > 0 && (
-                                        <div className="border-t border-[var(--border-subtle)] my-1" />
-                                      )}
+                          >
+                            <PopoverAnchor asChild>
+                              <Input
+                                id={`speaker-${speaker}`}
+                                value={speakerMappings[speaker] || ''}
+                                onChange={(e) => handleSpeakerNameChange(speaker, e.target.value)}
+                                onFocus={() => { setActiveSpeaker(speaker); setHighlightedSuggestionIndex(0); }}
+                                onClick={() => { setActiveSpeaker(speaker); setHighlightedSuggestionIndex(0); }}
+                                onKeyDown={(event) => handleSpeakerInputKeyDown(event, speaker)}
+                                placeholder={`Enter custom name for ${formatSpeakerLabel(speaker)}`}
+                                className="transition-all duration-200 focus:ring-2 focus:ring-primary/20"
+                              />
+                            </PopoverAnchor>
+                            <PopoverContent
+                              align="start"
+                              sideOffset={6}
+                              onOpenAutoFocus={(event) => event.preventDefault()}
+                              className="w-[var(--radix-popover-trigger-width)] p-0"
+                            >
+                              <div className="max-h-44 overflow-y-auto py-1">
+                                {contactsQuery.isLoading ? (
+                                  <div className="px-3 py-2 text-xs text-[var(--text-tertiary)]">Loading contacts...</div>
+                                ) : (
+                                  <>
+                                    {suggestions.map((contact, index) => (
                                       <button
                                         type="button"
                                         role="option"
-                                        aria-selected={createIndex === highlightedSuggestionIndex}
-                                        onMouseEnter={() => setHighlightedSuggestionIndex(createIndex)}
-                                        onMouseDown={(event) => {
-                                          event.preventDefault();
-                                          handleCreateContact(speaker, trimmedName);
-                                        }}
-                                        disabled={createContactMutation.isPending}
-                                        className={`w-full px-3 py-2 text-left transition-colors flex items-center gap-2 ${createIndex === highlightedSuggestionIndex
-                                          ? "bg-[var(--bg-muted-pane)]"
-                                          : "hover:bg-[var(--bg-muted-pane)]/70"
-                                          }`}
+                                        aria-selected={index === highlightedSuggestionIndex}
+                                        key={contact.id}
+                                        onMouseEnter={() => setHighlightedSuggestionIndex(index)}
+                                        onMouseDown={(event) => { event.preventDefault(); applyContactSuggestion(speaker, contact); }}
+                                        className={`w-full px-3 py-2 text-left transition-colors ${index === highlightedSuggestionIndex ? "bg-[var(--bg-muted-pane)]" : "hover:bg-[var(--bg-muted-pane)]/70"}`}
                                       >
-                                        {createContactMutation.isPending ? (
-                                          <Loader2 className="h-4 w-4 animate-spin text-[var(--brand-solid)] shrink-0" />
-                                        ) : (
-                                          <UserPlus className="h-4 w-4 text-[var(--brand-solid)] shrink-0" />
+                                        <div className="text-sm font-medium text-[var(--text-primary)]">{contact.name}</div>
+                                        {(contact.email || contact.phone) && (
+                                          <div className="text-xs text-[var(--text-secondary)]">{contact.email || contact.phone}</div>
                                         )}
-                                        <span className="text-sm text-[var(--text-primary)]">
-                                          Create "<span className="font-medium">{trimmedName}</span>"
-                                        </span>
                                       </button>
-                                    </>
-                                  );
-                                })()}
-                                {suggestions.length === 0 && !isNewContactCandidate(speakerMappings[speaker] ?? "", speaker) && contacts.length === 0 && (
-                                  <div className="px-3 py-2 text-xs text-[var(--text-tertiary)]">
-                                    No contacts yet. Type a name to create one.
-                                  </div>
+                                    ))}
+                                    {isNewContactCandidate(speakerMappings[speaker] ?? "", speaker) && (() => {
+                                      const createIndex = suggestions.length;
+                                      const trimmedName = (speakerMappings[speaker] ?? "").trim();
+                                      return (
+                                        <>
+                                          {suggestions.length > 0 && <div className="border-t border-[var(--border-subtle)] my-1" />}
+                                          <button
+                                            type="button"
+                                            role="option"
+                                            aria-selected={createIndex === highlightedSuggestionIndex}
+                                            onMouseEnter={() => setHighlightedSuggestionIndex(createIndex)}
+                                            onMouseDown={(event) => { event.preventDefault(); handleCreateContact(speaker, trimmedName); }}
+                                            disabled={createContactMutation.isPending}
+                                            className={`w-full px-3 py-2 text-left transition-colors flex items-center gap-2 ${createIndex === highlightedSuggestionIndex ? "bg-[var(--bg-muted-pane)]" : "hover:bg-[var(--bg-muted-pane)]/70"}`}
+                                          >
+                                            {createContactMutation.isPending ? (
+                                              <Loader2 className="h-4 w-4 animate-spin text-[var(--brand-solid)] shrink-0" />
+                                            ) : (
+                                              <UserPlus className="h-4 w-4 text-[var(--brand-solid)] shrink-0" />
+                                            )}
+                                            <span className="text-sm text-[var(--text-primary)]">
+                                              Create "<span className="font-medium">{trimmedName}</span>"
+                                            </span>
+                                          </button>
+                                        </>
+                                      );
+                                    })()}
+                                    {suggestions.length === 0 && !isNewContactCandidate(speakerMappings[speaker] ?? "", speaker) && contacts.length === 0 && (
+                                      <div className="px-3 py-2 text-xs text-[var(--text-tertiary)]">No contacts yet. Type a name to create one.</div>
+                                    )}
+                                  </>
                                 )}
-                              </>
-                            )}
-                          </div>
-                        </PopoverContent>
-                      </Popover>
-                    </div>
-                  );
-                })}
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
           </div>

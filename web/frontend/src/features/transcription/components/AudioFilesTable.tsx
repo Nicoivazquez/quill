@@ -15,6 +15,7 @@ import {
 	BookMarked,
 	Sparkles,
 	Type,
+	Users,
 } from "lucide-react";
 import { WandAdvancedIcon } from "@/components/icons/WandAdvancedIcon";
 
@@ -123,6 +124,17 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 	// Flatten data from pages
 	const data = useMemo(() => {
 		return infiniteData?.pages.flatMap(page => page.jobs) || [];
+	}, [infiniteData]);
+
+	// Collect pending speaker suggestions across all pages
+	const pendingSuggestions = useMemo(() => {
+		const counts: Record<string, number> = {};
+		for (const page of infiniteData?.pages || []) {
+			if (page.pending_suggestions) {
+				Object.assign(counts, page.pending_suggestions);
+			}
+		}
+		return counts;
 	}, [infiniteData]);
 
 	const loading = queryLoading;
@@ -1021,9 +1033,26 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 
 										{/* Text */}
 										<div className="min-w-0">
-											<h4 className="font-normal text-gray-900 dark:text-gray-100 truncate text-lg leading-tight group-hover:text-[var(--brand-solid)] transition-colors">
-												{file.title || getFileName(file.audio_path)}
-											</h4>
+											<div className="flex items-center gap-2">
+												<h4 className="font-normal text-gray-900 dark:text-gray-100 truncate text-lg leading-tight group-hover:text-[var(--brand-solid)] transition-colors">
+													{file.title || getFileName(file.audio_path)}
+												</h4>
+												{(pendingSuggestions[file.id] ?? 0) > 0 && (
+													<Tooltip>
+														<TooltipTrigger asChild>
+															<span className="flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400 border border-amber-200 dark:border-amber-700/50">
+																<Users className="h-3 w-3" />
+																{pendingSuggestions[file.id]}
+															</span>
+														</TooltipTrigger>
+														<TooltipContent>
+															{pendingSuggestions[file.id] === 1
+																? "1 speaker needs identification"
+																: `${pendingSuggestions[file.id]} speakers need identification`}
+														</TooltipContent>
+													</Tooltip>
+												)}
+											</div>
 											<div className="flex items-center gap-1.5 mt-1 text-sm text-gray-500">
 												{formatDate(file.created_at)}
 											</div>

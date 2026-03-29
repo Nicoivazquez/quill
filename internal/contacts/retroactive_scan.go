@@ -168,7 +168,7 @@ func (s *RetroactiveScanService) ScanForContact(ctx context.Context, contactID u
 		for _, m := range fusedMatches {
 			switch m.Tier {
 			case TierAutoAssign:
-				if persistErr := s.persistRetroactiveMapping(ctx, job.ID, m); persistErr != nil {
+				if persistErr := s.persistRetroactiveMapping(ctx, job.ID, m, ""); persistErr != nil {
 					logger.Warn("retroactive scan: persist failed",
 						"job_id", job.ID, "speaker", m.Speaker, "error", persistErr)
 					result.Errors++
@@ -177,8 +177,14 @@ func (s *RetroactiveScanService) ScanForContact(ctx context.Context, contactID u
 					jobMatched = true
 				}
 			case TierSuggest:
-				result.Suggestions++
-				jobMatched = true
+				if persistErr := s.persistRetroactiveMapping(ctx, job.ID, m, "pending"); persistErr != nil {
+					logger.Warn("retroactive scan: persist suggestion failed",
+						"job_id", job.ID, "speaker", m.Speaker, "error", persistErr)
+					result.Errors++
+				} else {
+					result.Suggestions++
+					jobMatched = true
+				}
 			}
 		}
 
@@ -226,14 +232,17 @@ func filterUnmappedSpeakers(
 
 // persistRetroactiveMapping creates a speaker mapping from a retroactive scan
 // match, marking it with MatchSource="retroactive".
-func (s *RetroactiveScanService) persistRetroactiveMapping(ctx context.Context, jobID string, m SpeakerMatch) error {
+func (s *RetroactiveScanService) persistRetroactiveMapping(ctx context.Context, jobID string, m SpeakerMatch, reviewStatus string) error {
+	contactID := m.ContactID
 	mapping := &models.SpeakerMapping{
 		TranscriptionJobID: jobID,
 		OriginalSpeaker:    m.Speaker,
 		CustomName:         m.ContactName,
+		ContactID:          &contactID,
 		ConfidenceScore:    m.Score,
 		MatchSource:        "retroactive",
 		MatchTier:          string(m.Tier),
+		ReviewStatus:       reviewStatus,
 	}
 	return s.speakerMapRepo.Create(ctx, mapping)
 }

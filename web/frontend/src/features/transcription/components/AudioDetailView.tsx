@@ -194,7 +194,7 @@ export const AudioDetailView = function AudioDetailView({ audioId: propAudioId }
     }, [getAuthHeaders]);
 
     // Fallback: when polling detects completion, refetch transcript if it's still null
-    const prevStatusRef = useRef<string | undefined>();
+    const prevStatusRef = useRef<string | undefined>(undefined);
     useEffect(() => {
         const prev = prevStatusRef.current;
         prevStatusRef.current = audioFile?.status;

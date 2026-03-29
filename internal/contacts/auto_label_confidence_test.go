@@ -29,7 +29,7 @@ func TestPersistMapping_PopulatesConfidenceFields(t *testing.T) {
 		Tier:        TierAutoAssign,
 	}
 
-	if err := svc.persistMapping(context.Background(), "job-conf-persist", match); err != nil {
+	if err := svc.persistMapping(context.Background(), "job-conf-persist", match, ""); err != nil {
 		t.Fatalf("persistMapping: %v", err)
 	}
 
@@ -68,7 +68,7 @@ func TestPersistMapping_SuggestTier(t *testing.T) {
 		Tier:        TierSuggest,
 	}
 
-	if err := svc.persistMapping(context.Background(), "job-suggest-persist", match); err != nil {
+	if err := svc.persistMapping(context.Background(), "job-suggest-persist", match, "pending"); err != nil {
 		t.Fatalf("persistMapping: %v", err)
 	}
 
@@ -120,7 +120,7 @@ func TestPersistMapping_SkipsExisting(t *testing.T) {
 		Score:       0.95,
 		Tier:        TierAutoAssign,
 	}
-	if err := svc.persistMapping(context.Background(), "job-skip-existing", match); err != nil {
+	if err := svc.persistMapping(context.Background(), "job-skip-existing", match, ""); err != nil {
 		t.Fatalf("persistMapping: %v", err)
 	}
 
