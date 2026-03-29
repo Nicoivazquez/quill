@@ -89,6 +89,7 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
   const [retranscribeFamily, setRetranscribeFamily] = useState("mlx_whisper");
   const [retranscribeModel, setRetranscribeModel] = useState("large-v3-turbo");
   const [retranscribeNumSpeakers, setRetranscribeNumSpeakers] = useState("");
+  const [retranscribeDiarizeMode, setRetranscribeDiarizeMode] = useState<"local" | "pyannote">("local");
   const [isRetranscribing, setIsRetranscribing] = useState(false);
   const promoteMutation = usePromoteSpeakerSuggestion();
   const dismissMutation = useDismissSpeakerSuggestion();
@@ -378,15 +379,24 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
     setIsRetranscribing(true);
     try {
       const numSpeakers = retranscribeNumSpeakers ? parseInt(retranscribeNumSpeakers, 10) : undefined;
+      const isSortformer = retranscribeDiarizeMode === "local";
+      const diarizeModel = isSortformer ? "nvidia_sortformer" : "pyannote";
+
       const params: Record<string, unknown> = {
         model_family: retranscribeFamily,
         model: retranscribeModel,
         diarize: true,
-        diarize_model: "nvidia_sortformer",
+        diarize_model: diarizeModel,
       };
+
       if (numSpeakers && numSpeakers > 0) {
-        params.min_speakers = numSpeakers;
-        params.max_speakers = numSpeakers;
+        // Sortformer only supports max_speakers; Pyannote supports both
+        if (isSortformer) {
+          params.max_speakers = numSpeakers;
+        } else {
+          params.min_speakers = numSpeakers;
+          params.max_speakers = numSpeakers;
+        }
       }
 
       const response = await fetch(`/api/v1/transcription/${transcriptionId}/start`, {
@@ -450,6 +460,7 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
       setMappingDetails(new Map());
       setRetranscribeOpen(false);
       setRetranscribeNumSpeakers("");
+      setRetranscribeDiarizeMode("local");
     }
   }, [open]);
 
@@ -769,18 +780,40 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-[var(--text-tertiary)]">Number of Speakers (optional)</Label>
+                  <Label className="text-xs text-[var(--text-tertiary)]">Speaker Diarization</Label>
+                  <Select value={retranscribeDiarizeMode} onValueChange={(v) => setRetranscribeDiarizeMode(v as typeof retranscribeDiarizeMode)}>
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="local">NVIDIA Sortformer</SelectItem>
+                      <SelectItem value="pyannote">Pyannote</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-[var(--text-tertiary)]">
+                    {retranscribeDiarizeMode === "local" && "NVIDIA Sortformer runs locally without a Hugging Face token."}
+                    {retranscribeDiarizeMode === "pyannote" && "Pyannote provides high-accuracy diarization. Configure your Hugging Face token in Settings \u2192 Transcription."}
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-[var(--text-tertiary)]">
+                    {retranscribeDiarizeMode === "local" ? "Max Speakers (optional)" : "Number of Speakers (optional)"}
+                  </Label>
                   <Input
                     type="number"
                     min={1}
-                    max={20}
+                    max={retranscribeDiarizeMode === "local" ? 8 : 20}
                     placeholder="Auto-detect"
                     value={retranscribeNumSpeakers}
                     onChange={(e) => setRetranscribeNumSpeakers(e.target.value)}
                     className="h-8 text-sm"
                   />
                   <p className="text-xs text-[var(--text-tertiary)]">
-                    Set the exact number of speakers for more accurate diarization.
+                    {retranscribeDiarizeMode === "local"
+                      ? "Sortformer supports up to 8 speakers. Leave blank to auto-detect (defaults to 4)."
+                      : "Set the exact number of speakers for more accurate diarization."
+                    }
                   </p>
                 </div>
 

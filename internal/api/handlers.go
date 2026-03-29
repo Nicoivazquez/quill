@@ -348,7 +348,7 @@ func transformAPIKeyForList(apiKey models.APIKey) APIKeyListResponse {
 func resolveInboundUploadBase(defaultDir string) (string, *uint) {
 	vault, err := getActiveVault()
 	if err == nil && vault != nil && strings.TrimSpace(vault.Path) != "" {
-		return filepath.Join(vault.Path, "Inbox"), &vault.ID
+		return filepath.Join(vault.Path, ".quill", "inbox"), &vault.ID
 	}
 	return defaultDir, nil
 }
@@ -883,7 +883,7 @@ func (h *Handler) SubmitJob(c *gin.Context) {
 		return
 	}
 	params.DiarizeModel = diarizeModel
-	fallbackDiarizationModelIfTokenMissing(&params, "upload", h.config.HFToken)
+	h.fallbackDiarizationModelIfTokenMissing(&params, "upload", h.config.HFToken)
 
 	// Create job
 	job := models.TranscriptionJob{
@@ -1323,7 +1323,7 @@ func (h *Handler) getValidatedTranscriptionParams(c *gin.Context, job *models.Tr
 		return nil, fmt.Errorf("invalid diarize_model")
 	}
 	requestParams.DiarizeModel = normalizedDiarizeModel
-	fallbackDiarizationModelIfTokenMissing(&requestParams, fmt.Sprintf("start_transcription job=%s", jobID), h.config.HFToken)
+	h.fallbackDiarizationModelIfTokenMissing(&requestParams, fmt.Sprintf("start_transcription job=%s", jobID), h.config.HFToken)
 
 	// Validate multi-track compatibility
 	if job.IsMultiTrack && !requestParams.IsMultiTrackEnabled {
@@ -3061,7 +3061,7 @@ func hasHFToken(hfToken *string) bool {
 	return hfToken != nil && strings.TrimSpace(*hfToken) != ""
 }
 
-func fallbackDiarizationModelIfTokenMissing(params *models.WhisperXParams, context string, serverHFToken string) {
+func (h *Handler) fallbackDiarizationModelIfTokenMissing(params *models.WhisperXParams, ctx string, serverHFToken string) {
 	if !params.Diarize || params.DiarizeModel != transcription.ModelPyannote {
 		return
 	}
@@ -3075,14 +3075,27 @@ func fallbackDiarizationModelIfTokenMissing(params *models.WhisperXParams, conte
 		params.HfToken = &resolvedServerToken
 		logger.Info(
 			"Using server-managed Hugging Face token for Pyannote diarization",
-			"context", context,
+			"context", ctx,
 		)
 		return
 	}
 
+	// Check cloud provider store for a saved Hugging Face token
+	if h.cloudProviderRepo != nil {
+		if stored, err := h.cloudProviderRepo.GetByProvider(context.Background(), "huggingface"); err == nil && stored != nil && strings.TrimSpace(stored.APIKey) != "" {
+			token := strings.TrimSpace(stored.APIKey)
+			params.HfToken = &token
+			logger.Info(
+				"Using stored Hugging Face token from cloud providers for Pyannote diarization",
+				"context", ctx,
+			)
+			return
+		}
+	}
+
 	logger.Warn(
 		"Pyannote diarization requested without Hugging Face token; falling back to NVIDIA Sortformer",
-		"context", context,
+		"context", ctx,
 	)
 	params.DiarizeModel = transcription.DiarizeSortformer
 }
@@ -3431,7 +3444,7 @@ func (h *Handler) SubmitQuickTranscription(c *gin.Context) {
 		return
 	}
 	params.DiarizeModel = normalizedDiarizeModel
-	fallbackDiarizationModelIfTokenMissing(&params, "quick_transcription", h.config.HFToken)
+	h.fallbackDiarizationModelIfTokenMissing(&params, "quick_transcription", h.config.HFToken)
 
 	// Submit quick transcription job
 	job, err := h.quickTranscription.SubmitQuickJob(file, header.Filename, params)

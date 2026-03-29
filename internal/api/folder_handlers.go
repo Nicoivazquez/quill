@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -192,43 +193,55 @@ func (h *Handler) MoveTranscriptToFolder(c *gin.Context) {
 		return
 	}
 
+	var artifactDir, audioPath, jsonPath, mdPath *string
+
 	// Move bundle on disk if we have an artifact directory
 	if job.ArtifactDir != nil && *job.ArtifactDir != "" {
-		newDir, moveErr := transcription.MoveBundleToFolder(*job.ArtifactDir, folder)
+		oldDir := *job.ArtifactDir
+		newDir, moveErr := transcription.MoveBundleToFolder(oldDir, folder)
 		if moveErr != nil {
 			c.JSON(http.StatusConflict, gin.H{"error": moveErr.Error()})
 			return
 		}
 
-		// Update paths
-		if newDir != *job.ArtifactDir {
-			oldDir := *job.ArtifactDir
-			job.ArtifactDir = &newDir
-			// Update file paths relative to new directory
-			job.AudioPath = updatePathForNewDir(job.AudioPath, oldDir, newDir)
+		if newDir != oldDir {
+			// Suppress BundleWatcher from reacting to the move before the DB is updated.
+			if h.bundleManager != nil {
+				if svc := h.bundleManager.SyncService(); svc != nil {
+					metaPath := transcription.MetadataPath(newDir)
+					if info, statErr := os.Stat(metaPath); statErr == nil {
+						svc.MarkSelfWrite(metaPath, info.ModTime().UnixNano())
+					}
+				}
+			}
+
+			artifactDir = &newDir
+			rebased := rebaseBundlePath(job.AudioPath, oldDir, newDir)
+			audioPath = &rebased
 			if job.TranscriptJSONPath != nil {
-				newJSON := updatePathForNewDir(*job.TranscriptJSONPath, oldDir, newDir)
-				job.TranscriptJSONPath = &newJSON
+				p := rebaseBundlePath(*job.TranscriptJSONPath, oldDir, newDir)
+				jsonPath = &p
 			}
 			if job.TranscriptMarkdownPath != nil {
-				newMD := updatePathForNewDir(*job.TranscriptMarkdownPath, oldDir, newDir)
-				job.TranscriptMarkdownPath = &newMD
+				p := rebaseBundlePath(*job.TranscriptMarkdownPath, oldDir, newDir)
+				mdPath = &p
 			}
 		}
 	}
 
-	// Update folder in DB
+	// Targeted DB update — only touches the fields we changed.
 	var folderPtr *string
 	if folder != "" {
 		folderPtr = &folder
 	}
-	job.Folder = folderPtr
-
-	if err := h.jobRepo.Update(c.Request.Context(), job); err != nil {
-		// Rollback disk move if DB update fails
-		if job.ArtifactDir != nil {
-			// Best-effort rollback
-			logger.Warn("DB update failed after moving bundle, manual recovery may be needed: %v", err)
+	if err := h.jobRepo.UpdateBundlePaths(c.Request.Context(), jobID, artifactDir, audioPath, jsonPath, mdPath, folderPtr); err != nil {
+		// Rollback disk move if DB update fails.
+		if artifactDir != nil && job.ArtifactDir != nil {
+			if rollbackErr := os.Rename(*artifactDir, *job.ArtifactDir); rollbackErr != nil {
+				logger.Warn("folder move: disk rollback failed", "job_id", jobID, "new_dir", *artifactDir, "old_dir", *job.ArtifactDir, "error", rollbackErr)
+			} else {
+				logger.Info("folder move: rolled back disk move after DB failure", "job_id", jobID)
+			}
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update transcript"})
 		return
@@ -243,8 +256,12 @@ func (h *Handler) MoveTranscriptToFolder(c *gin.Context) {
 	})
 }
 
-// updatePathForNewDir replaces the old directory prefix with the new one.
-func updatePathForNewDir(path, oldDir, newDir string) string {
+// rebaseBundlePath replaces the old directory prefix with the new one.
+// Unlike the old updatePathForNewDir, when the path doesn't start with oldDir
+// it falls back to placing the file's basename under newDir — matching the
+// behaviour of rebasePath in bundle_sync.go. This prevents stale paths when
+// AudioPath was stored outside ArtifactDir.
+func rebaseBundlePath(path, oldDir, newDir string) string {
 	cleanPath := filepath.Clean(path)
 	cleanOld := filepath.Clean(oldDir)
 	if strings.HasPrefix(cleanPath, cleanOld+string(filepath.Separator)) {
@@ -254,7 +271,8 @@ func updatePathForNewDir(path, oldDir, newDir string) string {
 	if cleanPath == cleanOld {
 		return newDir
 	}
-	return path
+	// Fallback: place the file under the new directory by basename.
+	return filepath.Join(newDir, filepath.Base(path))
 }
 
 // updateArtifactDirsForFolderRename updates ArtifactDir and file paths

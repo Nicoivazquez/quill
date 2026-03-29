@@ -98,6 +98,7 @@ type JobRepository interface {
 	UpdateSummary(ctx context.Context, jobID string, summary string) error
 	ListFolders(ctx context.Context, vaultID *uint) ([]string, error)
 	UpdateFolder(ctx context.Context, jobID string, folder *string) error
+	UpdateBundlePaths(ctx context.Context, jobID string, artifactDir, audioPath, jsonPath, mdPath *string, folder *string) error
 	BulkUpdateFolder(ctx context.Context, oldFolder string, newFolder *string, vaultID *uint) (int64, error)
 }
 
@@ -302,6 +303,26 @@ func (r *jobRepository) ListFolders(ctx context.Context, vaultID *uint) ([]strin
 func (r *jobRepository) UpdateFolder(ctx context.Context, jobID string, folder *string) error {
 	return r.db.WithContext(ctx).Model(&models.TranscriptionJob{}).
 		Where("id = ?", jobID).Update("folder", folder).Error
+}
+
+func (r *jobRepository) UpdateBundlePaths(ctx context.Context, jobID string, artifactDir, audioPath, jsonPath, mdPath *string, folder *string) error {
+	updates := map[string]interface{}{
+		"folder": folder,
+	}
+	if artifactDir != nil {
+		updates["artifact_dir"] = *artifactDir
+	}
+	if audioPath != nil {
+		updates["audio_path"] = *audioPath
+	}
+	if jsonPath != nil {
+		updates["transcript_json_path"] = *jsonPath
+	}
+	if mdPath != nil {
+		updates["transcript_markdown_path"] = *mdPath
+	}
+	return r.db.WithContext(ctx).Model(&models.TranscriptionJob{}).
+		Where("id = ?", jobID).Updates(updates).Error
 }
 
 func (r *jobRepository) BulkUpdateFolder(ctx context.Context, oldFolder string, newFolder *string, vaultID *uint) (int64, error) {

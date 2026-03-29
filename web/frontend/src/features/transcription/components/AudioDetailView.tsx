@@ -1,13 +1,14 @@
 import { useRef, useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useParams, useNavigate } from "react-router-dom";
-import { MoreVertical, Edit2, Activity, FileText, Bot, Check, Loader2, List, AlignLeft, ArrowDownCircle, StickyNote, MessageCircle, FileImage, FileJson, FileDown, Clock, AlertCircle, Users, Layers } from "lucide-react";
+import { MoreVertical, Edit2, Activity, FileText, Bot, Check, Loader2, List, AlignLeft, ArrowDownCircle, StickyNote, MessageCircle, FileImage, FileJson, FileDown, Clock, AlertCircle, Users, Layers, Trash2 } from "lucide-react";
 import { Header } from "@/components/Header";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { EmberPlayer, type EmberPlayerRef } from "@/components/audio/EmberPlayer";
 import { cn } from "@/lib/utils";
@@ -61,6 +62,7 @@ export const AudioDetailView = function AudioDetailView({ audioId: propAudioId }
     const [executionDialogOpen, setExecutionDialogOpen] = useState(false);
     const [logsDialogOpen, setLogsDialogOpen] = useState(false);
     const [summaryDialogOpen, setSummaryDialogOpen] = useState(false);
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [llmReady, setLlmReady] = useState<boolean | null>(null);
     const [autoSummaryEnabled, setAutoSummaryEnabled] = useState(false);
     const [autoTitleEnabled, setAutoTitleEnabled] = useState(true);
@@ -305,6 +307,24 @@ export const AudioDetailView = function AudioDetailView({ audioId: propAudioId }
         }
     };
 
+    const handleConfirmDelete = useCallback(async () => {
+        if (!audioId) return;
+        try {
+            const response = await fetch(`/api/v1/transcription/${audioId}`, {
+                method: "DELETE",
+                headers: { ...getAuthHeaders() },
+            });
+            if (response.ok) {
+                queryClient.invalidateQueries({ queryKey: ["audioFiles"] });
+                navigate("/dashboard");
+            } else {
+                alert("Failed to delete audio file");
+            }
+        } catch {
+            alert("Error deleting audio file");
+        }
+    }, [audioId, getAuthHeaders, queryClient, navigate]);
+
     if (!audioId) return <div>Invalid Audio ID</div>;
 
     // Handler for notes/chat exclusivity
@@ -541,6 +561,10 @@ export const AudioDetailView = function AudioDetailView({ audioId: propAudioId }
                                                     <DropdownMenuItem onClick={() => setLogsDialogOpen(true)} className="rounded-[8px] cursor-pointer">
                                                         <FileText className="mr-2 h-4 w-4 opacity-70" /> View Logs
                                                     </DropdownMenuItem>
+                                                    <DropdownMenuSeparator className="bg-[var(--border-subtle)] my-1" />
+                                                    <DropdownMenuItem onClick={() => setDeleteDialogOpen(true)} className="rounded-[8px] cursor-pointer text-[var(--error)]">
+                                                        <Trash2 className="mr-2 h-4 w-4" /> Delete
+                                                    </DropdownMenuItem>
                                                 </DropdownMenuContent>
                                             </DropdownMenu>
                                         </div>
@@ -633,6 +657,33 @@ export const AudioDetailView = function AudioDetailView({ audioId: propAudioId }
                 onClose={setSummaryDialogOpen}
                 llmReady={llmReady}
             />
+
+            {/* Delete Confirmation Dialog */}
+            <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+                <AlertDialogContent className="glass-card bg-[var(--bg-main)]/90 border-[var(--border-subtle)]">
+                    <AlertDialogHeader>
+                        <AlertDialogTitle className="text-[var(--text-primary)]">
+                            Delete Audio File
+                        </AlertDialogTitle>
+                        <AlertDialogDescription className="text-[var(--text-secondary)]">
+                            Are you sure you want to delete "{audioFile?.title || 'Untitled Recording'}"?
+                            This action cannot be undone and will permanently remove the audio file
+                            and any transcription data.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel className="bg-[var(--secondary)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:bg-[var(--bg-card)]">
+                            Cancel
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                            className="bg-[var(--error)] text-white hover:opacity-90"
+                            onClick={handleConfirmDelete}
+                        >
+                            Delete
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
 
             {/* Mobile / Overlay Chat */}
             {chatOpen && isMobile && createPortal(

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 
 	"quill/internal/models"
@@ -149,25 +150,37 @@ func (h *Handler) moveJobToFolder(ctx context.Context, jobID, folder string) err
 		return fmt.Errorf("Job not found")
 	}
 
+	var artifactDir, audioPath, jsonPath, mdPath *string
+
 	// Move bundle on disk if we have an artifact directory
 	if job.ArtifactDir != nil && *job.ArtifactDir != "" {
-		newDir, moveErr := transcription.MoveBundleToFolder(*job.ArtifactDir, folder)
+		oldDir := *job.ArtifactDir
+		newDir, moveErr := transcription.MoveBundleToFolder(oldDir, folder)
 		if moveErr != nil {
 			return fmt.Errorf("Failed to move bundle: %s", moveErr.Error())
 		}
 
-		// Update paths to reflect new location
-		if newDir != *job.ArtifactDir {
-			oldDir := *job.ArtifactDir
-			job.ArtifactDir = &newDir
-			job.AudioPath = updatePathForNewDir(job.AudioPath, oldDir, newDir)
+		if newDir != oldDir {
+			// Suppress BundleWatcher from reacting before the DB is updated.
+			if h.bundleManager != nil {
+				if svc := h.bundleManager.SyncService(); svc != nil {
+					metaPath := transcription.MetadataPath(newDir)
+					if info, statErr := os.Stat(metaPath); statErr == nil {
+						svc.MarkSelfWrite(metaPath, info.ModTime().UnixNano())
+					}
+				}
+			}
+
+			artifactDir = &newDir
+			rebased := rebaseBundlePath(job.AudioPath, oldDir, newDir)
+			audioPath = &rebased
 			if job.TranscriptJSONPath != nil {
-				newJSON := updatePathForNewDir(*job.TranscriptJSONPath, oldDir, newDir)
-				job.TranscriptJSONPath = &newJSON
+				p := rebaseBundlePath(*job.TranscriptJSONPath, oldDir, newDir)
+				jsonPath = &p
 			}
 			if job.TranscriptMarkdownPath != nil {
-				newMD := updatePathForNewDir(*job.TranscriptMarkdownPath, oldDir, newDir)
-				job.TranscriptMarkdownPath = &newMD
+				p := rebaseBundlePath(*job.TranscriptMarkdownPath, oldDir, newDir)
+				mdPath = &p
 			}
 		}
 	}
@@ -176,9 +189,14 @@ func (h *Handler) moveJobToFolder(ctx context.Context, jobID, folder string) err
 	if folder != "" {
 		folderPtr = &folder
 	}
-	job.Folder = folderPtr
 
-	if err := h.jobRepo.Update(ctx, job); err != nil {
+	if err := h.jobRepo.UpdateBundlePaths(ctx, jobID, artifactDir, audioPath, jsonPath, mdPath, folderPtr); err != nil {
+		// Rollback disk move if DB update fails.
+		if artifactDir != nil && job.ArtifactDir != nil {
+			if rollbackErr := os.Rename(*artifactDir, *job.ArtifactDir); rollbackErr != nil {
+				logger.Warn("batch move: disk rollback failed", "job_id", jobID, "error", rollbackErr)
+			}
+		}
 		return fmt.Errorf("Failed to update job: %s", err.Error())
 	}
 
@@ -211,7 +229,7 @@ func (h *Handler) BatchStartTranscriptions(c *gin.Context) {
 		return
 	}
 	req.Params.DiarizeModel = normalizedDiarizeModel
-	fallbackDiarizationModelIfTokenMissing(&req.Params, "batch_start_transcriptions", h.config.HFToken)
+	h.fallbackDiarizationModelIfTokenMissing(&req.Params, "batch_start_transcriptions", h.config.HFToken)
 
 	ctx := c.Request.Context()
 	results := make([]batchResult, 0, len(req.IDs))

@@ -286,11 +286,11 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
                         </div>
                         {vaultMode === 'existing' ? (
                             <p className="text-xs text-[var(--text-tertiary)]">
-                                Select a folder from a previous Quill install (`.quill`, `Inbox`, `Media`, or `Transcripts`).
+                                Select a folder from a previous Quill install (`.quill`, `Transcripts`, or `Contacts`).
                             </p>
                         ) : (
                             <p className="text-xs text-[var(--text-tertiary)]">
-                                Subfolders created automatically: `Inbox`, `Media`, `Transcripts`, `.quill`, `Contacts/Snippets`.
+                                Subfolders created automatically: `Transcripts`, `Contacts`, `.quill`.
                             </p>
                         )}
                         {!isDesktopApp && (

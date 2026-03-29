@@ -124,8 +124,8 @@ func detectExistingVault(vaultPath string) (bool, error) {
 	markers := []string{
 		filepath.Join(vaultPath, ".quill"),
 		filepath.Join(vaultPath, ".scriber"), // Legacy marker for older installs
-		filepath.Join(vaultPath, "Inbox"),
-		filepath.Join(vaultPath, "Media"),
+		filepath.Join(vaultPath, "Inbox"),    // Legacy marker for older installs
+		filepath.Join(vaultPath, "Media"),    // Legacy marker for older installs
 		filepath.Join(vaultPath, "Transcripts"),
 	}
 
@@ -144,18 +144,60 @@ func detectExistingVault(vaultPath string) (bool, error) {
 
 func ensureVaultStructure(vaultPath string) error {
 	dirs := []string{
-		filepath.Join(vaultPath, "Inbox"),
-		filepath.Join(vaultPath, "Media"),
+		filepath.Join(vaultPath, ".quill", "inbox", "media"),
+		filepath.Join(vaultPath, ".quill", "inbox", "openclaw"),
 		filepath.Join(vaultPath, "Transcripts"),
 		filepath.Join(vaultPath, "Contacts", "Snippets"),
-		filepath.Join(vaultPath, ".quill"),
 	}
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return err
 		}
 	}
+
+	// Migrate legacy Inbox/ and Media/ into .quill/inbox/ for existing vaults.
+	migrateLegacyInbox(vaultPath)
+
 	return nil
+}
+
+// migrateLegacyInbox moves files from legacy Inbox/Media/, Inbox/OpenClaw/,
+// and top-level Media/ into the hidden .quill/inbox/ structure, then removes
+// the empty legacy directories so users only see Contacts/ and Transcripts/.
+func migrateLegacyInbox(vaultPath string) {
+	migrations := []struct{ src, dst string }{
+		{filepath.Join(vaultPath, "Inbox", "Media"), filepath.Join(vaultPath, ".quill", "inbox", "media")},
+		{filepath.Join(vaultPath, "Inbox", "OpenClaw"), filepath.Join(vaultPath, ".quill", "inbox", "openclaw")},
+		{filepath.Join(vaultPath, "Media"), filepath.Join(vaultPath, ".quill", "inbox", "media")},
+	}
+
+	for _, m := range migrations {
+		entries, err := os.ReadDir(m.src)
+		if err != nil || len(entries) == 0 {
+			continue
+		}
+		for _, e := range entries {
+			oldPath := filepath.Join(m.src, e.Name())
+			newPath := filepath.Join(m.dst, e.Name())
+			if _, statErr := os.Stat(newPath); statErr == nil {
+				continue // already exists at destination
+			}
+			if renameErr := os.Rename(oldPath, newPath); renameErr != nil {
+				logger.Warn("migrate legacy inbox: move failed", "src", oldPath, "dst", newPath, "error", renameErr)
+			}
+		}
+	}
+
+	// Clean up empty legacy directories (bottom-up).
+	for _, dir := range []string{
+		filepath.Join(vaultPath, "Inbox", "Media"),
+		filepath.Join(vaultPath, "Inbox", "OpenClaw"),
+		filepath.Join(vaultPath, "Inbox"),
+		filepath.Join(vaultPath, "Media"),
+	} {
+		// os.Remove only deletes empty directories — safe to call unconditionally.
+		_ = os.Remove(dir)
+	}
 }
 
 func formatMMSS(seconds float64) string {
@@ -279,6 +321,9 @@ func locateAudioPathForRecoveredJob(vaultPath, jobID string) string {
 	}
 
 	candidateGlobs := []string{
+		filepath.Join(vaultPath, ".quill", "inbox", "media", trimmedID+".*"),
+		filepath.Join(vaultPath, ".quill", "inbox", "openclaw", trimmedID+".*"),
+		// Legacy paths for older installs
 		filepath.Join(vaultPath, "Inbox", "Media", trimmedID+".*"),
 		filepath.Join(vaultPath, "Media", trimmedID+".*"),
 		filepath.Join(vaultPath, "Inbox", "OpenClaw", trimmedID+".*"),
@@ -473,7 +518,7 @@ func recoverJobsFromVaultArtifacts(vault models.Vault) (int, error) {
 			UpdatedAt:              updatedAt,
 		}
 		if job.AudioPath == "" {
-			job.AudioPath = filepath.Join(vault.Path, "Inbox", "Media", job.ID)
+			job.AudioPath = filepath.Join(vault.Path, ".quill", "inbox", "media", job.ID)
 		}
 
 		if createErr := database.DB.Create(&job).Error; createErr != nil {
@@ -1386,7 +1431,7 @@ func (h *Handler) OpenClawIngest(c *gin.Context) {
 	ingestDir := h.config.UploadDir
 	var vaultID *uint
 	if activeVault, pathErr := getActiveVault(); pathErr == nil && strings.TrimSpace(activeVault.Path) != "" {
-		ingestDir = filepath.Join(activeVault.Path, "Inbox", "OpenClaw")
+		ingestDir = filepath.Join(activeVault.Path, ".quill", "inbox", "openclaw")
 		vaultID = &activeVault.ID
 	}
 
@@ -1452,7 +1497,7 @@ func (h *Handler) IngestOpenClawDropFolder(c *gin.Context) {
 	ingestDir := h.config.UploadDir
 	var vaultID *uint
 	if activeVault, pathErr := getActiveVault(); pathErr == nil && strings.TrimSpace(activeVault.Path) != "" {
-		ingestDir = filepath.Join(activeVault.Path, "Inbox", "OpenClaw")
+		ingestDir = filepath.Join(activeVault.Path, ".quill", "inbox", "openclaw")
 		vaultID = &activeVault.ID
 	}
 	if err := os.MkdirAll(ingestDir, 0755); err != nil {

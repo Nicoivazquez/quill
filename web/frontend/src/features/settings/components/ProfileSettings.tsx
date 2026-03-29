@@ -1,12 +1,13 @@
 import { useState, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { ProfilesTable } from "./ProfilesTable";
 import { TranscriptionConfigDialog, type WhisperXParams } from "@/components/TranscriptionConfigDialog";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Settings } from "lucide-react";
+import { Settings, Key, CheckCircle, AlertCircle, Trash2, Loader2, ExternalLink } from "lucide-react";
 
 interface TranscriptionProfile {
 	id: string;
@@ -40,6 +41,14 @@ export function ProfileSettings() {
 	const [settingsLoading, setSettingsLoading] = useState(true);
 	const [error, setError] = useState("");
 	const [success, setSuccess] = useState("");
+
+	// Hugging Face token state
+	const [hfHasToken, setHfHasToken] = useState(false);
+	const [hfTokenInput, setHfTokenInput] = useState("");
+	const [hfLoading, setHfLoading] = useState(true);
+	const [hfSaving, setHfSaving] = useState(false);
+	const [hfDeleting, setHfDeleting] = useState(false);
+	const [hfMessage, setHfMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
 	// Load profiles and default profile
 	const loadProfiles = useCallback(async () => {
@@ -128,6 +137,73 @@ export function ProfileSettings() {
 
 		loadUserSettings();
 	}, [getAuthHeaders]);
+
+	// Load HF token status
+	useEffect(() => {
+		const loadHFToken = async () => {
+			try {
+				const response = await fetch("/api/v1/settings/hf-token", {
+					headers: getAuthHeaders(),
+				});
+				if (response.ok) {
+					const data = await response.json();
+					setHfHasToken(data.has_token);
+				}
+			} catch {
+				// silently handle
+			} finally {
+				setHfLoading(false);
+			}
+		};
+		loadHFToken();
+	}, [getAuthHeaders]);
+
+	const handleHFTokenSave = async () => {
+		const token = hfTokenInput.trim();
+		if (!token) return;
+		setHfSaving(true);
+		setHfMessage(null);
+		try {
+			const response = await fetch("/api/v1/settings/hf-token", {
+				method: "PUT",
+				headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+				body: JSON.stringify({ token }),
+			});
+			if (response.ok) {
+				setHfHasToken(true);
+				setHfTokenInput("");
+				setHfMessage({ type: "success", text: "Hugging Face token saved." });
+			} else {
+				const err = await response.json().catch(() => ({}));
+				setHfMessage({ type: "error", text: (err as { error?: string }).error || "Failed to save token" });
+			}
+		} catch {
+			setHfMessage({ type: "error", text: "Failed to save token. Please try again." });
+		} finally {
+			setHfSaving(false);
+		}
+	};
+
+	const handleHFTokenDelete = async () => {
+		setHfDeleting(true);
+		setHfMessage(null);
+		try {
+			const response = await fetch("/api/v1/settings/hf-token", {
+				method: "DELETE",
+				headers: getAuthHeaders(),
+			});
+			if (response.ok || response.status === 204) {
+				setHfHasToken(false);
+				setHfMessage({ type: "success", text: "Hugging Face token removed." });
+			} else {
+				setHfMessage({ type: "error", text: "Failed to remove token" });
+			}
+		} catch {
+			setHfMessage({ type: "error", text: "Failed to remove token. Please try again." });
+		} finally {
+			setHfDeleting(false);
+		}
+	};
 
 	const updateUserSettings = async (payload: Partial<UserSettings>, successMessage: string) => {
 		setError("");
@@ -361,6 +437,121 @@ export function ProfileSettings() {
 								onCheckedChange={handleAutoChatTitleToggle}
 								disabled={settingsLoading}
 							/>
+						</div>
+					</div>
+				)}
+			</div>
+
+			{/* Hugging Face Token */}
+			<div className="bg-[var(--bg-main)]/50 border border-[var(--border-subtle)] rounded-[var(--radius-card)] p-4 sm:p-6 shadow-sm">
+				<div className="mb-4 sm:mb-6">
+					<h3 className="text-lg font-medium text-[var(--text-primary)] flex items-center gap-2">
+						<Key className="h-5 w-5 text-[var(--brand-solid)]" />
+						Hugging Face Token
+					</h3>
+					<p className="text-sm text-[var(--text-secondary)] mt-1">
+						Required for Pyannote speaker diarization. Not needed if you only use NVIDIA Sortformer.
+					</p>
+				</div>
+
+				{hfMessage && (
+					<div
+						className={`mb-4 sm:mb-6 p-3 sm:p-4 rounded-lg flex items-center gap-2 ${
+							hfMessage.type === "success"
+								? "bg-[var(--success-translucent)] text-[var(--success-solid)]"
+								: "bg-[var(--error)]/10 text-[var(--error)]"
+						}`}
+					>
+						{hfMessage.type === "success" ? (
+							<CheckCircle className="h-4 w-4 flex-shrink-0" />
+						) : (
+							<AlertCircle className="h-4 w-4 flex-shrink-0" />
+						)}
+						{hfMessage.text}
+					</div>
+				)}
+
+				{hfLoading ? (
+					<div className="flex items-center space-x-2 py-4">
+						<Loader2 className="h-4 w-4 animate-spin text-[var(--text-tertiary)]" />
+						<span className="text-sm text-[var(--text-tertiary)]">Loading...</span>
+					</div>
+				) : (
+					<div className="space-y-4">
+						<div className="flex items-center gap-2 text-sm">
+							<span className="text-[var(--text-secondary)]">Status:</span>
+							{hfHasToken ? (
+								<span className="text-xs bg-[var(--success-translucent)] text-[var(--success-solid)] px-2 py-0.5 rounded flex items-center gap-1">
+									<CheckCircle className="h-3 w-3" /> Configured
+								</span>
+							) : (
+								<span className="text-xs bg-[var(--bg-secondary)] text-[var(--text-tertiary)] px-2 py-0.5 rounded">
+									Not configured
+								</span>
+							)}
+						</div>
+
+						<div className="flex items-end gap-2">
+							<div className="flex-1">
+								<Label htmlFor="hf-token-input" className="text-xs text-[var(--text-tertiary)]">
+									Access Token
+								</Label>
+								<Input
+									id="hf-token-input"
+									type="password"
+									placeholder={hfHasToken ? "Enter new token to update" : "hf_..."}
+									value={hfTokenInput}
+									onChange={(e) => setHfTokenInput(e.target.value)}
+									className="mt-1 bg-[var(--bg-main)] border-[var(--border-subtle)] text-[var(--text-primary)] focus:border-[var(--brand-solid)]"
+								/>
+							</div>
+							<Button
+								onClick={handleHFTokenSave}
+								disabled={!hfTokenInput.trim() || hfSaving}
+								className="!bg-[var(--brand-gradient)] hover:!opacity-90 !text-black dark:!text-white border-none shadow-lg shadow-black/20"
+							>
+								{hfSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
+							</Button>
+							{hfHasToken && (
+								<Button
+									variant="ghost"
+									size="icon"
+									onClick={handleHFTokenDelete}
+									disabled={hfDeleting}
+									aria-label="Remove Hugging Face token"
+									className="text-[var(--text-tertiary)] hover:text-[var(--error)]"
+								>
+									{hfDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+								</Button>
+							)}
+						</div>
+
+						<div className="p-3 bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-subtle)]">
+							<p className="text-xs font-medium text-[var(--text-primary)] mb-2">Setup instructions</p>
+							<ol className="text-xs text-[var(--text-secondary)] space-y-1.5 list-decimal list-inside">
+								<li>
+									Create an account at{" "}
+									<a href="https://huggingface.co/join" target="_blank" rel="noreferrer" className="text-[var(--brand-solid)] underline underline-offset-2 inline-flex items-center gap-0.5">
+										huggingface.co <ExternalLink className="h-2.5 w-2.5" />
+									</a>
+								</li>
+								<li>
+									Accept the model licenses for{" "}
+									<a href="https://huggingface.co/pyannote/speaker-diarization-3.1" target="_blank" rel="noreferrer" className="text-[var(--brand-solid)] underline underline-offset-2">
+										pyannote/speaker-diarization-3.1
+									</a>{" "}
+									and{" "}
+									<a href="https://huggingface.co/pyannote/segmentation-3.0" target="_blank" rel="noreferrer" className="text-[var(--brand-solid)] underline underline-offset-2">
+										pyannote/segmentation-3.0
+									</a>
+								</li>
+								<li>
+									Generate an access token at{" "}
+									<a href="https://huggingface.co/settings/tokens" target="_blank" rel="noreferrer" className="text-[var(--brand-solid)] underline underline-offset-2 inline-flex items-center gap-0.5">
+										Settings &gt; Access Tokens <ExternalLink className="h-2.5 w-2.5" />
+									</a>
+								</li>
+							</ol>
 						</div>
 					</div>
 				)}

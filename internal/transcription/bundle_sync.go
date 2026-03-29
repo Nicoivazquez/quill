@@ -147,18 +147,32 @@ func (s *BundleSyncService) SyncFromFilesystem(ctx context.Context) (BundleSyncR
 			continue
 		}
 
-		// Job exists — skip if DB is at least as new as metadata on disk.
-		// Compare at second precision because SQLite truncates timestamp nanoseconds.
-		if bundle.MtimeNS > 0 {
-			metaSec := time.Unix(0, bundle.MtimeNS).Unix()
-			if existing.UpdatedAt.Unix() >= metaSec {
+		// Force reconciliation if the bundle moved on disk but DB paths are stale.
+		// This repairs data corrupted by the pre-fix folder move bug where disk
+		// rename succeeded but DB paths were not updated correctly.
+		pathMismatch := existing.ArtifactDir != nil &&
+			*existing.ArtifactDir != "" &&
+			filepath.Clean(*existing.ArtifactDir) != filepath.Clean(bundle.Dir)
+
+		if !pathMismatch {
+			// Job exists — skip if DB is at least as new as metadata on disk.
+			// Compare at second precision because SQLite truncates timestamp nanoseconds.
+			if bundle.MtimeNS > 0 {
+				metaSec := time.Unix(0, bundle.MtimeNS).Unix()
+				if existing.UpdatedAt.Unix() >= metaSec {
+					result.Skipped++
+					continue
+				}
+			} else {
+				// No metadata.json on disk — nothing to update from
 				result.Skipped++
 				continue
 			}
-		} else {
-			// No metadata.json on disk — nothing to update from
-			result.Skipped++
-			continue
+		}
+
+		if pathMismatch {
+			logger.Info("bundle sync: detected path mismatch, forcing reconciliation",
+				"id", meta.ID, "db_dir", *existing.ArtifactDir, "disk_dir", bundle.Dir)
 		}
 
 		if updateErr := s.updateFromMetadata(ctx, existing, meta, bundle); updateErr != nil {

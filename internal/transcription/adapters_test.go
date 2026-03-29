@@ -154,6 +154,11 @@ func (m *MockJobRepository) BulkUpdateFolder(ctx context.Context, oldFolder stri
 	return args.Get(0).(int64), args.Error(1)
 }
 
+func (m *MockJobRepository) UpdateBundlePaths(ctx context.Context, jobID string, artifactDir, audioPath, jsonPath, mdPath *string, folder *string) error {
+	args := m.Called(ctx, jobID, artifactDir, audioPath, jsonPath, mdPath, folder)
+	return args.Error(0)
+}
+
 // MockTranscriptionAdapter is a mock implementation of TranscriptionAdapter
 type MockTranscriptionAdapter struct {
 	mock.Mock

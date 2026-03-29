@@ -102,7 +102,7 @@ interface TranscriptionConfigDialogProps {
 
 const DEFAULT_DIARIZE_MODEL = "nvidia_sortformer";
 
-type DiarizationMode = "local_no_token" | "high_accuracy" | "cloud_server_token";
+type DiarizationMode = "local" | "pyannote";
 
 const normalizeDiarizeModel = (model?: string): string => {
     if (
@@ -121,25 +121,21 @@ const normalizeDiarizeModel = (model?: string): string => {
 const getDiarizationMode = (params: WhisperXParams): DiarizationMode => {
     const diarizeModel = normalizeDiarizeModel(params.diarize_model);
     if (diarizeModel === "nvidia_sortformer") {
-        return "local_no_token";
+        return "local";
     }
-    return params.hf_token?.trim() ? "high_accuracy" : "cloud_server_token";
+    return "pyannote";
 };
 
 const applyDiarizationMode = (
     updateParam: <K extends keyof WhisperXParams>(key: K, value: WhisperXParams[K]) => void,
     mode: DiarizationMode
 ) => {
-    if (mode === "local_no_token") {
+    if (mode === "local") {
         updateParam("diarize_model", "nvidia_sortformer");
+        updateParam("hf_token", undefined);
         return;
     }
-    if (mode === "high_accuracy") {
-        updateParam("diarize_model", "pyannote");
-        return;
-    }
-
-    // cloud_server_token
+    // pyannote — backend resolves HF token from settings
     updateParam("diarize_model", "pyannote");
     updateParam("hf_token", undefined);
 };
@@ -267,26 +263,18 @@ const PARAM_DESCRIPTIONS = {
     compute_type: "Float16 (faster), Float32 (accurate), Int8 (fastest).",
     batch_size: "Segments processed at once. Higher = faster but more memory.",
     diarize: "Identify and separate different speakers.",
-    diarize_model: "Mode: Local no-token (Sortformer), High-accuracy (Pyannote + your token), or Cloud/server token (Pyannote via server HF_TOKEN).",
+    diarize_model: "Local (NVIDIA Sortformer, no token needed) or Pyannote (high-accuracy, uses token from Settings).",
     temperature: "0 = deterministic, higher = more creative.",
     beam_size: "Search beams. Higher = better quality but slower.",
     vad_method: "Voice detection: Pyannote (accurate) or Silero (fast).",
     initial_prompt: "Context text to guide transcription style.",
-    hf_token: "Only used in High-accuracy mode. Leave blank for Cloud/server-token mode.",
+    hf_token: "Configured in Settings \u2192 Transcription. Used automatically when Pyannote is selected.",
     vad_onset: "Voice detection sensitivity. Lower values (0.3-0.4) catch quieter/distant speakers.",
     vad_offset: "Speech ending sensitivity. Lower values detect speech endings more precisely.",
 };
 
-const PYANNOTE_MODEL_LINKS = [
-    "pyannote/speaker-diarization-3.0",
-    "pyannote/speaker-diarization",
-    "pyannote/speaker-diarization-3.1",
-    "pyannote/segmentation-3.0",
-    "pyannote/speaker-diarization-community-1",
-] as const;
-
 // ============================================================================
-// Styled Input/Select Components 
+// Styled Input/Select Components
 // ============================================================================
 
 const inputClassName = `
@@ -311,81 +299,6 @@ const selectItemClassName = `
   text-[var(--text-primary)] rounded-lg mx-1 cursor-pointer
   focus:bg-[var(--brand-light)] focus:text-[var(--brand-solid)]
 `;
-
-function HuggingFaceTokenSetupGuide() {
-    return (
-        <Accordion type="single" collapsible className="w-full rounded-xl border border-[var(--border-subtle)] px-3">
-            <AccordionItem value="hf-token-setup" className="border-b-0">
-                <AccordionTrigger className="py-3 text-xs font-medium text-[var(--text-primary)] hover:no-underline">
-                    How to get a Hugging Face token
-                </AccordionTrigger>
-                <AccordionContent className="pb-3">
-                    <div className="space-y-3 text-xs text-[var(--text-secondary)]">
-                        <p>
-                            <span className="font-medium text-[var(--text-primary)]">Speaker Diarization Setup:</span>{" "}
-                            Quill uses pyannote.audio for speaker diarization. You need a Hugging Face access token to use this mode.
-                        </p>
-
-                        <div className="space-y-1">
-                            <p className="font-medium text-[var(--text-primary)]">Step 1: Hugging Face account</p>
-                            <p>
-                                Create an account at{" "}
-                                <a
-                                    href="https://huggingface.co/join"
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="text-[var(--brand-solid)] underline decoration-[var(--brand-light)] underline-offset-2"
-                                >
-                                    huggingface.co/join
-                                </a>
-                                .
-                            </p>
-                        </div>
-
-                        <div className="space-y-1">
-                            <p className="font-medium text-[var(--text-primary)]">Step 2: Accept required model agreements</p>
-                            <ul className="list-disc space-y-1 pl-4">
-                                {PYANNOTE_MODEL_LINKS.map((model) => (
-                                    <li key={model}>
-                                        <a
-                                            href={`https://huggingface.co/${model}`}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            className="text-[var(--brand-solid)] underline decoration-[var(--brand-light)] underline-offset-2"
-                                        >
-                                            {model}
-                                        </a>
-                                    </li>
-                                ))}
-                            </ul>
-                        </div>
-
-                        <div className="space-y-1">
-                            <p className="font-medium text-[var(--text-primary)]">Step 3: Create access token</p>
-                            <ul className="list-disc space-y-1 pl-4">
-                                <li>
-                                    Open{" "}
-                                    <a
-                                        href="https://huggingface.co/settings/tokens"
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="text-[var(--brand-solid)] underline decoration-[var(--brand-light)] underline-offset-2"
-                                    >
-                                        Hugging Face token settings
-                                    </a>
-                                    .
-                                </li>
-                                <li>Create a token with at least read access.</li>
-                                <li>Use it via `HF_TOKEN` environment variable (recommended for Docker).</li>
-                                <li>Or paste it into this `Hugging Face Token` field in your profile settings.</li>
-                            </ul>
-                        </div>
-                    </div>
-                </AccordionContent>
-            </AccordionItem>
-        </Accordion>
-    );
-}
 
 // ============================================================================
 // Main Component
@@ -749,9 +662,8 @@ function WhisperConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
                                             <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent className={selectContentClassName}>
-                                            <SelectItem value="local_no_token" className={selectItemClassName}>Local (no token)</SelectItem>
-                                            <SelectItem value="high_accuracy" className={selectItemClassName}>High-accuracy (your token)</SelectItem>
-                                            <SelectItem value="cloud_server_token" className={selectItemClassName}>Cloud (server token)</SelectItem>
+                                            <SelectItem value="local" className={selectItemClassName}>NVIDIA Sortformer</SelectItem>
+                                            <SelectItem value="pyannote" className={selectItemClassName}>Pyannote</SelectItem>
                                         </SelectContent>
                                     </Select>
                                 </FormField>
@@ -781,22 +693,7 @@ function WhisperConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
                                     </FormField>
                                 </div>
 
-                                {diarizationMode === "high_accuracy" && (
-                                    <>
-                                        <FormField label="Hugging Face Token" description={PARAM_DESCRIPTIONS.hf_token}>
-                                            <Input
-                                                type="password"
-                                                placeholder="hf_..."
-                                                value={params.hf_token || ""}
-                                                onChange={(e) => updateParam('hf_token', e.target.value || undefined)}
-                                                className={inputClassName}
-                                            />
-                                        </FormField>
-                                        <HuggingFaceTokenSetupGuide />
-                                    </>
-                                )}
-
-                                {(diarizationMode === "high_accuracy" || diarizationMode === "cloud_server_token") && (
+                                {diarizationMode === "pyannote" && (
                                     <>
                                         <div className="pt-3 border-t border-[var(--border-subtle)]">
                                             <p className="text-xs text-[var(--text-tertiary)] mb-3">Voice Detection Tuning (for noisy/distant audio)</p>
@@ -828,17 +725,11 @@ function WhisperConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
                                     </>
                                 )}
 
-                                {diarizationMode === "cloud_server_token" && (
-                                    <p className="text-xs text-[var(--text-tertiary)]">
-                                        Uses server `HF_TOKEN` for Pyannote. If server token is missing, the backend falls back to NVIDIA Sortformer.
-                                    </p>
-                                )}
-
-                                {diarizationMode === "local_no_token" && (
-                                    <p className="text-xs text-[var(--text-tertiary)]">
-                                        NVIDIA Sortformer does not require a Hugging Face token.
-                                    </p>
-                                )}
+                                <p className="text-xs text-[var(--text-tertiary)]">
+                                    {diarizationMode === "local"
+                                        ? "NVIDIA Sortformer runs locally without a Hugging Face token."
+                                        : "Uses your Hugging Face token from Settings \u2192 Transcription. Falls back to Sortformer if not configured."}
+                                </p>
                             </div>
                         )}
                     </div>
@@ -1030,9 +921,8 @@ function ParakeetConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
                                             <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent className={selectContentClassName}>
-                                            <SelectItem value="local_no_token" className={selectItemClassName}>Local (no token)</SelectItem>
-                                            <SelectItem value="high_accuracy" className={selectItemClassName}>High-accuracy (your token)</SelectItem>
-                                            <SelectItem value="cloud_server_token" className={selectItemClassName}>Cloud (server token)</SelectItem>
+                                            <SelectItem value="local" className={selectItemClassName}>NVIDIA Sortformer</SelectItem>
+                                            <SelectItem value="pyannote" className={selectItemClassName}>Pyannote</SelectItem>
                                         </SelectContent>
                                     </Select>
                                 </FormField>
@@ -1062,22 +952,7 @@ function ParakeetConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
                                     </FormField>
                                 </div>
 
-                                {diarizationMode === "high_accuracy" && (
-                                    <>
-                                        <FormField label="Hugging Face Token">
-                                            <Input
-                                                type="password"
-                                                placeholder="hf_..."
-                                                value={params.hf_token || ""}
-                                                onChange={(e) => updateParam('hf_token', e.target.value || undefined)}
-                                                className={inputClassName}
-                                            />
-                                        </FormField>
-                                        <HuggingFaceTokenSetupGuide />
-                                    </>
-                                )}
-
-                                {(diarizationMode === "high_accuracy" || diarizationMode === "cloud_server_token") && (
+                                {diarizationMode === "pyannote" && (
                                     <>
                                         <div className="pt-3 border-t border-[var(--border-subtle)]">
                                             <p className="text-xs text-[var(--text-tertiary)] mb-3">Voice Detection Tuning (for noisy/distant audio)</p>
@@ -1109,17 +984,11 @@ function ParakeetConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
                                     </>
                                 )}
 
-                                {diarizationMode === "cloud_server_token" && (
-                                    <p className="text-xs text-[var(--text-tertiary)]">
-                                        Uses server `HF_TOKEN` for Pyannote. If server token is missing, the backend falls back to NVIDIA Sortformer.
-                                    </p>
-                                )}
-
-                                {diarizationMode === "local_no_token" && (
-                                    <p className="text-xs text-[var(--text-tertiary)]">
-                                        NVIDIA Sortformer does not require a Hugging Face token.
-                                    </p>
-                                )}
+                                <p className="text-xs text-[var(--text-tertiary)]">
+                                    {diarizationMode === "local"
+                                        ? "NVIDIA Sortformer runs locally without a Hugging Face token."
+                                        : "Uses your Hugging Face token from Settings \u2192 Transcription. Falls back to Sortformer if not configured."}
+                                </p>
                             </div>
                         )}
                     </div>
@@ -1180,9 +1049,8 @@ function CanaryConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
                                             <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent className={selectContentClassName}>
-                                            <SelectItem value="local_no_token" className={selectItemClassName}>Local (no token)</SelectItem>
-                                            <SelectItem value="high_accuracy" className={selectItemClassName}>High-accuracy (your token)</SelectItem>
-                                            <SelectItem value="cloud_server_token" className={selectItemClassName}>Cloud (server token)</SelectItem>
+                                            <SelectItem value="local" className={selectItemClassName}>NVIDIA Sortformer</SelectItem>
+                                            <SelectItem value="pyannote" className={selectItemClassName}>Pyannote</SelectItem>
                                         </SelectContent>
                                     </Select>
                                 </FormField>
@@ -1212,22 +1080,7 @@ function CanaryConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
                                     </FormField>
                                 </div>
 
-                                {diarizationMode === "high_accuracy" && (
-                                    <>
-                                        <FormField label="Hugging Face Token">
-                                            <Input
-                                                type="password"
-                                                placeholder="hf_..."
-                                                value={params.hf_token || ""}
-                                                onChange={(e) => updateParam('hf_token', e.target.value || undefined)}
-                                                className={inputClassName}
-                                            />
-                                        </FormField>
-                                        <HuggingFaceTokenSetupGuide />
-                                    </>
-                                )}
-
-                                {(diarizationMode === "high_accuracy" || diarizationMode === "cloud_server_token") && (
+                                {diarizationMode === "pyannote" && (
                                     <>
                                         <div className="pt-3 border-t border-[var(--border-subtle)]">
                                             <p className="text-xs text-[var(--text-tertiary)] mb-3">Voice Detection Tuning (for noisy/distant audio)</p>
@@ -1259,17 +1112,11 @@ function CanaryConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
                                     </>
                                 )}
 
-                                {diarizationMode === "cloud_server_token" && (
-                                    <p className="text-xs text-[var(--text-tertiary)]">
-                                        Uses server `HF_TOKEN` for Pyannote. If server token is missing, the backend falls back to NVIDIA Sortformer.
-                                    </p>
-                                )}
-
-                                {diarizationMode === "local_no_token" && (
-                                    <p className="text-xs text-[var(--text-tertiary)]">
-                                        NVIDIA Sortformer does not require a Hugging Face token.
-                                    </p>
-                                )}
+                                <p className="text-xs text-[var(--text-tertiary)]">
+                                    {diarizationMode === "local"
+                                        ? "NVIDIA Sortformer runs locally without a Hugging Face token."
+                                        : "Uses your Hugging Face token from Settings \u2192 Transcription. Falls back to Sortformer if not configured."}
+                                </p>
                             </div>
                         )}
                     </div>
@@ -1452,9 +1299,8 @@ function MLXOrCppConfig({ params, updateParam, isMultiTrack, family }: ConfigPro
                                             <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent className={selectContentClassName}>
-                                            <SelectItem value="local_no_token" className={selectItemClassName}>Local (no token)</SelectItem>
-                                            <SelectItem value="high_accuracy" className={selectItemClassName}>High-accuracy (your token)</SelectItem>
-                                            <SelectItem value="cloud_server_token" className={selectItemClassName}>Cloud (server token)</SelectItem>
+                                            <SelectItem value="local" className={selectItemClassName}>NVIDIA Sortformer</SelectItem>
+                                            <SelectItem value="pyannote" className={selectItemClassName}>Pyannote</SelectItem>
                                         </SelectContent>
                                     </Select>
                                 </FormField>
@@ -1484,22 +1330,7 @@ function MLXOrCppConfig({ params, updateParam, isMultiTrack, family }: ConfigPro
                                     </FormField>
                                 </div>
 
-                                {diarizationMode === "high_accuracy" && (
-                                    <>
-                                        <FormField label="Hugging Face Token" description={PARAM_DESCRIPTIONS.hf_token}>
-                                            <Input
-                                                type="password"
-                                                placeholder="hf_..."
-                                                value={params.hf_token || ""}
-                                                onChange={(e) => updateParam('hf_token', e.target.value || undefined)}
-                                                className={inputClassName}
-                                            />
-                                        </FormField>
-                                        <HuggingFaceTokenSetupGuide />
-                                    </>
-                                )}
-
-                                {(diarizationMode === "high_accuracy" || diarizationMode === "cloud_server_token") && (
+                                {diarizationMode === "pyannote" && (
                                     <>
                                         <div className="pt-3 border-t border-[var(--border-subtle)]">
                                             <p className="text-xs text-[var(--text-tertiary)] mb-3">Voice Detection Tuning (for noisy/distant audio)</p>
@@ -1531,17 +1362,11 @@ function MLXOrCppConfig({ params, updateParam, isMultiTrack, family }: ConfigPro
                                     </>
                                 )}
 
-                                {diarizationMode === "cloud_server_token" && (
-                                    <p className="text-xs text-[var(--text-tertiary)]">
-                                        Uses server `HF_TOKEN` for Pyannote. If server token is missing, the backend falls back to NVIDIA Sortformer.
-                                    </p>
-                                )}
-
-                                {diarizationMode === "local_no_token" && (
-                                    <p className="text-xs text-[var(--text-tertiary)]">
-                                        NVIDIA Sortformer does not require a Hugging Face token.
-                                    </p>
-                                )}
+                                <p className="text-xs text-[var(--text-tertiary)]">
+                                    {diarizationMode === "local"
+                                        ? "NVIDIA Sortformer runs locally without a Hugging Face token."
+                                        : "Uses your Hugging Face token from Settings \u2192 Transcription. Falls back to Sortformer if not configured."}
+                                </p>
                             </div>
                         )}
                     </div>
