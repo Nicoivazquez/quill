@@ -101,6 +101,8 @@ Quill works out of the box with sensible defaults. Customize with environment va
 | `AUTH_MODE` | `local` | Authentication mode (`local` for single-user) |
 | `OPENAI_API_KEY` | `""` | OpenAI API key for LLM features |
 | `HF_TOKEN` | `""` | HuggingFace token for model downloads |
+| `TRANSCRIPTION_BACKEND` | `whisperx` | Transcription backend (`whisperx`, `mlx_whisper`, `whisper_cpp`). Auto-detected as `mlx_whisper` on Apple Silicon. |
+| `WHISPER_MODEL` | `small` | Whisper model to pre-download during warmup (e.g. `small`, `large-v3-turbo`) |
 
 ## Setting Up Ollama (Local LLMs)
 
