@@ -578,7 +578,7 @@ func renderTranscriptMarkdown(job *models.TranscriptionJob, transcript *transcri
 			return
 		}
 		if currentSpeaker != "" {
-			b.WriteString("**" + currentSpeaker + "**\n\n")
+			b.WriteString("**" + currentSpeaker + "**\n")
 		}
 		b.WriteString(strings.Join(groupTexts, " "))
 		b.WriteString("\n\n")

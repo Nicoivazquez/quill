@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"quill/pkg/slug"
+	"unicode"
 )
 
 const quillSubdir = "Quill"
@@ -146,8 +146,8 @@ func (p *Publisher) PublishTranscript(markdown, jobID, title string) (string, er
 		return "", fmt.Errorf("creating Quill directory: %w", err)
 	}
 
-	// Compute the target filename (title only — quill-id in frontmatter handles dedup)
-	safeTitle := slug.Sanitize(strings.TrimSpace(title), "transcript")
+	// Compute the target filename — preserve spaces, strip only filesystem-unsafe chars.
+	safeTitle := sanitizeFilename(strings.TrimSpace(title), "transcript")
 	filename := fmt.Sprintf("%s.md", safeTitle)
 	targetPath := filepath.Join(quillDir, filename)
 
@@ -190,4 +190,27 @@ func (p *Publisher) BulkPublish(jobs []PublishableJob) ([]PublishResult, error) 
 	}
 
 	return results, nil
+}
+
+// sanitizeFilename strips characters that are unsafe for filesystems while
+// preserving spaces, capitalisation, and other human-readable characters.
+// Falls back to fallback if the result is empty.
+func sanitizeFilename(name, fallback string) string {
+	var b strings.Builder
+	for _, r := range name {
+		// Strip control chars and filesystem-unsafe characters: / \ : * ? " < > |
+		if unicode.IsControl(r) {
+			continue
+		}
+		switch r {
+		case '/', '\\', ':', '*', '?', '"', '<', '>', '|':
+			continue
+		}
+		b.WriteRune(r)
+	}
+	result := strings.TrimSpace(b.String())
+	if result == "" {
+		return fallback
+	}
+	return result
 }
