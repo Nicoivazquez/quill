@@ -1,6 +1,24 @@
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import { useAuth } from '@/features/auth/hooks/useAuth';
 
+export class DuplicateUploadError extends Error {
+    existingId: string;
+    existingTitle: string;
+    file: File;
+    isVideo: boolean;
+    title?: string;
+
+    constructor(existingId: string, existingTitle: string, file: File, isVideo: boolean, title?: string) {
+        super(`This file has already been uploaded as "${existingTitle || 'Untitled'}"`);
+        this.name = 'DuplicateUploadError';
+        this.existingId = existingId;
+        this.existingTitle = existingTitle;
+        this.file = file;
+        this.isVideo = isVideo;
+        this.title = title;
+    }
+}
+
 export interface AudioFile {
     id: string;
     title?: string;
@@ -114,10 +132,14 @@ export function useAudioUpload() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: async ({ file, isVideo, title }: { file: File, isVideo: boolean, title?: string }) => {
+        mutationFn: async ({ file, isVideo, title, force }: { file: File, isVideo: boolean, title?: string, force?: boolean }) => {
             const formData = new FormData();
             const fieldName = isVideo ? 'video' : 'audio';
-            const endpoint = isVideo ? '/api/v1/transcription/upload-video' : '/api/v1/transcription/upload';
+            let endpoint = isVideo ? '/api/v1/transcription/upload-video' : '/api/v1/transcription/upload';
+
+            if (force) {
+                endpoint += '?force=true';
+            }
 
             formData.append(fieldName, file);
             const trimmedTitle = typeof title === "string" ? title.trim() : undefined;
@@ -136,6 +158,17 @@ export function useAudioUpload() {
                 headers: getAuthHeaders(),
                 body: formData,
             });
+
+            if (response.status === 409) {
+                const data = await response.json();
+                throw new DuplicateUploadError(
+                    data.existing_id,
+                    data.existing_title,
+                    file,
+                    isVideo,
+                    title,
+                );
+            }
 
             if (!response.ok) {
                 throw new Error('Upload failed');

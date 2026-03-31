@@ -1,6 +1,8 @@
 package service
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -10,9 +12,16 @@ import (
 	"github.com/google/uuid"
 )
 
+// SaveUploadResult contains the file path and content hash from a saved upload.
+type SaveUploadResult struct {
+	FilePath string
+	FileHash string // SHA-256 hex digest
+}
+
 // FileService handles file system operations
 type FileService interface {
 	SaveUpload(file *multipart.FileHeader, destDir string) (string, error)
+	SaveUploadWithHash(file *multipart.FileHeader, destDir string) (*SaveUploadResult, error)
 	CreateDirectory(path string) error
 	RemoveFile(path string) error
 	RemoveDirectory(path string) error
@@ -27,9 +36,17 @@ func NewFileService() FileService {
 }
 
 func (s *fileService) SaveUpload(fileHeader *multipart.FileHeader, destDir string) (string, error) {
+	result, err := s.SaveUploadWithHash(fileHeader, destDir)
+	if err != nil {
+		return "", err
+	}
+	return result.FilePath, nil
+}
+
+func (s *fileService) SaveUploadWithHash(fileHeader *multipart.FileHeader, destDir string) (*SaveUploadResult, error) {
 	// Create directory if it doesn't exist
 	if err := s.CreateDirectory(destDir); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// Generate unique filename
@@ -41,24 +58,30 @@ func (s *fileService) SaveUpload(fileHeader *multipart.FileHeader, destDir strin
 	// Open source file
 	src, err := fileHeader.Open()
 	if err != nil {
-		return "", fmt.Errorf("failed to open source file: %w", err)
+		return nil, fmt.Errorf("failed to open source file: %w", err)
 	}
 	defer src.Close()
 
 	// Create destination file
 	dst, err := os.Create(filePath)
 	if err != nil {
-		return "", fmt.Errorf("failed to create destination file: %w", err)
+		return nil, fmt.Errorf("failed to create destination file: %w", err)
 	}
 	defer dst.Close()
 
-	// Copy content
-	if _, err = io.Copy(dst, src); err != nil {
+	// Hash while writing — no extra disk read
+	hasher := sha256.New()
+	writer := io.MultiWriter(dst, hasher)
+
+	if _, err = io.Copy(writer, src); err != nil {
 		os.Remove(filePath) // Clean up on error
-		return "", fmt.Errorf("failed to copy file content: %w", err)
+		return nil, fmt.Errorf("failed to copy file content: %w", err)
 	}
 
-	return filePath, nil
+	return &SaveUploadResult{
+		FilePath: filePath,
+		FileHash: hex.EncodeToString(hasher.Sum(nil)),
+	}, nil
 }
 
 func (s *fileService) CreateDirectory(path string) error {

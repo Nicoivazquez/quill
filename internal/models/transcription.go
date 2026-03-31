@@ -29,6 +29,8 @@ type TranscriptionJob struct {
 	MergeStatus            string         `json:"merge_status" gorm:"type:varchar(20);default:'none'"` // none, pending, processing, completed, failed
 	MergeError             *string        `json:"merge_error,omitempty" gorm:"type:text"`
 	IndividualTranscripts  *string        `json:"individual_transcripts,omitempty" gorm:"type:text"` // JSON-serialized map[string]*string
+	OriginalFilename       string         `json:"original_filename,omitempty" gorm:"type:text"`
+	FileHash               string         `json:"file_hash,omitempty" gorm:"type:varchar(64);index"`
 	ObsidianSyncedAt       *time.Time     `json:"obsidian_synced_at,omitempty" gorm:"type:datetime"`
 	CreatedAt              time.Time      `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt              time.Time      `json:"updated_at" gorm:"autoUpdateTime"`

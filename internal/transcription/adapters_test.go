@@ -172,6 +172,14 @@ func (m *MockJobRepository) FindByIDs(ctx context.Context, ids []string) ([]mode
 	return args.Get(0).([]models.TranscriptionJob), args.Error(1)
 }
 
+func (m *MockJobRepository) FindByFileHash(ctx context.Context, hash string) (*models.TranscriptionJob, error) {
+	args := m.Called(ctx, hash)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.TranscriptionJob), args.Error(1)
+}
+
 // MockTranscriptionAdapter is a mock implementation of TranscriptionAdapter
 type MockTranscriptionAdapter struct {
 	mock.Mock

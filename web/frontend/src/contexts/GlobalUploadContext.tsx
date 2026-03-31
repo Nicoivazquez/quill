@@ -5,10 +5,21 @@ import {
     useCallback,
     type PropsWithChildren,
 } from "react";
-import { useLocation } from "react-router-dom";
-import { useAudioUpload, useMultiTrackUpload } from "@/features/transcription/hooks/useAudioFiles";
+import { useLocation, useNavigate } from "react-router-dom";
+import { useAudioUpload, useMultiTrackUpload, DuplicateUploadError } from "@/features/transcription/hooks/useAudioFiles";
 import { useToast } from "@/components/ui/toast";
 import { MultiTrackUploadDialog } from "@/features/transcription/components/MultiTrackUploadDialog";
+import {
+    AlertDialog,
+    AlertDialogContent,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogAction,
+    AlertDialogCancel,
+} from "@/components/ui/alert-dialog";
+import { buttonVariants } from "@/components/ui/button";
 
 // Types
 interface FileWithType {
@@ -48,11 +59,20 @@ const GlobalUploadContext = createContext<GlobalUploadContextValue | null>(
     null
 );
 
+interface DuplicateInfo {
+    existingId: string;
+    existingTitle: string;
+    file: File;
+    isVideo: boolean;
+    title?: string;
+}
+
 export function GlobalUploadProvider({ children }: PropsWithChildren) {
     const { mutateAsync: uploadFile } = useAudioUpload();
     const { mutateAsync: uploadMultiTrack } = useMultiTrackUpload();
     const { toast } = useToast();
     const location = useLocation();
+    const navigate = useNavigate();
 
     // Check if we're on the dashboard (home page)
     const isOnDashboard = location.pathname === "/" || location.pathname === "";
@@ -60,6 +80,9 @@ export function GlobalUploadProvider({ children }: PropsWithChildren) {
     // Upload state
     const [uploadProgress, setUploadProgress] = useState<UploadProgress[]>([]);
     const [isUploading, setIsUploading] = useState(false);
+
+    // Duplicate detection dialog state
+    const [duplicateInfo, setDuplicateInfo] = useState<DuplicateInfo | null>(null);
 
     // Multi-track dialog state
     const [isMultiTrackDialogOpen, setIsMultiTrackDialogOpen] = useState(false);
@@ -123,7 +146,21 @@ export function GlobalUploadProvider({ children }: PropsWithChildren) {
                     }
                     successCount++;
                 } catch (error) {
-                    if (isOnDashboard) {
+                    if (error instanceof DuplicateUploadError) {
+                        setDuplicateInfo({
+                            existingId: error.existingId,
+                            existingTitle: error.existingTitle,
+                            file: error.file,
+                            isVideo: error.isVideo,
+                            title: error.title,
+                        });
+                        // Remove this file's progress entry
+                        if (isOnDashboard) {
+                            setUploadProgress((prev) =>
+                                prev.filter((_, index) => index !== i)
+                            );
+                        }
+                    } else if (isOnDashboard) {
                         setUploadProgress((prev) =>
                             prev.map((item, index) =>
                                 index === i
@@ -257,6 +294,32 @@ export function GlobalUploadProvider({ children }: PropsWithChildren) {
     );
 
 
+    const handleDuplicateOpenExisting = useCallback(() => {
+        if (duplicateInfo) {
+            navigate(`/audio/${duplicateInfo.existingId}`);
+            setDuplicateInfo(null);
+        }
+    }, [duplicateInfo, navigate]);
+
+    const handleDuplicateUploadAnyway = useCallback(async () => {
+        if (!duplicateInfo) return;
+        const { file, isVideo, title } = duplicateInfo;
+        setDuplicateInfo(null);
+        try {
+            await uploadFile({ file, isVideo, title, force: true });
+            toast({
+                title: "Upload Complete",
+                description: `Successfully uploaded ${file.name}`,
+            });
+        } catch {
+            toast({
+                title: "Upload Failed",
+                description: `Failed to upload ${file.name}`,
+                variant: "error",
+            });
+        }
+    }, [duplicateInfo, uploadFile, toast]);
+
     const value: GlobalUploadContextValue = {
         handleFileSelect,
         handleMultiTrackUpload,
@@ -270,6 +333,27 @@ export function GlobalUploadProvider({ children }: PropsWithChildren) {
     return (
         <GlobalUploadContext.Provider value={value}>
             {children}
+
+            {/* Duplicate Upload Dialog */}
+            <AlertDialog open={!!duplicateInfo} onOpenChange={(open) => { if (!open) setDuplicateInfo(null); }}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Duplicate File</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This file has already been uploaded as &ldquo;{duplicateInfo?.existingTitle || "Untitled"}&rdquo;.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel onClick={() => setDuplicateInfo(null)}>Cancel</AlertDialogCancel>
+                        <AlertDialogAction className={buttonVariants({ variant: "outline" })} onClick={handleDuplicateOpenExisting}>
+                            Open Existing
+                        </AlertDialogAction>
+                        <AlertDialogAction onClick={handleDuplicateUploadAnyway}>
+                            Upload Anyway
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
 
             {/* Multi-track Upload Dialog (global) */}
             <MultiTrackUploadDialog

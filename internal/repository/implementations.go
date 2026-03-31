@@ -104,6 +104,7 @@ type JobRepository interface {
 	BulkUpdateFolder(ctx context.Context, oldFolder string, newFolder *string, vaultID *uint) (int64, error)
 	BulkUpdateFolderPrefix(ctx context.Context, oldPrefix, newPrefix string, vaultID *uint) (int64, error)
 	FindByIDs(ctx context.Context, ids []string) ([]models.TranscriptionJob, error)
+	FindByFileHash(ctx context.Context, hash string) (*models.TranscriptionJob, error)
 }
 
 type jobRepository struct {
@@ -402,6 +403,15 @@ func (r *jobRepository) FindByIDs(ctx context.Context, ids []string) ([]models.T
 	var jobs []models.TranscriptionJob
 	err := r.db.WithContext(ctx).Where("id IN ?", ids).Find(&jobs).Error
 	return jobs, err
+}
+
+func (r *jobRepository) FindByFileHash(ctx context.Context, hash string) (*models.TranscriptionJob, error) {
+	var job models.TranscriptionJob
+	err := r.db.WithContext(ctx).Where("file_hash = ?", hash).First(&job).Error
+	if err != nil {
+		return nil, err
+	}
+	return &job, nil
 }
 
 // APIKeyRepository handles API key operations

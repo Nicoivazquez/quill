@@ -15,14 +15,16 @@ const metadataFileName = "metadata.json"
 // BundleMetadata contains all metadata needed to reconstruct a DB record from disk.
 // This file lives alongside transcript.json, transcript.md, and audio.* in each bundle.
 type BundleMetadata struct {
-	ID          string    `json:"id"`
-	Title       string    `json:"title"`
-	Status      string    `json:"status"`
-	Diarization bool      `json:"diarization"`
-	IsMultiTrack bool     `json:"is_multi_track,omitempty"`
-	Folder      string    `json:"folder,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID               string    `json:"id"`
+	Title            string    `json:"title"`
+	Status           string    `json:"status"`
+	Diarization      bool      `json:"diarization"`
+	IsMultiTrack     bool      `json:"is_multi_track,omitempty"`
+	Folder           string    `json:"folder,omitempty"`
+	OriginalFilename string    `json:"original_filename,omitempty"`
+	FileHash         string    `json:"file_hash,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 
 	SpeakerMappings []SpeakerMappingEntry `json:"speaker_mappings,omitempty"`
 	Summaries       []SummaryEntry        `json:"summaries,omitempty"`
@@ -225,12 +227,14 @@ func BuildMetadataFromJob(
 	notes []models.Note,
 ) *BundleMetadata {
 	meta := &BundleMetadata{
-		ID:          job.ID,
-		Status:      string(job.Status),
-		Diarization: job.Diarization,
-		IsMultiTrack: job.IsMultiTrack,
-		CreatedAt:   job.CreatedAt,
-		UpdatedAt:   job.UpdatedAt,
+		ID:               job.ID,
+		Status:           string(job.Status),
+		Diarization:      job.Diarization,
+		IsMultiTrack:     job.IsMultiTrack,
+		OriginalFilename: job.OriginalFilename,
+		FileHash:         job.FileHash,
+		CreatedAt:        job.CreatedAt,
+		UpdatedAt:        job.UpdatedAt,
 	}
 
 	if job.Title != nil {
