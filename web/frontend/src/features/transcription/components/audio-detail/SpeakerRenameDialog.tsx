@@ -355,6 +355,10 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
       const payload: SpeakerMappingsUpdateResponse = await response.json();
       onSpeakerMappingsUpdate(payload.mappings);
 
+      // Invalidate contact appearances so the Contacts page reflects updated mappings
+      queryClient.invalidateQueries({ queryKey: ["contacts", "appearances"] });
+      queryClient.invalidateQueries({ queryKey: ["contacts"] });
+
       if (payload.contact_bootstrap.started_count > 0) {
         const started = payload.contact_bootstrap.started_count;
         const created = payload.contact_bootstrap.created_count;
@@ -426,15 +430,11 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
 
   const speakers = Object.keys(speakerMappings).sort();
 
-  // A speaker is "locked" if it was auto-assigned or previously promoted
-  // Raw backfilled mappings (match_tier === 'none' or '') are NOT locked — they're unmatched speakers.
+  // A speaker is "locked" only if it was just promoted in the current dialog session.
+  // Auto-identified speakers are now editable so users can correct misidentifications.
   const isLockedSpeaker = useCallback((speaker: string) => {
-    if (promotedSpeakers.has(speaker)) return true;
-    const detail = mappingDetails.get(speaker);
-    if (!detail) return false;
-    const isRawMapping = !detail.match_tier || detail.match_tier === 'none';
-    return !isRawMapping && (detail.match_source === 'auto' || detail.match_source === 'retroactive');
-  }, [promotedSpeakers, mappingDetails]);
+    return promotedSpeakers.has(speaker);
+  }, [promotedSpeakers]);
 
   // Categorize speakers into three groups
   const { autoAssigned, suggested, unassigned } = useMemo(() => {
@@ -512,18 +512,106 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
                     </div>
                     {autoAssigned.map((speaker) => {
                       const detail = mappingDetails.get(speaker);
+                      const isJustPromoted = promotedSpeakers.has(speaker);
                       return (
-                        <div key={speaker} className="flex items-center gap-3 px-3 py-2 rounded-md bg-green-500/5 border border-green-500/20">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs text-muted-foreground">{formatSpeakerLabel(speaker)}</span>
-                              <span className="text-xs px-1.5 py-0.5 rounded bg-green-500/10 text-green-600 dark:text-green-400 inline-flex items-center gap-1" data-testid={`badge-auto-${speaker}`}>
-                                <Check className="h-3 w-3" />
-                                {Math.round((detail?.confidence_score ?? 0) * 100)}%
-                              </span>
-                            </div>
-                            <div className="text-sm font-medium truncate">{speakerMappings[speaker] || detail?.custom_name}</div>
+                        <div key={speaker} className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <Label htmlFor={`speaker-${speaker}`} className="text-xs font-medium text-muted-foreground">
+                              {formatSpeakerLabel(speaker)}
+                            </Label>
+                            <span className="text-xs px-1.5 py-0.5 rounded bg-green-500/10 text-green-600 dark:text-green-400 inline-flex items-center gap-1" data-testid={`badge-auto-${speaker}`}>
+                              <Check className="h-3 w-3" />
+                              {Math.round((detail?.confidence_score ?? 0) * 100)}%
+                            </span>
                           </div>
+                          {isJustPromoted ? (
+                            <div className="text-sm font-medium truncate px-3 py-2 rounded-md bg-green-500/5 border border-green-500/20">
+                              {speakerMappings[speaker] || detail?.custom_name}
+                            </div>
+                          ) : (
+                            <Popover
+                              open={activeSpeaker === speaker}
+                              onOpenChange={(nextOpen) => {
+                                setActiveSpeaker((current) => {
+                                  if (nextOpen) return speaker;
+                                  return current === speaker ? null : current;
+                                });
+                                if (!nextOpen) setHighlightedSuggestionIndex(0);
+                              }}
+                            >
+                              <PopoverAnchor asChild>
+                                <Input
+                                  id={`speaker-${speaker}`}
+                                  value={speakerMappings[speaker] || ''}
+                                  onChange={(e) => handleSpeakerNameChange(speaker, sanitizeInputValue(e.target.value))}
+                                  onFocus={() => { setActiveSpeaker(speaker); setHighlightedSuggestionIndex(0); }}
+                                  onClick={() => { setActiveSpeaker(speaker); setHighlightedSuggestionIndex(0); }}
+                                  onKeyDown={(event) => handleSpeakerInputKeyDown(event, speaker)}
+                                  placeholder={`Enter custom name for ${formatSpeakerLabel(speaker)}`}
+                                  className="transition-all duration-200 focus:ring-2 focus:ring-green-500/20 border-green-500/20"
+                                />
+                              </PopoverAnchor>
+                              <PopoverContent
+                                align="start"
+                                sideOffset={6}
+                                onOpenAutoFocus={(event) => event.preventDefault()}
+                                className="w-[var(--radix-popover-trigger-width)] p-0"
+                              >
+                                <div className="max-h-44 overflow-y-auto py-1">
+                                  {contactsQuery.isLoading ? (
+                                    <div className="px-3 py-2 text-xs text-[var(--text-tertiary)]">Loading contacts...</div>
+                                  ) : (
+                                    <>
+                                      {getContactSuggestions(speakerMappings[speaker] ?? "", speaker).map((contact, index) => (
+                                        <button
+                                          type="button"
+                                          role="option"
+                                          aria-selected={index === highlightedSuggestionIndex}
+                                          key={contact.id}
+                                          onMouseEnter={() => setHighlightedSuggestionIndex(index)}
+                                          onMouseDown={(event) => { event.preventDefault(); applyContactSuggestion(speaker, contact); }}
+                                          className={`w-full px-3 py-2 text-left transition-colors ${index === highlightedSuggestionIndex ? "bg-[var(--bg-muted-pane)]" : "hover:bg-[var(--bg-muted-pane)]/70"}`}
+                                        >
+                                          <div className="text-sm font-medium text-[var(--text-primary)]">{contact.name}</div>
+                                          {(contact.email || contact.phone) && (
+                                            <div className="text-xs text-[var(--text-secondary)]">{contact.email || contact.phone}</div>
+                                          )}
+                                        </button>
+                                      ))}
+                                      {isNewContactCandidate(speakerMappings[speaker] ?? "", speaker) && (() => {
+                                        const autoSuggestions = getContactSuggestions(speakerMappings[speaker] ?? "", speaker);
+                                        const createIndex = autoSuggestions.length;
+                                        const trimmedName = (speakerMappings[speaker] ?? "").trim();
+                                        return (
+                                          <>
+                                            {autoSuggestions.length > 0 && <div className="border-t border-[var(--border-subtle)] my-1" />}
+                                            <button
+                                              type="button"
+                                              role="option"
+                                              aria-selected={createIndex === highlightedSuggestionIndex}
+                                              onMouseEnter={() => setHighlightedSuggestionIndex(createIndex)}
+                                              onMouseDown={(event) => { event.preventDefault(); handleCreateContact(speaker, trimmedName); }}
+                                              disabled={createContactMutation.isPending}
+                                              className={`w-full px-3 py-2 text-left transition-colors flex items-center gap-2 ${createIndex === highlightedSuggestionIndex ? "bg-[var(--bg-muted-pane)]" : "hover:bg-[var(--bg-muted-pane)]/70"}`}
+                                            >
+                                              {createContactMutation.isPending ? (
+                                                <Loader2 className="h-4 w-4 animate-spin text-[var(--brand-solid)] shrink-0" />
+                                              ) : (
+                                                <UserPlus className="h-4 w-4 text-[var(--brand-solid)] shrink-0" />
+                                              )}
+                                              <span className="text-sm text-[var(--text-primary)]">
+                                                Create "<span className="font-medium">{trimmedName}</span>"
+                                              </span>
+                                            </button>
+                                          </>
+                                        );
+                                      })()}
+                                    </>
+                                  )}
+                                </div>
+                              </PopoverContent>
+                            </Popover>
+                          )}
                         </div>
                       );
                     })}

@@ -660,10 +660,8 @@ func (h *Handler) RetroactiveScanForContact(c *gin.Context) {
 	// Use a detached context so the scan continues even if the client navigates away.
 	bgCtx := context.WithoutCancel(c.Request.Context())
 
-	// Inject LLM caller for voice+LLM fusion scoring if available.
-	if caller := h.buildSpeakerIDLLMCaller(bgCtx); caller != nil {
-		h.contactManager.SetRetroactiveScanLLMCaller(caller)
-	}
+	// LLM fusion disabled — voice-only matching is used for retroactive scans.
+	// To re-enable, inject an LLM caller via h.contactManager.SetRetroactiveScanLLMCaller().
 
 	result, scanErr := h.contactManager.RetroactiveScanForContact(bgCtx, contact.ID)
 	if scanErr != nil {

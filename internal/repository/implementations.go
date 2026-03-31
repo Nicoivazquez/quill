@@ -59,6 +59,7 @@ type ListParams struct {
 	UpdatedAfter *time.Time
 	VaultID      *uint
 	Folder       *string // nil = all, pointer to "" = root/unfiled, pointer to "X" = specific folder
+	FolderPrefix string  // filter by folder prefix (e.g., "Work" matches "Work" and "Work/Meetings")
 	Status        string // filter by job status (e.g., "completed", "failed")
 	Speaker       string // filter by speaker custom name (subquery on speaker_mappings)
 	SpeakerStatus string // filter by speaker identification status ("needs_attention", "identified")
@@ -101,6 +102,7 @@ type JobRepository interface {
 	UpdateFolder(ctx context.Context, jobID string, folder *string) error
 	UpdateBundlePaths(ctx context.Context, jobID string, artifactDir, audioPath, jsonPath, mdPath *string, folder *string) error
 	BulkUpdateFolder(ctx context.Context, oldFolder string, newFolder *string, vaultID *uint) (int64, error)
+	BulkUpdateFolderPrefix(ctx context.Context, oldPrefix, newPrefix string, vaultID *uint) (int64, error)
 	FindByIDs(ctx context.Context, ids []string) ([]models.TranscriptionJob, error)
 }
 
@@ -155,6 +157,11 @@ func (r *jobRepository) ListWithParams(ctx context.Context, params ListParams) (
 			// Explicitly filter for root (no folder)
 			db = db.Where("folder IS NULL OR folder = ''")
 		}
+	}
+
+	// Apply folder prefix filter (matches exact and children)
+	if params.FolderPrefix != "" {
+		db = db.Where("folder = ? OR folder LIKE ?", params.FolderPrefix, params.FolderPrefix+"/%")
 	}
 
 	// Apply status filter
@@ -349,6 +356,43 @@ func (r *jobRepository) BulkUpdateFolder(ctx context.Context, oldFolder string, 
 	}
 	result := db.Update("folder", newFolder)
 	return result.RowsAffected, result.Error
+}
+
+// BulkUpdateFolderPrefix updates all jobs whose folder matches oldPrefix exactly
+// OR starts with oldPrefix + "/", replacing the prefix with newPrefix.
+// This supports cascading folder renames (e.g., "Work" → "Projects" also
+// updates "Work/Meetings" → "Projects/Meetings").
+func (r *jobRepository) BulkUpdateFolderPrefix(ctx context.Context, oldPrefix, newPrefix string, vaultID *uint) (int64, error) {
+	var total int64
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Update exact match: folder = oldPrefix → newPrefix
+		db1 := tx.Model(&models.TranscriptionJob{}).
+			Where("folder = ?", oldPrefix)
+		if vaultID != nil {
+			db1 = db1.Where("vault_id = ?", *vaultID)
+		}
+		r1 := db1.Update("folder", newPrefix)
+		if r1.Error != nil {
+			return r1.Error
+		}
+
+		// Update prefix match: folder LIKE 'oldPrefix/%' → replace prefix
+		// Note: uses SQLite-specific SUBSTR and || (string concat) operators.
+		childPrefix := oldPrefix + "/"
+		db2 := tx.Model(&models.TranscriptionJob{}).
+			Where("folder LIKE ?", childPrefix+"%")
+		if vaultID != nil {
+			db2 = db2.Where("vault_id = ?", *vaultID)
+		}
+		r2 := db2.Update("folder", gorm.Expr("? || SUBSTR(folder, ?)", newPrefix+"/", len(childPrefix)+1))
+		if r2.Error != nil {
+			return r2.Error
+		}
+
+		total = r1.RowsAffected + r2.RowsAffected
+		return nil
+	})
+	return total, err
 }
 
 func (r *jobRepository) FindByIDs(ctx context.Context, ids []string) ([]models.TranscriptionJob, error) {

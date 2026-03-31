@@ -134,13 +134,9 @@ func (h *Handler) AutoLabelSpeakersForJob(ctx context.Context, jobID string) err
 		database.DB,
 	)
 
-	// Optionally inject LLM caller for voice+LLM fusion scoring.
-	if caller := h.buildSpeakerIDLLMCaller(ctx); caller != nil {
-		autoLabelService.SetLLMCaller(caller)
-		logger.Debug("auto-label: LLM caller available for fusion scoring", "job_id", jobID)
-	} else {
-		logger.Debug("auto-label: no LLM caller, using voice-only matching", "job_id", jobID)
-	}
+	// LLM fusion disabled — voice-only matching is used.
+	// To re-enable, inject an LLM caller via autoLabelService.SetLLMCaller().
+	logger.Debug("auto-label: using voice-only matching (LLM fusion disabled)", "job_id", jobID)
 
 	transcriptText := ""
 	if job.Transcript != nil {

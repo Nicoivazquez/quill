@@ -134,6 +134,11 @@ func Initialize(dbPath string) error {
 		fmt.Printf("Warning: Failed to migrate folder names: %v\n", err)
 	}
 
+	// Backfill empty match_source on speaker mappings so UI labels are consistent.
+	if err := backfillSpeakerMappingMatchSource(DB); err != nil {
+		fmt.Printf("Warning: Failed to backfill speaker mapping match_source: %v\n", err)
+	}
+
 	return nil
 }
 
@@ -254,6 +259,25 @@ func backfillSpeakerMappingContactIDs(db *gorm.DB) error {
 	}
 	if result.RowsAffected > 0 {
 		fmt.Printf("Backfilled contact_id on %d speaker mappings\n", result.RowsAffected)
+	}
+	return nil
+}
+
+// backfillSpeakerMappingMatchSource sets match_source = "manual" on legacy rows
+// where the field is empty but the speaker was clearly renamed by the user.
+func backfillSpeakerMappingMatchSource(db *gorm.DB) error {
+	result := db.Exec(`
+		UPDATE speaker_mappings
+		SET match_source = 'manual'
+		WHERE (match_source IS NULL OR match_source = '')
+		AND custom_name != original_speaker
+		AND custom_name != ''
+	`)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
+		fmt.Printf("Backfilled match_source on %d speaker mappings\n", result.RowsAffected)
 	}
 	return nil
 }
