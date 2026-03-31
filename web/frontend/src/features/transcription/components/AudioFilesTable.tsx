@@ -8,16 +8,15 @@ import {
 	FileAudio,
 	Wand2,
 	Check,
-	AlertCircle,
 	Clock,
 	X,
 	FolderInput,
 	BookMarked,
-	Sparkles,
 	Type,
-	Users,
+	Feather,
 } from "lucide-react";
 import { WandAdvancedIcon } from "@/components/icons/WandAdvancedIcon";
+import { InkDropFilled, InkDropEmpty } from "@/components/icons/InkDropIcon";
 
 import {
 	Tooltip,
@@ -47,10 +46,12 @@ import { TranscriptionConfigDialog, type WhisperXParams } from "@/components/Tra
 import { TranscribeDDialog } from "@/components/TranscribeDDialog";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/features/auth/hooks/useAuth";
-import { useAudioListInfinite, type AudioFile } from "@/features/transcription/hooks/useAudioFiles";
+import { useAudioListInfinite, type AudioFile, type SpeakerAttentionSummary } from "@/features/transcription/hooks/useAudioFiles";
 import { useTranscriptionEvents } from "@/features/transcription/hooks/useTranscriptionEvents";
+
 import { useFolders, useMoveToFolder } from "@/features/transcription/hooks/useFolders";
 import { useBatchDelete, useBatchMove, useBatchStart } from "@/features/transcription/hooks/useBatchActions";
+import { SpeakerSuggestionPopover } from "@/features/transcription/components/SpeakerSuggestionPopover";
 import { useToast } from "@/components/ui/toast";
 
 const JobStatusMonitor = memo(function JobStatusMonitor({ jobId }: { jobId: string }) {
@@ -72,6 +73,8 @@ interface AudioFilesTableProps {
 	selectedFolder?: string | null; // null = all, "" = root only, "Work" = specific folder
 }
 
+const SCROLL_STORAGE_KEY = 'dashboard-scroll';
+
 export const AudioFilesTable = memo(function AudioFilesTable({
 	onTranscribe,
 	selectedFolder = null,
@@ -91,6 +94,7 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 	const [filters, setFilters] = useState<ListFilters>({
 		status: "",
 		speaker: "",
+		speakerStatus: "",
 		sortBy: "created_at",
 		sortOrder: "desc",
 	});
@@ -111,6 +115,7 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 		folder: selectedFolder,
 		status: filters.status,
 		speaker: filters.speaker,
+		speakerStatus: filters.speakerStatus,
 	});
 
 	// Get active jobs for real-time monitoring
@@ -137,6 +142,17 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 		return counts;
 	}, [infiniteData]);
 
+	// Collect speaker attention summaries across all pages
+	const speakerAttention = useMemo(() => {
+		const summaries: Record<string, SpeakerAttentionSummary> = {};
+		for (const page of infiniteData?.pages || []) {
+			if (page.speaker_attention) {
+				Object.assign(summaries, page.speaker_attention);
+			}
+		}
+		return summaries;
+	}, [infiniteData]);
+
 	const loading = queryLoading;
 	// Pagination state no longer needed in same way
 
@@ -152,6 +168,45 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 		}
 	}, [inView, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
+	// --- Scroll position restoration ---
+	const pageCountRef = useRef(0);
+	const scrollRestoreTarget = useRef<{ scrollY: number; pageCount: number } | null>(null);
+	const scrollRestored = useRef(false);
+
+	// Track current page count (read in handleAudioClick via ref to avoid dep churn)
+	useEffect(() => {
+		pageCountRef.current = infiniteData?.pages.length ?? 0;
+	}, [infiniteData]);
+
+	// On mount: read saved scroll position
+	useEffect(() => {
+		const raw = sessionStorage.getItem(SCROLL_STORAGE_KEY);
+		if (raw) {
+			try {
+				scrollRestoreTarget.current = JSON.parse(raw);
+			} catch { /* ignore malformed data */ }
+			sessionStorage.removeItem(SCROLL_STORAGE_KEY);
+		}
+	}, []);
+
+	// Preload pages and restore scroll position when enough content is loaded
+	useEffect(() => {
+		const target = scrollRestoreTarget.current;
+		if (!target || scrollRestored.current || !infiniteData) return;
+
+		const loaded = infiniteData.pages.length;
+		if (loaded < target.pageCount && hasNextPage && !isFetchingNextPage) {
+			fetchNextPage();
+			return;
+		}
+
+		// Enough pages loaded (or no more available) — restore position
+		scrollRestored.current = true;
+		scrollRestoreTarget.current = null;
+		requestAnimationFrame(() => {
+			window.scrollTo(0, target.scrollY);
+		});
+	}, [infiniteData, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
 	// Local state for UI
 	// queuePositions state removed
@@ -169,6 +224,10 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 	const LONG_PRESS_CANCEL_THRESHOLD = 10;
 
 	const handleAudioClick = useCallback((audioId: string) => {
+		sessionStorage.setItem(SCROLL_STORAGE_KEY, JSON.stringify({
+			scrollY: window.scrollY,
+			pageCount: pageCountRef.current,
+		}));
 		navigate(`/audio/${audioId}`);
 	}, [navigate]);
 
@@ -278,7 +337,6 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 	const [trackProgress, setTrackProgress] = useState<Record<string, any>>({});
 
 	// AI action loading states
-	const [summaryGenerating, setSummaryGenerating] = useState<Set<string>>(new Set());
 	const [titleGenerating, setTitleGenerating] = useState<Set<string>>(new Set());
 
 	// Dialog state management
@@ -604,102 +662,6 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 		}
 	}, [rowSelection, batchMove]);
 
-	// Handle AI Summary generation for a single file
-	const handleGenerateSummary = useCallback(async (jobId: string) => {
-		setSummaryGenerating(prev => new Set(prev).add(jobId));
-		try {
-			// 1. Fetch LLM config for the model name
-			const configRes = await fetch("/api/v1/llm/config", {
-				headers: getAuthHeaders(),
-			});
-			if (!configRes.ok) {
-				toast({ title: "LLM not configured", description: "Set up an LLM provider in Settings first." });
-				return;
-			}
-			const llmConfig = await configRes.json();
-			if (!llmConfig?.is_active) {
-				toast({ title: "LLM not active", description: "Enable your LLM provider in Settings first." });
-				return;
-			}
-
-			// 2. Fetch transcript content
-			const transcriptRes = await fetch(`/api/v1/transcription/${jobId}`, {
-				headers: getAuthHeaders(),
-			});
-			if (!transcriptRes.ok) {
-				toast({ title: "Failed to load transcript" });
-				return;
-			}
-			const transcriptData = await transcriptRes.json();
-			// The API returns `transcript` as a JSON string — parse it to extract plain text
-			let transcriptText = "";
-			if (transcriptData?.transcript) {
-				try {
-					const parsed = JSON.parse(transcriptData.transcript);
-					transcriptText = parsed?.text || "";
-				} catch {
-					// If it's not JSON, use it as-is
-					transcriptText = transcriptData.transcript;
-				}
-			}
-			if (!transcriptText.trim()) {
-				toast({ title: "No transcript text", description: "Transcription has no text to summarize." });
-				return;
-			}
-
-			// 3. Fetch summary templates to find the default
-			const templatesRes = await fetch("/api/v1/summaries/", {
-				headers: getAuthHeaders(),
-			});
-			const templates = templatesRes.ok ? await templatesRes.json() : [];
-			if (!templates.length) {
-				toast({ title: "No summary templates", description: "Create a summary template in Settings first." });
-				return;
-			}
-
-			// Use the first template as default
-			const template = templates[0];
-
-			// 4. Call summarize endpoint
-			const combinedContent = `Transcript:\n${transcriptText}\n\nInstructions:\n${template.prompt}`;
-			const res = await fetch("/api/v1/summarize", {
-				method: "POST",
-				headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-				body: JSON.stringify({
-					model: template.model,
-					content: combinedContent,
-					transcription_id: jobId,
-					template_id: template.id,
-				}),
-			});
-
-			if (!res.ok) {
-				toast({ title: "Summary failed", description: "Failed to generate summary." });
-				return;
-			}
-
-			// Consume the stream to completion
-			if (res.body) {
-				const reader = res.body.getReader();
-				while (true) {
-					const { done } = await reader.read();
-					if (done) break;
-				}
-			}
-
-			toast({ title: "Summary generated" });
-			refetch();
-		} catch {
-			toast({ title: "Summary failed", description: "Network error." });
-		} finally {
-			setSummaryGenerating(prev => {
-				const next = new Set(prev);
-				next.delete(jobId);
-				return next;
-			});
-		}
-	}, [getAuthHeaders, toast, refetch]);
-
 	// Handle AI Title generation for a single file
 	const handleGenerateTitle = useCallback(async (jobId: string) => {
 		setTitleGenerating(prev => new Set(prev).add(jobId));
@@ -730,28 +692,6 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 			});
 		}
 	}, [getAuthHeaders, toast, refetch]);
-
-	// Handle bulk AI Summary generation
-	const handleBulkGenerateSummary = useCallback(async () => {
-		const selectedIds = Object.keys(rowSelection);
-		// Filter to only completed transcriptions
-		const completedIds = selectedIds.filter(id => {
-			const job = data.find(j => j.id === id);
-			return job?.status === "completed";
-		});
-		if (completedIds.length === 0) {
-			toast({ title: "No completed transcriptions selected" });
-			return;
-		}
-
-		setBulkActionLoading(true);
-		try {
-			await Promise.all(completedIds.map(id => handleGenerateSummary(id)));
-		} finally {
-			setBulkActionLoading(false);
-			setRowSelection({});
-		}
-	}, [rowSelection, data, handleGenerateSummary, toast]);
 
 	// Handle bulk AI Title generation
 	const handleBulkGenerateTitle = useCallback(async () => {
@@ -866,17 +806,24 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 		}
 
 		switch (status) {
-			case "completed":
-				return (
-					<Tooltip>
-						<TooltipTrigger asChild>
-							<div className="cursor-help text-emerald-500">
-								<Check className="h-5 w-5" strokeWidth={2.5} />
-							</div>
-						</TooltipTrigger>
-						<TooltipContent>Completed</TooltipContent>
-					</Tooltip>
-				);
+			case "completed": {
+				const synced = file.obsidian_synced_at;
+				const updated = file.updated_at;
+				const isObsidianStale = synced && updated && (new Date(updated).getTime() - new Date(synced).getTime()) > 10000;
+				if (isObsidianStale) {
+					return (
+						<Tooltip>
+							<TooltipTrigger asChild>
+								<div className="cursor-help text-yellow-500 -rotate-45">
+									<Feather className="h-5 w-5" strokeWidth={2} />
+								</div>
+							</TooltipTrigger>
+							<TooltipContent>This quill needs a touch-up</TooltipContent>
+						</Tooltip>
+					);
+				}
+				return null;
+			}
 			case "processing":
 				return (
 					<Tooltip>
@@ -892,11 +839,11 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 				return (
 					<Tooltip>
 						<TooltipTrigger asChild>
-							<div className="cursor-help text-red-500">
-								<AlertCircle className="h-5 w-5" strokeWidth={2.5} />
+							<div className="cursor-help text-red-400 -rotate-45">
+								<Feather className="h-5 w-5" strokeWidth={2} />
 							</div>
 						</TooltipTrigger>
-						<TooltipContent>Failed</TooltipContent>
+						<TooltipContent>Oh no, this quill broke!</TooltipContent>
 					</Tooltip>
 				);
 			case "pending": {
@@ -988,11 +935,25 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 				) : data.length === 0 ? (
 					<div className="flex flex-col items-center justify-center p-12 text-center border border-dashed border-[var(--border-subtle)] rounded-[var(--radius-card)] bg-[var(--bg-muted-pane)]">
 						<div className="p-4 bg-[var(--bg-card)] rounded-[var(--radius-btn)] mb-4">
-							<Music className="h-8 w-8 text-[var(--text-tertiary)]" />
+							{filters.speakerStatus ? (
+								<Check className="h-8 w-8 text-emerald-500" />
+							) : (
+								<Music className="h-8 w-8 text-[var(--text-tertiary)]" />
+							)}
 						</div>
-						<h3 className="text-lg font-medium text-[var(--text-primary)]">No recordings found</h3>
+						<h3 className="text-lg font-medium text-[var(--text-primary)]">
+							{filters.speakerStatus === "needs_attention"
+								? "All caught up"
+								: filters.speakerStatus === "identified"
+									? "No fully identified recordings"
+									: "No recordings found"}
+						</h3>
 						<p className="text-[var(--text-secondary)] max-w-sm mt-2">
-							Upload an audio file or start a recording to get started.
+							{filters.speakerStatus === "needs_attention"
+								? "No recordings need speaker identification right now."
+								: filters.speakerStatus === "identified"
+									? "All recordings still have unidentified speakers."
+									: "Upload an audio file or start a recording to get started."}
 						</p>
 					</div>
 				) : (
@@ -1037,21 +998,56 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 												<h4 className="font-normal text-gray-900 dark:text-gray-100 truncate text-lg leading-tight group-hover:text-[var(--brand-solid)] transition-colors">
 													{file.title || getFileName(file.audio_path)}
 												</h4>
-												{(pendingSuggestions[file.id] ?? 0) > 0 && (
-													<Tooltip>
-														<TooltipTrigger asChild>
-															<span className="flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400 border border-amber-200 dark:border-amber-700/50">
-																<Users className="h-3 w-3" />
-																{pendingSuggestions[file.id]}
-															</span>
-														</TooltipTrigger>
-														<TooltipContent>
-															{pendingSuggestions[file.id] === 1
-																? "1 speaker needs identification"
-																: `${pendingSuggestions[file.id]} speakers need identification`}
-														</TooltipContent>
-													</Tooltip>
-												)}
+												{/* Speaker attention badges */}
+												{(() => {
+													const attention = speakerAttention[file.id];
+													const pending = pendingSuggestions[file.id] ?? 0;
+													if (!attention && pending === 0) return null;
+
+													const totalMappings = attention?.total_mappings ?? 0;
+													const renamedCount = attention?.renamed ?? 0;
+													const suggestCount = pending || (attention?.pending_suggestions ?? 0);
+													const unidentifiedCount = Math.max(0, totalMappings - renamedCount - suggestCount);
+
+													return (
+														<>
+															{renamedCount > 0 && (
+																<Tooltip>
+																	<TooltipTrigger asChild>
+																		<span className="flex-shrink-0 inline-flex items-center text-teal-500 dark:text-teal-400 animate-in fade-in duration-300">
+																			<InkDropFilled className="w-4 h-5" count={renamedCount} />
+																		</span>
+																	</TooltipTrigger>
+																	<TooltipContent>
+																		{renamedCount === 1
+																			? "1 speaker identified"
+																			: `${renamedCount} speakers identified`}
+																	</TooltipContent>
+																</Tooltip>
+															)}
+															{unidentifiedCount > 0 && (
+																<Tooltip>
+																	<TooltipTrigger asChild>
+																		<span className="flex-shrink-0 inline-flex items-center text-zinc-400 dark:text-zinc-500 animate-in fade-in duration-300">
+																			<InkDropEmpty className="w-4 h-5" count={unidentifiedCount} />
+																		</span>
+																	</TooltipTrigger>
+																	<TooltipContent>
+																		{unidentifiedCount === 1
+																			? "1 speaker unidentified"
+																			: `${unidentifiedCount} speakers unidentified`}
+																	</TooltipContent>
+																</Tooltip>
+															)}
+															{suggestCount > 0 && (
+																<SpeakerSuggestionPopover
+																	jobId={file.id}
+																	count={suggestCount}
+																/>
+															)}
+														</>
+													);
+												})()}
 											</div>
 											<div className="flex items-center gap-1.5 mt-1 text-sm text-gray-500">
 												{formatDate(file.created_at)}
@@ -1168,28 +1164,6 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 												);
 											})()}
 
-											{/* AI Summary (completed only) */}
-										{file.status === "completed" && (
-											<Tooltip>
-												<TooltipTrigger asChild>
-													<Button
-														variant="ghost"
-														size="icon"
-														onClick={() => handleGenerateSummary(file.id)}
-														disabled={summaryGenerating.has(file.id)}
-														className="h-9 w-9 rounded-lg text-gray-400 hover:text-[var(--brand-solid)] hover:bg-[var(--brand-light)] cursor-pointer transition-colors"
-													>
-														{summaryGenerating.has(file.id) ? (
-															<Loader2 className="h-5 w-5 animate-spin" strokeWidth={2} />
-														) : (
-															<Sparkles className="h-5 w-5" strokeWidth={2} />
-														)}
-													</Button>
-												</TooltipTrigger>
-												<TooltipContent>Generate Summary</TooltipContent>
-											</Tooltip>
-										)}
-
 										{/* AI Title (completed only) */}
 										{file.status === "completed" && (
 											<Tooltip>
@@ -1208,7 +1182,7 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 														)}
 													</Button>
 												</TooltipTrigger>
-												<TooltipContent>Generate Title</TooltipContent>
+												<TooltipContent>Generate/Regenerate Title</TooltipContent>
 											</Tooltip>
 										)}
 
@@ -1337,22 +1311,6 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 
 						<div className="h-4 w-px bg-[var(--border-subtle)] mx-1" />
 
-						{/* Bulk AI Summary */}
-						<Tooltip>
-							<TooltipTrigger asChild>
-								<Button
-									variant="ghost"
-									size="icon"
-									onClick={handleBulkGenerateSummary}
-									disabled={bulkActionLoading}
-									className="h-9 w-9 rounded-full hover:bg-[var(--brand-light)] hover:text-[var(--brand-solid)] transition-colors"
-								>
-									<Sparkles className="h-4 w-4" />
-								</Button>
-							</TooltipTrigger>
-							<TooltipContent>Generate Summary</TooltipContent>
-						</Tooltip>
-
 						{/* Bulk AI Title */}
 						<Tooltip>
 							<TooltipTrigger asChild>
@@ -1366,7 +1324,7 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 									<Type className="h-4 w-4" />
 								</Button>
 							</TooltipTrigger>
-							<TooltipContent>Generate Title</TooltipContent>
+							<TooltipContent>Generate/Regenerate Title</TooltipContent>
 						</Tooltip>
 
 						<div className="h-4 w-px bg-[var(--border-subtle)] mx-1" />

@@ -50,8 +50,8 @@ func TestLabelSpeakers_NilLLMCaller_VoiceOnly(t *testing.T) {
 // agrees with a voice match that is in the suggest tier, the fused score is
 // high enough to promote it to auto-assign.
 //
-// Setup: voice cosine = ~0.78 (suggest tier).
-// LLM agrees with confidence 1.0 → combined = 0.78 * 0.6 + 1.0 * 0.4 = 0.868 → auto.
+// Setup: voice cosine = ~0.45 (suggest tier).
+// LLM agrees with confidence 1.0 → combined = 0.45 * 0.6 + 1.0 * 0.4 = 0.67 → auto.
 func TestLabelSpeakers_LLMFusion_BoostsSuggestToAuto(t *testing.T) {
 	db, svc := setupAutoLabelTestHarness(t)
 
@@ -62,15 +62,15 @@ func TestLabelSpeakers_LLMFusion_BoostsSuggestToAuto(t *testing.T) {
 	contactVec := makeUnitBasisForAutoLabel(256, 0)
 	seedContactWithEmbedding(t, db, vaultPath, 1, "Alice", contactVec)
 
-	// Build a speaker embedding that produces ~0.78 cosine similarity with Alice.
+	// Build a speaker embedding that produces ~0.45 cosine similarity with Alice.
 	// Strategy: mix unit basis 0 with unit basis 1 to get partial overlap.
-	speakerEmb := makeMixedVectorForFusion(256, 0, 1, 0.78)
+	speakerEmb := makeMixedVectorForFusion(256, 0, 1, 0.45)
 
 	// Verify our embedding is in the suggest tier before fusion.
 	voiceSim := CosineSimilarity(speakerEmb, contactVec)
 	voiceTier := ClassifySpeakerMatch(voiceSim)
 	if voiceTier != TierSuggest {
-		t.Fatalf("pre-check: voice similarity %.4f is tier %q, want suggest (0.60-0.79)",
+		t.Fatalf("pre-check: voice similarity %.4f is tier %q, want suggest (0.35-0.49)",
 			voiceSim, voiceTier)
 	}
 
@@ -126,7 +126,7 @@ func TestLabelSpeakers_LLMFusion_EmptyTranscript_FallsBackToVoice(t *testing.T) 
 	seedContactWithEmbedding(t, db, vaultPath, 1, "Alice", contactVec)
 
 	// Speaker with suggest-tier similarity.
-	speakerEmb := makeMixedVectorForFusion(256, 0, 1, 0.78)
+	speakerEmb := makeMixedVectorForFusion(256, 0, 1, 0.45)
 
 	// Set LLM caller that should NOT be called.
 	called := false
@@ -155,10 +155,10 @@ func TestLabelSpeakers_LLMFusion_EmptyTranscript_FallsBackToVoice(t *testing.T) 
 	}
 }
 
-// TestLabelSpeakers_LLMFusion_Disagreement_DemotesScore verifies that when
-// the LLM disagrees with a voice match, the score is penalised (llmScore=0),
-// potentially demoting a borderline match.
-func TestLabelSpeakers_LLMFusion_Disagreement_DemotesScore(t *testing.T) {
+// TestLabelSpeakers_LLMFusion_Disagreement_PreservesVoice verifies that when
+// the LLM disagrees with a voice match, the voice score is preserved unchanged
+// (boost-only: LLM can never penalize a voice match).
+func TestLabelSpeakers_LLMFusion_Disagreement_PreservesVoice(t *testing.T) {
 	db, svc := setupAutoLabelTestHarness(t)
 
 	vaultPath := filepath.Join(t.TempDir(), "vault")
@@ -167,8 +167,8 @@ func TestLabelSpeakers_LLMFusion_Disagreement_DemotesScore(t *testing.T) {
 	contactVec := makeUnitBasisForAutoLabel(256, 0)
 	seedContactWithEmbedding(t, db, vaultPath, 1, "Alice", contactVec)
 
-	// Speaker with a score just above auto threshold (~0.82).
-	speakerEmb := makeMixedVectorForFusion(256, 0, 1, 0.82)
+	// Speaker with a score just above auto threshold (~0.55).
+	speakerEmb := makeMixedVectorForFusion(256, 0, 1, 0.55)
 
 	// Verify pre-fusion voice score is auto-assign tier.
 	voiceSim := CosineSimilarity(speakerEmb, contactVec)
@@ -187,16 +187,14 @@ func TestLabelSpeakers_LLMFusion_Disagreement_DemotesScore(t *testing.T) {
 		t.Fatalf("LabelSpeakers: %v", err)
 	}
 
-	// After fusion with disagreement: combined = voiceSim * 0.6 + 0.0 * 0.4
-	// For voiceSim ~0.82: combined ~0.492 → unknown tier (below 0.60).
-	if len(result.AutoAssigned) != 0 {
-		t.Errorf("expected 0 auto-assigned after LLM disagreement, got %d", len(result.AutoAssigned))
+	// Boost-only: LLM disagreement preserves voice score unchanged.
+	// voiceSim ~0.55 → auto tier preserved.
+	if len(result.AutoAssigned) != 1 {
+		t.Errorf("expected 1 auto-assigned (voice score preserved), got %d (suggestions=%d, unmatched=%v)",
+			len(result.AutoAssigned), len(result.Suggestions), result.Unmatched)
 	}
-	// The score should drop below the suggest threshold, making it unmatched.
-	// combined = 0.82 * 0.6 ≈ 0.492 → unknown
-	if len(result.Unmatched) == 0 {
-		t.Errorf("expected speaker to be unmatched after LLM disagreement, got suggestions=%d auto=%d",
-			len(result.Suggestions), len(result.AutoAssigned))
+	if len(result.Unmatched) != 0 {
+		t.Errorf("expected 0 unmatched (voice score preserved), got %v", result.Unmatched)
 	}
 }
 

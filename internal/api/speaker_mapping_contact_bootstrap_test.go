@@ -64,7 +64,8 @@ func setupBootstrapHarness(t *testing.T) bootstrapHarness {
 	database.DB = db
 
 	h := &Handler{
-		contactRepo: repository.NewContactRepository(db),
+		contactRepo:        repository.NewContactRepository(db),
+		speakerMappingRepo: repository.NewSpeakerMappingRepository(db),
 		// contactManager intentionally nil
 	}
 

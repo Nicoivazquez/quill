@@ -21,6 +21,7 @@ type ContactRepository interface {
 	ListByVault(ctx context.Context, vaultID uint) ([]models.Contact, error)
 	Search(ctx context.Context, vaultID uint, query string) ([]models.Contact, error)
 	ListBySignatureStatus(ctx context.Context, vaultID uint, status string) ([]models.Contact, error)
+	FindByNameInVault(ctx context.Context, vaultID uint, name string) (*models.Contact, error)
 }
 
 type contactRepository struct {
@@ -99,6 +100,17 @@ func (r *contactRepository) Search(ctx context.Context, vaultID uint, query stri
 		return nil, err
 	}
 	return contacts, nil
+}
+
+func (r *contactRepository) FindByNameInVault(ctx context.Context, vaultID uint, name string) (*models.Contact, error) {
+	var contact models.Contact
+	trimmed := strings.TrimSpace(name)
+	if err := r.db.WithContext(ctx).
+		Where("vault_id = ? AND LOWER(name) = LOWER(?)", vaultID, trimmed).
+		First(&contact).Error; err != nil {
+		return nil, err
+	}
+	return &contact, nil
 }
 
 func (r *contactRepository) ListBySignatureStatus(ctx context.Context, vaultID uint, status string) ([]models.Contact, error) {

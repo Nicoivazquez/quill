@@ -87,7 +87,8 @@ type WhisperXParams struct {
 	ReturnCharAlignments bool    `json:"return_char_alignments" gorm:"type:boolean;default:false"`
 
 	// VAD (Voice Activity Detection) settings
-	VadMethod string  `json:"vad_method" gorm:"type:varchar(20);default:'pyannote'"`
+	VadPreprocess bool    `json:"vad_preprocess" gorm:"type:boolean;default:true"` // Silero VAD: strip silence before transcription for speed
+	VadMethod     string  `json:"vad_method" gorm:"type:varchar(20);default:'pyannote'"`
 	VadOnset  float64 `json:"vad_onset" gorm:"type:real;default:0.5"`
 	VadOffset float64 `json:"vad_offset" gorm:"type:real;default:0.363"`
 	ChunkSize int     `json:"chunk_size" gorm:"type:int;default:30"`

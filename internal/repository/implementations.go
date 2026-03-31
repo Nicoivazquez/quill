@@ -59,8 +59,9 @@ type ListParams struct {
 	UpdatedAfter *time.Time
 	VaultID      *uint
 	Folder       *string // nil = all, pointer to "" = root/unfiled, pointer to "X" = specific folder
-	Status       string  // filter by job status (e.g., "completed", "failed")
-	Speaker      string  // filter by speaker custom name (subquery on speaker_mappings)
+	Status        string // filter by job status (e.g., "completed", "failed")
+	Speaker       string // filter by speaker custom name (subquery on speaker_mappings)
+	SpeakerStatus string // filter by speaker identification status ("needs_attention", "identified")
 }
 
 // allowedSortColumns defines the columns that can be used for sorting.
@@ -100,6 +101,7 @@ type JobRepository interface {
 	UpdateFolder(ctx context.Context, jobID string, folder *string) error
 	UpdateBundlePaths(ctx context.Context, jobID string, artifactDir, audioPath, jsonPath, mdPath *string, folder *string) error
 	BulkUpdateFolder(ctx context.Context, oldFolder string, newFolder *string, vaultID *uint) (int64, error)
+	FindByIDs(ctx context.Context, ids []string) ([]models.TranscriptionJob, error)
 }
 
 type jobRepository struct {
@@ -165,6 +167,20 @@ func (r *jobRepository) ListWithParams(ctx context.Context, params ListParams) (
 		db = db.Where("id IN (SELECT transcription_job_id FROM speaker_mappings WHERE custom_name = ?)", params.Speaker)
 	}
 
+	// Apply speaker status filter
+	switch params.SpeakerStatus {
+	case "needs_attention":
+		// Jobs that have at least one unidentified speaker (still using default name)
+		db = db.Where("id IN (SELECT transcription_job_id FROM speaker_mappings WHERE custom_name = original_speaker)")
+	case "identified":
+		// Jobs where ALL speaker mappings are linked to contacts (fully identified)
+		db = db.Where(`id IN (
+			SELECT transcription_job_id FROM speaker_mappings
+			GROUP BY transcription_job_id
+			HAVING COUNT(*) = SUM(CASE WHEN contact_id IS NOT NULL THEN 1 ELSE 0 END)
+		)`)
+	}
+
 	// Apply search filter — prefer FTS5 pre-resolved IDs when available
 	if len(params.FTSJobIDs) > 0 {
 		db = db.Where("id IN ?", params.FTSJobIDs)
@@ -203,7 +219,7 @@ func (r *jobRepository) ListWithParams(ctx context.Context, params ListParams) (
 func (r *jobRepository) ListDistinctSpeakers(ctx context.Context, vaultID *uint) ([]string, error) {
 	var speakers []string
 	db := r.db.WithContext(ctx).Model(&models.SpeakerMapping{}).
-		Where("custom_name != ''")
+		Where("custom_name != '' AND contact_id IS NOT NULL")
 	if vaultID != nil {
 		db = db.Where("transcription_job_id IN (SELECT id FROM transcription_jobs WHERE vault_id = ?)", *vaultID)
 	}
@@ -333,6 +349,15 @@ func (r *jobRepository) BulkUpdateFolder(ctx context.Context, oldFolder string, 
 	}
 	result := db.Update("folder", newFolder)
 	return result.RowsAffected, result.Error
+}
+
+func (r *jobRepository) FindByIDs(ctx context.Context, ids []string) ([]models.TranscriptionJob, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var jobs []models.TranscriptionJob
+	err := r.db.WithContext(ctx).Where("id IN ?", ids).Find(&jobs).Error
+	return jobs, err
 }
 
 // APIKeyRepository handles API key operations
@@ -697,16 +722,27 @@ func (r *noteRepository) DeleteByTranscriptionID(ctx context.Context, transcript
 	return r.db.WithContext(ctx).Where("transcription_id = ?", transcriptionID).Delete(&models.Note{}).Error
 }
 
+// SpeakerAttentionSummary holds per-job speaker identification status counts.
+type SpeakerAttentionSummary struct {
+	PendingSuggestions int `json:"pending_suggestions"`
+	AutoAssigned       int `json:"auto_assigned"`
+	TotalMappings      int `json:"total_mappings"`
+	Renamed            int `json:"renamed"`
+}
+
 // SpeakerMappingRepository handles speaker mappings
 type SpeakerMappingRepository interface {
 	Repository[models.SpeakerMapping]
 	ListByJob(ctx context.Context, jobID string) ([]models.SpeakerMapping, error)
 	ListPendingSuggestions(ctx context.Context, jobID string) ([]models.SpeakerMapping, error)
 	CountPendingSuggestions(ctx context.Context, jobIDs []string) (map[string]int, error)
+	GetSpeakerAttentionSummary(ctx context.Context, jobIDs []string) (map[string]SpeakerAttentionSummary, error)
 	UpdateReviewStatus(ctx context.Context, id uint, status string) error
 	UpdateMappings(ctx context.Context, jobID string, mappings []models.SpeakerMapping) error
 	UpsertMapping(ctx context.Context, jobID string, mapping models.SpeakerMapping) (*models.SpeakerMapping, error)
 	DeleteByJobID(ctx context.Context, jobID string) error
+	ListJobIDsByContactID(ctx context.Context, contactID uint) ([]string, error)
+	SetContactID(ctx context.Context, mappingID uint, contactID *uint) error
 }
 
 type speakerMappingRepository struct {
@@ -823,11 +859,67 @@ func (r *speakerMappingRepository) CountPendingSuggestions(ctx context.Context, 
 	return result, nil
 }
 
+func (r *speakerMappingRepository) GetSpeakerAttentionSummary(ctx context.Context, jobIDs []string) (map[string]SpeakerAttentionSummary, error) {
+	if len(jobIDs) == 0 {
+		return map[string]SpeakerAttentionSummary{}, nil
+	}
+
+	type summaryRow struct {
+		TranscriptionJobID string
+		Total              int
+		Pending            int
+		Auto               int
+		Renamed            int
+	}
+	var rows []summaryRow
+	err := r.db.WithContext(ctx).
+		Model(&models.SpeakerMapping{}).
+		Select(`transcription_job_id,
+			COUNT(*) as total,
+			SUM(CASE WHEN review_status = 'pending' THEN 1 ELSE 0 END) as pending,
+			SUM(CASE WHEN match_tier = 'auto' THEN 1 ELSE 0 END) as auto,
+			SUM(CASE WHEN custom_name != '' AND custom_name != original_speaker AND (review_status IS NULL OR review_status = '' OR review_status != 'pending') THEN 1 ELSE 0 END) as renamed`).
+		Where("transcription_job_id IN ?", jobIDs).
+		Group("transcription_job_id").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string]SpeakerAttentionSummary, len(rows))
+	for _, row := range rows {
+		result[row.TranscriptionJobID] = SpeakerAttentionSummary{
+			PendingSuggestions: row.Pending,
+			AutoAssigned:       row.Auto,
+			TotalMappings:      row.Total,
+			Renamed:            row.Renamed,
+		}
+	}
+	return result, nil
+}
+
 func (r *speakerMappingRepository) UpdateReviewStatus(ctx context.Context, id uint, status string) error {
 	return r.db.WithContext(ctx).
 		Model(&models.SpeakerMapping{}).
 		Where("id = ?", id).
 		Update("review_status", status).Error
+}
+
+func (r *speakerMappingRepository) ListJobIDsByContactID(ctx context.Context, contactID uint) ([]string, error) {
+	var jobIDs []string
+	err := r.db.WithContext(ctx).
+		Model(&models.SpeakerMapping{}).
+		Where("contact_id = ?", contactID).
+		Distinct("transcription_job_id").
+		Pluck("transcription_job_id", &jobIDs).Error
+	return jobIDs, err
+}
+
+func (r *speakerMappingRepository) SetContactID(ctx context.Context, mappingID uint, contactID *uint) error {
+	return r.db.WithContext(ctx).
+		Model(&models.SpeakerMapping{}).
+		Where("id = ?", mappingID).
+		Update("contact_id", contactID).Error
 }
 
 // RefreshTokenRepository handles refresh token operations

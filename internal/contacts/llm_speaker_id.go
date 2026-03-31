@@ -5,14 +5,19 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"quill/pkg/logger"
 )
 
 // Fusion weight constants for the voice + LLM score combination formula.
 //
-//	combined = voice_score * voiceWeight + llm_score * llmWeight
+//	combined = max(voice_score * voiceWeight + llm_score * llmWeight, voice_score)
+//
+// The max() ensures the LLM can only boost a voice match, never penalize it.
 const (
-	voiceWeight = 0.6
-	llmWeight   = 0.4
+	voiceWeight      = 0.6
+	llmWeight        = 0.4
+	minLLMConfidence = 0.50 // LLM guesses below this confidence are ignored
 )
 
 // LLMSpeakerGuess represents the LLM's guess for a speaker's identity.
@@ -148,19 +153,22 @@ func ParseLLMSpeakerGuesses(llmResponse string, speakerLabels []string) []LLMSpe
 }
 
 // FuseScores combines voice matching scores with LLM confidence scores using
-// the formula:
+// a boost-only formula:
 //
-//	combined = voice_score * 0.6 + llm_score * 0.4
+//	combined = max(voice_score * 0.6 + llm_score * 0.4, voice_score)
+//
+// The max() ensures the LLM can only boost a voice match, never penalize it.
 //
 // Fusion rules:
-//   - If the LLM's guessed name matches the voice-matched contact name, the LLM
-//     confidence is used as the llm_score for that contact.
-//   - If the LLM disagrees (different name) or has no guess for a speaker, the
-//     llm_score is 0.0 for that voice-matched contact.
+//   - LLM guesses with confidence below minLLMConfidence (0.50) are ignored.
+//   - If the LLM's guessed name matches the voice-matched contact name (and
+//     confidence >= threshold), the LLM confidence is used as the llm_score.
+//   - If the LLM disagrees or has no guess, the voice score is preserved as-is.
 //   - If a speaker appears in LLM guesses but has no voice match, an entry is
-//     created with voice_score=0.0 (score = 0.4 * llm_confidence).
+//     created with voice_score=0.0 (score = 0.4 * llm_confidence), only if
+//     confidence >= threshold.
 //   - If LLM guesses is empty, voice matches are returned unchanged.
-//   - The Tier field of every returned entry is re-classified from the combined
+//   - The Tier field of every returned entry is re-classified from the final
 //     score using ClassifySpeakerMatch.
 //
 // The function never panics on nil or empty inputs.
@@ -185,16 +193,34 @@ func FuseScores(voiceMatches []SpeakerMatch, llmGuesses []LLMSpeakerGuess) []Spe
 	for _, vm := range voiceMatches {
 		coveredSpeakers[vm.Speaker] = struct{}{}
 
-		llmScore := 0.0
+		combined := vm.Score // default: preserve voice score
 		if guess, ok := llmBySpeaker[vm.Speaker]; ok {
-			// Only use the LLM score when both sides agree on the contact identity.
-			if strings.EqualFold(guess.GuessedName, vm.ContactName) {
-				llmScore = guess.Confidence
+			if guess.Confidence < minLLMConfidence {
+				logger.Info("fuse-scores: LLM guess filtered (low confidence)",
+					"speaker", vm.Speaker, "llm_name", guess.GuessedName,
+					"llm_confidence", guess.Confidence, "threshold", minLLMConfidence,
+					"voice_score", vm.Score)
+			} else if strings.EqualFold(guess.GuessedName, vm.ContactName) {
+				// LLM agrees — compute weighted average, but never go below voice score.
+				weighted := vm.Score*voiceWeight + guess.Confidence*llmWeight
+				if weighted > combined {
+					combined = weighted
+					logger.Info("fuse-scores: LLM boosted voice match",
+						"speaker", vm.Speaker, "contact", vm.ContactName,
+						"voice_score", vm.Score, "llm_confidence", guess.Confidence,
+						"fused_score", combined)
+				} else {
+					logger.Info("fuse-scores: LLM agrees but no boost needed",
+						"speaker", vm.Speaker, "contact", vm.ContactName,
+						"voice_score", vm.Score, "llm_confidence", guess.Confidence)
+				}
+			} else {
+				logger.Info("fuse-scores: LLM disagrees, voice score preserved",
+					"speaker", vm.Speaker, "voice_contact", vm.ContactName,
+					"llm_name", guess.GuessedName, "voice_score", vm.Score)
 			}
-			// If they disagree, llmScore stays 0.0 (LLM penalises the voice match).
 		}
 
-		combined := vm.Score*voiceWeight + llmScore*llmWeight
 		result = append(result, SpeakerMatch{
 			Speaker:     vm.Speaker,
 			ContactID:   vm.ContactID,
@@ -207,6 +233,13 @@ func FuseScores(voiceMatches []SpeakerMatch, llmGuesses []LLMSpeakerGuess) []Spe
 	// Handle LLM-only guesses (no voice match for this speaker).
 	for _, guess := range llmGuesses {
 		if _, covered := coveredSpeakers[guess.Speaker]; covered {
+			continue
+		}
+		// Skip low-confidence LLM-only guesses.
+		if guess.Confidence < minLLMConfidence {
+			logger.Info("fuse-scores: LLM-only guess filtered (low confidence)",
+				"speaker", guess.Speaker, "llm_name", guess.GuessedName,
+				"llm_confidence", guess.Confidence, "threshold", minLLMConfidence)
 			continue
 		}
 		llmOnlyScore := guess.Confidence * llmWeight

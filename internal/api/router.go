@@ -156,6 +156,7 @@ func SetupRoutes(handler *Handler, authService *auth.AuthService) *gin.Engine {
 			transcription.DELETE("/:id", handler.DeleteTranscriptionJob)
 			transcription.GET("/list", handler.ListTranscriptionJobs)
 			transcription.GET("/speakers/distinct", handler.ListDistinctSpeakers)
+			transcription.GET("/speakers/debug", handler.SpeakerIdentificationDebug)
 			transcription.GET("/models", handler.GetSupportedModels)
 			// Notes for a transcription
 			transcription.GET("/:id/notes", handler.ListNotes)
@@ -167,6 +168,7 @@ func SetupRoutes(handler *Handler, authService *auth.AuthService) *gin.Engine {
 			transcription.GET("/:id/speakers/suggestions", handler.GetSpeakerSuggestions)
 			transcription.POST("/:id/speakers/promote", handler.PromoteSpeakerSuggestion)
 			transcription.POST("/:id/speakers/dismiss", handler.DismissSpeakerSuggestion)
+			transcription.POST("/:id/speakers/rerun-auto-label", handler.RerunAutoLabel)
 
 			// Quick transcription endpoints
 			transcription.POST("/quick", handler.SubmitQuickTranscription)
@@ -213,6 +215,7 @@ func SetupRoutes(handler *Handler, authService *auth.AuthService) *gin.Engine {
 		{
 			runtime.GET("/warmup", handler.GetRuntimeWarmupStatus)
 			runtime.POST("/warmup/retry", handler.RetryRuntimeWarmup)
+			runtime.POST("/warmup/model", handler.WarmModel)
 		}
 
 		// Desktop auto-import folder watcher routes (require JWT user context)
@@ -272,6 +275,7 @@ func SetupRoutes(handler *Handler, authService *auth.AuthService) *gin.Engine {
 			contacts.POST("", handler.CreateContact)
 			contacts.GET("/:id", handler.GetContact)
 			contacts.GET("/:id/files", handler.GetContactFiles)
+			contacts.GET("/:id/appearances", handler.ListContactAppearances)
 			contacts.PUT("/:id", handler.UpdateContact)
 			contacts.DELETE("/:id", handler.DeleteContact)
 			contacts.GET("/:id/snippet", handler.GetContactSnippet)
@@ -281,6 +285,7 @@ func SetupRoutes(handler *Handler, authService *auth.AuthService) *gin.Engine {
 			contacts.DELETE("/:id/signature", handler.DeleteContactSignature)
 			contacts.POST("/:id/signature/extract", handler.ExtractContactSignature)
 			contacts.POST("/:id/rescan", handler.RetroactiveScanForContact)
+			contacts.POST("/:id/snippet/pull", handler.PullContactSnippet)
 		}
 
 		// Search routes (require authentication)
@@ -378,11 +383,19 @@ func SetupRoutes(handler *Handler, authService *auth.AuthService) *gin.Engine {
 			config.POST("/openai/validate", handler.ValidateOpenAIKey)
 		}
 
+		// System health / notifications (require authentication)
+		system := v1.Group("/system")
+		system.Use(middleware.AuthMiddleware(authService))
+		{
+			system.GET("/notifications", handler.GetSystemNotifications)
+		}
+
 		// SSE Events (require authentication)
 		events := v1.Group("/events")
 		events.Use(middleware.AuthMiddleware(authService))
 		{
 			events.GET("/", handler.Events)
+			events.GET("/global", handler.GlobalEvents)
 		}
 	}
 

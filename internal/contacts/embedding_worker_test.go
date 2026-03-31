@@ -781,10 +781,10 @@ func TestMarkFailed_WithValidVault_WritesMarkdownAndPersists(t *testing.T) {
 
 	// Give the contact a proper NotePath so WriteContact succeeds.
 	uid := uuid.NewString()
-	slug := "mark-failed-valid"
 	contact.ContactUID = uid
-	contact.Slug = slug
-	contact.NotePath = "Contacts/People/" + slug + "--" + uid + "/contact.md"
+	contact.Slug = "mark-failed-valid"
+	contact.Name = "Mark Failed Valid"
+	contact.NotePath = "Contacts/People/Mark Failed Valid/contact.md"
 	if err := repo.Update(context.Background(), &contact); err != nil {
 		t.Fatalf("update contact: %v", err)
 	}
@@ -794,7 +794,7 @@ func TestMarkFailed_WithValidVault_WritesMarkdownAndPersists(t *testing.T) {
 	w.markFailed(ctx, &contact, "deliberate test failure")
 
 	// Verify the markdown was written on disk.
-	noteAbs := filepath.Join(vault.Path, "Contacts", "People", slug+"--"+uid, "contact.md")
+	noteAbs := filepath.Join(vault.Path, "Contacts", "People", "Mark Failed Valid", "contact.md")
 	if _, err := os.Stat(noteAbs); err != nil {
 		t.Errorf("expected contact markdown at %s: %v", noteAbs, err)
 	}

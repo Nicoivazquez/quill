@@ -21,6 +21,7 @@ import type { Contact } from "@/features/contacts/types";
 import type { SpeakerMapping, SpeakerMappingsUpdateResponse } from "@/features/transcription/hooks/useTranscriptionSpeakers";
 import { usePromoteSpeakerSuggestion, useSpeakerSuggestions, useDismissSpeakerSuggestion } from "@/features/transcription/hooks/useTranscriptionSpeakers";
 import { formatSpeakerLabel } from "@/lib/speaker-utils";
+import { sanitizeInputValue } from "@/lib/filename-validation";
 
 interface SpeakerRenameDialogProps {
   open: boolean;
@@ -42,7 +43,7 @@ const MODEL_FAMILIES = [
   { value: "openai", label: "OpenAI (Cloud)" },
 ] as const;
 
-const WHISPER_MODELS = ["small", "small.en", "medium", "medium.en", "large-v3", "large-v3-turbo"];
+const WHISPER_MODELS = ["small", "small.en", "medium", "medium.en", "large-v3", "large-v3-turbo", "large-v3-turbo-q4"];
 
 function getModelsForFamily(family: string): string[] {
   switch (family) {
@@ -87,7 +88,7 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
   const [promotedSpeakers, setPromotedSpeakers] = useState<Set<string>>(new Set());
   const [retranscribeOpen, setRetranscribeOpen] = useState(false);
   const [retranscribeFamily, setRetranscribeFamily] = useState("mlx_whisper");
-  const [retranscribeModel, setRetranscribeModel] = useState("large-v3-turbo");
+  const [retranscribeModel, setRetranscribeModel] = useState("large-v3-turbo-q4");
   const [retranscribeNumSpeakers, setRetranscribeNumSpeakers] = useState("");
   const [retranscribeDiarizeMode, setRetranscribeDiarizeMode] = useState<"local" | "pyannote">("local");
   const [isRetranscribing, setIsRetranscribing] = useState(false);
@@ -426,10 +427,13 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
   const speakers = Object.keys(speakerMappings).sort();
 
   // A speaker is "locked" if it was auto-assigned or previously promoted
+  // Raw backfilled mappings (match_tier === 'none' or '') are NOT locked — they're unmatched speakers.
   const isLockedSpeaker = useCallback((speaker: string) => {
     if (promotedSpeakers.has(speaker)) return true;
     const detail = mappingDetails.get(speaker);
-    return detail?.match_source === 'auto' || detail?.match_source === 'retroactive';
+    if (!detail) return false;
+    const isRawMapping = !detail.match_tier || detail.match_tier === 'none';
+    return !isRawMapping && (detail.match_source === 'auto' || detail.match_source === 'retroactive');
   }, [promotedSpeakers, mappingDetails]);
 
   // Categorize speakers into three groups
@@ -440,7 +444,8 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
 
     for (const speaker of speakers) {
       const detail = mappingDetails.get(speaker);
-      if (detail?.match_source === 'auto' || detail?.match_source === 'retroactive' || detail?.match_source === 'suggestion_promoted' || promotedSpeakers.has(speaker)) {
+      const isRawMapping = !detail?.match_tier || detail?.match_tier === 'none';
+      if (!isRawMapping && (detail?.match_source === 'auto' || detail?.match_source === 'retroactive' || detail?.match_source === 'suggestion_promoted') || promotedSpeakers.has(speaker)) {
         auto.push(speaker);
       } else if (voiceSuggestions.has(speaker)) {
         suggest.push(speaker);
@@ -649,7 +654,7 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
                               <Input
                                 id={`speaker-${speaker}`}
                                 value={speakerMappings[speaker] || ''}
-                                onChange={(e) => handleSpeakerNameChange(speaker, e.target.value)}
+                                onChange={(e) => handleSpeakerNameChange(speaker, sanitizeInputValue(e.target.value))}
                                 onFocus={() => { setActiveSpeaker(speaker); setHighlightedSuggestionIndex(0); }}
                                 onClick={() => { setActiveSpeaker(speaker); setHighlightedSuggestionIndex(0); }}
                                 onKeyDown={(event) => handleSpeakerInputKeyDown(event, speaker)}
@@ -791,8 +796,8 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-[var(--text-tertiary)]">
-                    {retranscribeDiarizeMode === "local" && "NVIDIA Sortformer runs locally without a Hugging Face token."}
-                    {retranscribeDiarizeMode === "pyannote" && "Pyannote provides high-accuracy diarization. Configure your Hugging Face token in Settings \u2192 Transcription."}
+                    {retranscribeDiarizeMode === "local" && "NVIDIA Sortformer runs locally without a Hugging Face token (up to 4 speakers)."}
+                    {retranscribeDiarizeMode === "pyannote" && "Pyannote supports up to 20 speakers. Configure your Hugging Face token in Settings \u2192 Transcription."}
                   </p>
                 </div>
 
@@ -803,7 +808,7 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
                   <Input
                     type="number"
                     min={1}
-                    max={retranscribeDiarizeMode === "local" ? 8 : 20}
+                    max={retranscribeDiarizeMode === "local" ? 4 : 20}
                     placeholder="Auto-detect"
                     value={retranscribeNumSpeakers}
                     onChange={(e) => setRetranscribeNumSpeakers(e.target.value)}
@@ -811,8 +816,8 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
                   />
                   <p className="text-xs text-[var(--text-tertiary)]">
                     {retranscribeDiarizeMode === "local"
-                      ? "Sortformer supports up to 8 speakers. Leave blank to auto-detect (defaults to 4)."
-                      : "Set the exact number of speakers for more accurate diarization."
+                      ? "Sortformer supports up to 4 speakers. Leave blank to auto-detect."
+                      : "Set the exact number of speakers for more accurate diarization (up to 20)."
                     }
                   </p>
                 </div>

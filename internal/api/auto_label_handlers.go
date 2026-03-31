@@ -40,6 +40,10 @@ type speakerMatchResponse struct {
 func (h *Handler) AutoLabelSpeakersForJob(ctx context.Context, jobID string) error {
 	// Guard: need both contact repo and contact manager.
 	if h.contactRepo == nil || h.contactManager == nil {
+		logger.Info("auto-label: skipping — contact repo or manager not initialized",
+			"job_id", jobID,
+			"has_contact_repo", h.contactRepo != nil,
+			"has_contact_manager", h.contactManager != nil)
 		return nil
 	}
 
@@ -49,9 +53,11 @@ func (h *Handler) AutoLabelSpeakersForJob(ctx context.Context, jobID string) err
 		return fmt.Errorf("auto-label: find job: %w", err)
 	}
 	if job.Status != "completed" {
+		logger.Info("auto-label: skipping — job not completed", "job_id", jobID, "status", job.Status)
 		return nil
 	}
 	if job.Transcript == nil || strings.TrimSpace(*job.Transcript) == "" {
+		logger.Info("auto-label: skipping — no transcript text", "job_id", jobID)
 		return nil
 	}
 
@@ -61,13 +67,18 @@ func (h *Handler) AutoLabelSpeakersForJob(ctx context.Context, jobID string) err
 		return fmt.Errorf("auto-label: parse transcript: %w", err)
 	}
 	if len(transcript.Segments) == 0 {
+		logger.Info("auto-label: skipping — no transcript segments", "job_id", jobID)
 		return nil
 	}
 
 	windowsBySpeaker := buildSpeakerClipWindows(transcript.Segments)
 	if len(windowsBySpeaker) == 0 {
+		logger.Info("auto-label: skipping — no speaker windows extracted", "job_id", jobID,
+			"segment_count", len(transcript.Segments))
 		return nil
 	}
+	logger.Info("auto-label: found speaker windows", "job_id", jobID,
+		"speakers", len(windowsBySpeaker))
 
 	// Step 3: Resolve vault.
 	vault, err := resolveJobVault(ctx, job)
@@ -81,15 +92,19 @@ func (h *Handler) AutoLabelSpeakersForJob(ctx context.Context, jobID string) err
 		return fmt.Errorf("auto-label: list ready contacts: %w", err)
 	}
 	if len(readyContacts) == 0 {
-		logger.Debug("auto-label: no contacts with ready voice signatures, skipping", "job_id", jobID)
+		logger.Info("auto-label: no contacts with ready voice signatures, skipping",
+			"job_id", jobID, "vault_id", vault.ID)
 		return nil
 	}
+	logger.Info("auto-label: found contacts with ready signatures",
+		"job_id", jobID, "ready_contacts", len(readyContacts))
 
 	// Step 4: Resolve audio path.
 	audioPath, err := resolveJobAudioPath(job, vault.Path)
 	if err != nil {
 		return fmt.Errorf("auto-label: resolve audio path: %w", err)
 	}
+	logger.Debug("auto-label: resolved audio path", "job_id", jobID, "audio_path", audioPath)
 
 	// Step 5: Convert internal clipWindows to contacts.ClipWindow.
 	contactWindows := make(map[string]contacts.ClipWindow, len(windowsBySpeaker))
@@ -105,9 +120,12 @@ func (h *Handler) AutoLabelSpeakersForJob(ctx context.Context, jobID string) err
 		return fmt.Errorf("auto-label: extract speaker embeddings: %w", err)
 	}
 	if len(speakerEmbeddings) == 0 {
-		logger.Debug("auto-label: no speaker embeddings extracted", "job_id", jobID)
+		logger.Warn("auto-label: no speaker embeddings extracted despite having speaker windows",
+			"job_id", jobID, "speaker_count", len(contactWindows))
 		return nil
 	}
+	logger.Info("auto-label: extracted speaker embeddings",
+		"job_id", jobID, "embedding_count", len(speakerEmbeddings))
 
 	// Step 7: Run the auto-label pipeline.
 	autoLabelService := contacts.NewAutoLabelService(
@@ -119,6 +137,9 @@ func (h *Handler) AutoLabelSpeakersForJob(ctx context.Context, jobID string) err
 	// Optionally inject LLM caller for voice+LLM fusion scoring.
 	if caller := h.buildSpeakerIDLLMCaller(ctx); caller != nil {
 		autoLabelService.SetLLMCaller(caller)
+		logger.Debug("auto-label: LLM caller available for fusion scoring", "job_id", jobID)
+	} else {
+		logger.Debug("auto-label: no LLM caller, using voice-only matching", "job_id", jobID)
 	}
 
 	transcriptText := ""
@@ -140,7 +161,7 @@ func (h *Handler) AutoLabelSpeakersForJob(ctx context.Context, jobID string) err
 		}
 	}
 
-	// Step 9: Broadcast SSE event.
+	// Step 9: Broadcast SSE events (job-scoped + global list refresh).
 	if h.broadcaster != nil {
 		event := autoLabelSSEEvent{
 			JobID:        jobID,
@@ -149,6 +170,9 @@ func (h *Handler) AutoLabelSpeakersForJob(ctx context.Context, jobID string) err
 			Unmatched:    result.Unmatched,
 		}
 		h.broadcaster.Broadcast(jobID, "speaker_identification", event)
+		h.broadcaster.BroadcastGlobal("speaker_attention_updated", map[string]string{
+			"job_id": jobID,
+		})
 	}
 
 	logger.Info("Auto speaker identification complete",
@@ -165,13 +189,16 @@ func (h *Handler) AutoLabelSpeakersForJob(ctx context.Context, jobID string) err
 // configured LLM service. Returns nil if no LLM is available (voice-only
 // matching will be used as a fallback).
 func (h *Handler) buildSpeakerIDLLMCaller(ctx context.Context) contacts.LLMCaller {
-	svc, _, err := h.getLLMServiceForAutoTitle(ctx)
+	svc, provider, err := h.getLLMServiceForAutoTitle(ctx)
 	if err != nil {
+		logger.Debug("speaker-id: no LLM service available, using voice-only matching", "error", err)
 		return nil
 	}
 
 	model, err := h.resolveAutoTitleModel(ctx, svc, "")
 	if err != nil {
+		logger.Warn("speaker-id: no suitable chat model found, using voice-only matching",
+			"provider", provider, "error", err)
 		return nil
 	}
 

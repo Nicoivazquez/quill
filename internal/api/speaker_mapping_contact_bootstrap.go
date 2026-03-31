@@ -23,9 +23,9 @@ import (
 )
 
 const (
-	autoSpeakerSnippetTargetSeconds = 8.0
+	autoSpeakerSnippetTargetSeconds = 15.0
 	autoSpeakerSnippetMinSeconds    = 2.0
-	autoSpeakerSnippetMaxSeconds    = 14.0
+	autoSpeakerSnippetMaxSeconds    = 30.0
 	autoSpeakerMergeGapSeconds      = 0.6
 	autoSpeakerSnippetTimeout       = 45 * time.Second
 )
@@ -141,6 +141,15 @@ func (h *Handler) bootstrapContactsFromSpeakerMappings(ctx context.Context, job 
 		}
 
 		processedNames[nameKey] = struct{}{}
+
+		// Link the speaker mapping to this contact so appearances/pull work.
+		if mapping.ContactID == nil || *mapping.ContactID != contact.ID {
+			cid := contact.ID
+			if linkErr := h.speakerMappingRepo.SetContactID(ctx, mapping.ID, &cid); linkErr != nil {
+				logger.Warn("speaker bootstrap: failed to link mapping to contact",
+					"mapping_id", mapping.ID, "contact_id", contact.ID, "error", linkErr)
+			}
+		}
 
 		if contactAlreadyBootstrapped(&contact, fileService) {
 			summary.SkippedExistingCount++

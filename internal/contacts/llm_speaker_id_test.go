@@ -238,13 +238,13 @@ func TestParseLLMSpeakerGuesses_EmptySpeakerLabels(t *testing.T) {
 // ---- FuseScores -------------------------------------------------------------
 
 // TestFuseScores_VoiceAndLLMAgreeSuggestTier tests case 1 from the spec:
-// voice=0.75, LLM=0.80 matching same contact → combined=0.75*0.6+0.80*0.4=0.77 → TierSuggest.
+// voice=0.40, LLM=0.50 matching same contact → combined=0.40*0.6+0.50*0.4=0.44 → TierSuggest.
 func TestFuseScores_VoiceAndLLMAgreeSuggestTier(t *testing.T) {
 	voiceMatches := []SpeakerMatch{
-		{Speaker: "speaker_00", ContactID: 1, ContactName: "Alice", Score: 0.75, Tier: TierSuggest},
+		{Speaker: "speaker_00", ContactID: 1, ContactName: "Alice", Score: 0.40, Tier: TierSuggest},
 	}
 	llmGuesses := []LLMSpeakerGuess{
-		{Speaker: "speaker_00", GuessedName: "Alice", Confidence: 0.80},
+		{Speaker: "speaker_00", GuessedName: "Alice", Confidence: 0.50},
 	}
 
 	result := FuseScores(voiceMatches, llmGuesses)
@@ -253,7 +253,7 @@ func TestFuseScores_VoiceAndLLMAgreeSuggestTier(t *testing.T) {
 		t.Fatalf("expected 1 fused match, got %d", len(result))
 	}
 
-	wantScore := 0.75*0.6 + 0.80*0.4 // 0.77
+	wantScore := 0.40*0.6 + 0.50*0.4 // 0.44
 	if math.Abs(result[0].Score-wantScore) > 1e-9 {
 		t.Errorf("fused score = %f, want %f", result[0].Score, wantScore)
 	}
@@ -263,13 +263,13 @@ func TestFuseScores_VoiceAndLLMAgreeSuggestTier(t *testing.T) {
 }
 
 // TestFuseScores_LLMBoostNearAutoThreshold tests case 2:
-// voice=0.70, LLM=0.90 → combined=0.70*0.6+0.90*0.4=0.78 → still TierSuggest (just below 0.80).
+// voice=0.40, LLM=0.60 → combined=0.40*0.6+0.60*0.4=0.48 → still TierSuggest (just below 0.50).
 func TestFuseScores_LLMBoostNearAutoThreshold(t *testing.T) {
 	voiceMatches := []SpeakerMatch{
-		{Speaker: "speaker_00", ContactID: 1, ContactName: "Alice", Score: 0.70, Tier: TierSuggest},
+		{Speaker: "speaker_00", ContactID: 1, ContactName: "Alice", Score: 0.40, Tier: TierSuggest},
 	}
 	llmGuesses := []LLMSpeakerGuess{
-		{Speaker: "speaker_00", GuessedName: "Alice", Confidence: 0.90},
+		{Speaker: "speaker_00", GuessedName: "Alice", Confidence: 0.60},
 	}
 
 	result := FuseScores(voiceMatches, llmGuesses)
@@ -278,24 +278,24 @@ func TestFuseScores_LLMBoostNearAutoThreshold(t *testing.T) {
 		t.Fatalf("expected 1 fused match, got %d", len(result))
 	}
 
-	wantScore := 0.70*0.6 + 0.90*0.4 // 0.78
+	wantScore := 0.40*0.6 + 0.60*0.4 // 0.48
 	if math.Abs(result[0].Score-wantScore) > 1e-9 {
 		t.Errorf("fused score = %f, want %f", result[0].Score, wantScore)
 	}
-	// 0.78 < 0.80 → still TierSuggest
+	// 0.48 < 0.50 → still TierSuggest
 	if result[0].Tier != TierSuggest {
-		t.Errorf("tier = %q, want TierSuggest (combined score is 0.78 < 0.80)", result[0].Tier)
+		t.Errorf("tier = %q, want TierSuggest (combined score is 0.48 < 0.50)", result[0].Tier)
 	}
 }
 
 // TestFuseScores_LowVoiceHighLLMStillSuggest tests case 3:
-// voice=0.65, LLM=0.95 → combined=0.65*0.6+0.95*0.4=0.77 → TierSuggest.
+// voice=0.35, LLM=0.65 → combined=0.35*0.6+0.65*0.4=0.47 → TierSuggest.
 func TestFuseScores_LowVoiceHighLLMStillSuggest(t *testing.T) {
 	voiceMatches := []SpeakerMatch{
-		{Speaker: "speaker_00", ContactID: 2, ContactName: "Bob", Score: 0.65, Tier: TierSuggest},
+		{Speaker: "speaker_00", ContactID: 2, ContactName: "Bob", Score: 0.35, Tier: TierSuggest},
 	}
 	llmGuesses := []LLMSpeakerGuess{
-		{Speaker: "speaker_00", GuessedName: "Bob", Confidence: 0.95},
+		{Speaker: "speaker_00", GuessedName: "Bob", Confidence: 0.65},
 	}
 
 	result := FuseScores(voiceMatches, llmGuesses)
@@ -304,7 +304,7 @@ func TestFuseScores_LowVoiceHighLLMStillSuggest(t *testing.T) {
 		t.Fatalf("expected 1 fused match, got %d", len(result))
 	}
 
-	wantScore := 0.65*0.6 + 0.95*0.4 // 0.77
+	wantScore := 0.35*0.6 + 0.65*0.4 // 0.47
 	if math.Abs(result[0].Score-wantScore) > 1e-9 {
 		t.Errorf("fused score = %f, want %f", result[0].Score, wantScore)
 	}
@@ -334,18 +334,18 @@ func TestFuseScores_HighVoiceLLMConfirmsAutoTier(t *testing.T) {
 		t.Errorf("fused score = %f, want %f", result[0].Score, wantScore)
 	}
 	if result[0].Tier != TierAutoAssign {
-		t.Errorf("tier = %q, want TierAutoAssign (score=%.4f >= 0.80)", result[0].Tier, result[0].Score)
+		t.Errorf("tier = %q, want TierAutoAssign (score=%.4f >= 0.50)", result[0].Tier, result[0].Score)
 	}
 }
 
-// TestFuseScores_LLMDisagrees tests case 5: when the LLM guesses a different
-// name than the voice-matched contact, only the voice score is used (LLM score
-// for that contact is effectively 0.0).
+// TestFuseScores_LLMDisagrees tests that when the LLM guesses a different name
+// than the voice-matched contact, the voice score is preserved unchanged
+// (boost-only: LLM can never penalize a voice match).
 func TestFuseScores_LLMDisagrees(t *testing.T) {
 	voiceMatches := []SpeakerMatch{
-		{Speaker: "speaker_00", ContactID: 1, ContactName: "Alice", Score: 0.75, Tier: TierSuggest},
+		{Speaker: "speaker_00", ContactID: 1, ContactName: "Alice", Score: 0.75, Tier: TierAutoAssign},
 	}
-	// LLM thinks it's Dave, not Alice — disagreement means LLM score for Alice = 0.
+	// LLM thinks it's Dave, not Alice — disagreement should NOT penalize.
 	llmGuesses := []LLMSpeakerGuess{
 		{Speaker: "speaker_00", GuessedName: "Dave", Confidence: 0.80},
 	}
@@ -356,13 +356,79 @@ func TestFuseScores_LLMDisagrees(t *testing.T) {
 		t.Fatalf("expected 1 fused match, got %d", len(result))
 	}
 
-	// LLM disagrees → llm_score for Alice = 0.0 → combined = 0.75*0.6 + 0.0*0.4 = 0.45
-	// 0.45 < 0.60 → TierUnknown; the entry should still exist so the caller can decide
-	// or the voice match is used unchanged (design choice: use voice score only).
-	// Per spec: "only voice score used (LLM=0.0 for that contact)" → combined = 0.75*0.6 = 0.45
-	wantScore := 0.75*0.6 + 0.0*0.4 // 0.45
+	// Boost-only: disagreement preserves the original voice score.
+	wantScore := 0.75
 	if math.Abs(result[0].Score-wantScore) > 1e-9 {
-		t.Errorf("fused score = %f, want %f (disagreement → llm_score=0)", result[0].Score, wantScore)
+		t.Errorf("fused score = %f, want %f (disagreement must not penalize voice)", result[0].Score, wantScore)
+	}
+	if result[0].Tier != TierAutoAssign {
+		t.Errorf("tier = %q, want TierAutoAssign (voice score 0.75 preserved)", result[0].Tier)
+	}
+}
+
+// TestFuseScores_LowConfidenceLLM_Filtered tests that LLM guesses below the
+// minimum confidence threshold (0.50) are ignored — the voice score is returned
+// unchanged as if no LLM guess existed.
+func TestFuseScores_LowConfidenceLLM_Filtered(t *testing.T) {
+	voiceMatches := []SpeakerMatch{
+		{Speaker: "speaker_00", ContactID: 1, ContactName: "Alice", Score: 0.45, Tier: TierSuggest},
+	}
+	// LLM agrees but confidence is below threshold.
+	llmGuesses := []LLMSpeakerGuess{
+		{Speaker: "speaker_00", GuessedName: "Alice", Confidence: 0.30},
+	}
+
+	result := FuseScores(voiceMatches, llmGuesses)
+
+	if len(result) != 1 {
+		t.Fatalf("expected 1 match, got %d", len(result))
+	}
+
+	// Low-confidence LLM guess should be filtered — voice score unchanged.
+	wantScore := 0.45
+	if math.Abs(result[0].Score-wantScore) > 1e-9 {
+		t.Errorf("score = %f, want %f (low-confidence LLM must be filtered)", result[0].Score, wantScore)
+	}
+	if result[0].Tier != TierSuggest {
+		t.Errorf("tier = %q, want TierSuggest", result[0].Tier)
+	}
+}
+
+// TestFuseScores_LowConfidenceLLMOnly_NoEntry tests that an LLM-only guess
+// (no voice match) with confidence below the threshold produces no entry at all.
+func TestFuseScores_LowConfidenceLLMOnly_NoEntry(t *testing.T) {
+	voiceMatches := []SpeakerMatch{}
+	llmGuesses := []LLMSpeakerGuess{
+		{Speaker: "speaker_00", GuessedName: "Alice", Confidence: 0.40},
+	}
+
+	result := FuseScores(voiceMatches, llmGuesses)
+
+	if len(result) != 0 {
+		t.Errorf("expected 0 entries for low-confidence LLM-only guess, got %d: %+v", len(result), result)
+	}
+}
+
+// TestFuseScores_ExactThresholdLLM_NotFiltered verifies that an LLM confidence
+// of exactly 0.50 (the minimum threshold) is NOT filtered out.
+func TestFuseScores_ExactThresholdLLM_NotFiltered(t *testing.T) {
+	voiceMatches := []SpeakerMatch{
+		{Speaker: "speaker_00", ContactID: 1, ContactName: "Alice", Score: 0.40, Tier: TierSuggest},
+	}
+	llmGuesses := []LLMSpeakerGuess{
+		{Speaker: "speaker_00", GuessedName: "Alice", Confidence: 0.50},
+	}
+
+	result := FuseScores(voiceMatches, llmGuesses)
+
+	if len(result) != 1 {
+		t.Fatalf("expected 1 match, got %d", len(result))
+	}
+	// Confidence 0.50 is at threshold — should be included and boost.
+	// raw = 0.40*0.6 + 0.50*0.4 = 0.44; max(0.44, 0.40) = 0.44
+	wantScore := 0.40*0.6 + 0.50*0.4
+	if math.Abs(result[0].Score-wantScore) > 1e-9 {
+		t.Errorf("score = %f, want %f (exact threshold should not be filtered)", result[0].Score, wantScore)
 	}
 }
 
@@ -397,8 +463,8 @@ func TestFuseScores_NoVoiceMatchLLMOnly(t *testing.T) {
 // no LLM guesses at all.
 func TestFuseScores_EmptyLLMGuesses(t *testing.T) {
 	voiceMatches := []SpeakerMatch{
-		{Speaker: "speaker_00", ContactID: 1, ContactName: "Alice", Score: 0.75, Tier: TierSuggest},
-		{Speaker: "speaker_01", ContactID: 2, ContactName: "Bob", Score: 0.85, Tier: TierAutoAssign},
+		{Speaker: "speaker_00", ContactID: 1, ContactName: "Alice", Score: 0.45, Tier: TierSuggest},
+		{Speaker: "speaker_01", ContactID: 2, ContactName: "Bob", Score: 0.55, Tier: TierAutoAssign},
 	}
 	llmGuesses := []LLMSpeakerGuess{}
 
@@ -458,9 +524,9 @@ func TestFuseScores_EmptyVoiceMatchesWithLLMGuesses(t *testing.T) {
 // TestFuseScores_TierReclassifiedAfterFusion verifies that after score fusion
 // the Tier field reflects the NEW combined score, not the original voice tier.
 func TestFuseScores_TierReclassifiedAfterFusion(t *testing.T) {
-	// voice=0.78 → TierSuggest; after LLM boost: 0.78*0.6+0.90*0.4=0.828 → TierAutoAssign.
+	// voice=0.45 → TierSuggest; after LLM boost: 0.45*0.6+0.90*0.4=0.63 → TierAutoAssign.
 	voiceMatches := []SpeakerMatch{
-		{Speaker: "speaker_00", ContactID: 1, ContactName: "Alice", Score: 0.78, Tier: TierSuggest},
+		{Speaker: "speaker_00", ContactID: 1, ContactName: "Alice", Score: 0.45, Tier: TierSuggest},
 	}
 	llmGuesses := []LLMSpeakerGuess{
 		{Speaker: "speaker_00", GuessedName: "Alice", Confidence: 0.90},
@@ -472,11 +538,11 @@ func TestFuseScores_TierReclassifiedAfterFusion(t *testing.T) {
 		t.Fatalf("expected 1 fused match, got %d", len(result))
 	}
 
-	wantScore := 0.78*0.6 + 0.90*0.4 // 0.828
+	wantScore := 0.45*0.6 + 0.90*0.4 // 0.63
 	if math.Abs(result[0].Score-wantScore) > 1e-9 {
 		t.Errorf("fused score = %f, want %f", result[0].Score, wantScore)
 	}
-	// 0.828 >= 0.80 → should be promoted to TierAutoAssign.
+	// 0.63 >= 0.50 → should be promoted to TierAutoAssign.
 	if result[0].Tier != TierAutoAssign {
 		t.Errorf("tier after boost = %q, want TierAutoAssign (score=%.4f)", result[0].Tier, result[0].Score)
 	}

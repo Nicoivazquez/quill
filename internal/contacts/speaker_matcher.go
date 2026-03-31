@@ -1,6 +1,11 @@
 package contacts
 
-import "sort"
+import (
+	"math"
+	"sort"
+
+	"quill/pkg/logger"
+)
 
 // ContactEmbedding holds a pre-loaded voice embedding for a single contact.
 type ContactEmbedding struct {
@@ -21,7 +26,7 @@ type SpeakerMatch struct {
 // SpeakerIdentificationResult is the output of MatchSpeakers.
 type SpeakerIdentificationResult struct {
 	Matches   []SpeakerMatch // Best match per speaker (only above TierUnknown threshold)
-	Unmatched []string       // Speakers with no match at or above 0.60
+	Unmatched []string       // Speakers with no match at or above 0.35
 }
 
 // MatchSpeakers compares each speaker's embedding against all contact
@@ -29,7 +34,7 @@ type SpeakerIdentificationResult struct {
 //
 // Rules:
 //  1. For each speaker, compute cosine similarity against every contact.
-//  2. Pick the highest-scoring contact.  If the score is below 0.60 (TierUnknown),
+//  2. Pick the highest-scoring contact.  If the score is below 0.35 (TierUnknown),
 //     the speaker has no match and goes to Unmatched.
 //  3. Conflict resolution: if two speakers both claim the same contact as their
 //     best match, only the speaker with the higher score keeps the match; the
@@ -64,6 +69,15 @@ func MatchSpeakers(speakerEmbeddings map[string][]float64, contactEmbeddings []C
 	for _, speaker := range speakerKeys {
 		vec := speakerEmbeddings[speaker]
 
+		// Log speaker embedding magnitude for diagnostics.
+		var speakerMag float64
+		for _, v := range vec {
+			speakerMag += v * v
+		}
+		speakerMag = math.Sqrt(speakerMag)
+		logger.Debug("speaker-match: speaker embedding info",
+			"speaker", speaker, "dim", len(vec), "magnitude", speakerMag)
+
 		if len(contactEmbeddings) == 0 {
 			result.Unmatched = append(result.Unmatched, speaker)
 			continue
@@ -73,12 +87,27 @@ func MatchSpeakers(speakerEmbeddings map[string][]float64, contactEmbeddings []C
 		var bestContact *ContactEmbedding
 
 		for i := range contactEmbeddings {
+			// Log contact embedding magnitude once per contact per run.
+			var contactMag float64
+			for _, v := range contactEmbeddings[i].Vector {
+				contactMag += v * v
+			}
+			contactMag = math.Sqrt(contactMag)
+
 			score := CosineSimilarity(vec, contactEmbeddings[i].Vector)
+			logger.Debug("speaker-match: cosine similarity",
+				"speaker", speaker, "speaker_mag", speakerMag,
+				"contact", contactEmbeddings[i].ContactName, "contact_mag", contactMag,
+				"score", score)
 			if score > bestScore {
 				bestScore = score
 				bestContact = &contactEmbeddings[i]
 			}
 		}
+
+		logger.Debug("speaker-match: best match",
+			"speaker", speaker, "best_contact", bestContact.ContactName,
+			"best_score", bestScore, "tier", ClassifySpeakerMatch(bestScore))
 
 		tier := ClassifySpeakerMatch(bestScore)
 		if tier == TierUnknown {

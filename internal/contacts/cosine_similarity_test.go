@@ -285,15 +285,15 @@ func TestClassifySpeakerMatch_HighConfidence_AutoAssign(t *testing.T) {
 	}
 }
 
-func TestClassifySpeakerMatch_BoundaryAutoAssign_ExactlyPoint80(t *testing.T) {
-	got := ClassifySpeakerMatch(0.80)
+func TestClassifySpeakerMatch_BoundaryAutoAssign_ExactlyPoint50(t *testing.T) {
+	got := ClassifySpeakerMatch(0.50)
 	if got != TierAutoAssign {
-		t.Errorf("score 0.80 (boundary): got %q, want TierAutoAssign", got)
+		t.Errorf("score 0.50 (boundary): got %q, want TierAutoAssign", got)
 	}
 }
 
 func TestClassifySpeakerMatch_MidRange_Suggest(t *testing.T) {
-	cases := []float64{0.79, 0.70, 0.65, 0.60}
+	cases := []float64{0.49, 0.45, 0.40, 0.35}
 	for _, score := range cases {
 		got := ClassifySpeakerMatch(score)
 		if got != TierSuggest {
@@ -302,15 +302,15 @@ func TestClassifySpeakerMatch_MidRange_Suggest(t *testing.T) {
 	}
 }
 
-func TestClassifySpeakerMatch_BoundarySuggest_ExactlyPoint60(t *testing.T) {
-	got := ClassifySpeakerMatch(0.60)
+func TestClassifySpeakerMatch_BoundarySuggest_ExactlyPoint35(t *testing.T) {
+	got := ClassifySpeakerMatch(0.35)
 	if got != TierSuggest {
-		t.Errorf("score 0.60 (boundary): got %q, want TierSuggest", got)
+		t.Errorf("score 0.35 (boundary): got %q, want TierSuggest", got)
 	}
 }
 
 func TestClassifySpeakerMatch_LowConfidence_Unknown(t *testing.T) {
-	cases := []float64{0.59, 0.30, 0.0}
+	cases := []float64{0.34, 0.20, 0.0}
 	for _, score := range cases {
 		got := ClassifySpeakerMatch(score)
 		if got != TierUnknown {

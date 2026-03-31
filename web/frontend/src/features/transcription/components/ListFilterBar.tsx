@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { ArrowUpDown } from "lucide-react";
+import { ArrowUpDown, Users } from "lucide-react";
 import {
     Select,
     SelectContent,
@@ -12,6 +12,7 @@ import { useSpeakers } from "@/features/transcription/hooks/useSpeakers";
 export interface ListFilters {
     status: string;
     speaker: string;
+    speakerStatus: string;
     sortBy: string;
     sortOrder: "asc" | "desc";
 }
@@ -25,8 +26,6 @@ const STATUS_OPTIONS = [
     { value: "all", label: "All Statuses" },
     { value: "completed", label: "Completed" },
     { value: "processing", label: "Processing" },
-    { value: "pending", label: "Pending" },
-    { value: "uploaded", label: "Uploaded" },
     { value: "failed", label: "Failed" },
 ];
 
@@ -89,6 +88,22 @@ export const ListFilterBar = memo(function ListFilterBar({
                     </SelectContent>
                 </Select>
             )}
+
+            {/* Speaker Status Filter */}
+            <Select
+                value={filters.speakerStatus || "all"}
+                onValueChange={(v) => update({ speakerStatus: v === "all" ? "" : v })}
+            >
+                <SelectTrigger size="sm" className="text-xs">
+                    <Users className="h-3 w-3 mr-1 opacity-50" />
+                    <SelectValue placeholder="Speakers" />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="needs_attention">Needs Attention</SelectItem>
+                    <SelectItem value="identified">Identified</SelectItem>
+                </SelectContent>
+            </Select>
 
             {/* Sort */}
             <Select

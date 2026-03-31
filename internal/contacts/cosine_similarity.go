@@ -11,11 +11,11 @@ import (
 type SpeakerMatchTier string
 
 const (
-	// TierAutoAssign means the match score is >= 0.80: assign automatically.
+	// TierAutoAssign means the match score is >= 0.50: assign automatically.
 	TierAutoAssign SpeakerMatchTier = "auto"
-	// TierSuggest means the match score is 0.60–0.79: surface as a suggestion.
+	// TierSuggest means the match score is 0.35–0.49: surface as a suggestion.
 	TierSuggest SpeakerMatchTier = "suggest"
-	// TierUnknown means the match score is < 0.60: not confident enough to act.
+	// TierUnknown means the match score is < 0.35: not confident enough to act.
 	TierUnknown SpeakerMatchTier = "unknown"
 )
 
@@ -80,15 +80,19 @@ func LoadEmbeddingVector(filePath string) ([]float64, error) {
 
 // ClassifySpeakerMatch maps a cosine similarity score to a SpeakerMatchTier.
 //
-// Thresholds:
-//   - score >= 0.80 → TierAutoAssign
-//   - 0.60 <= score < 0.80 → TierSuggest
-//   - score < 0.60 → TierUnknown
+// Thresholds are calibrated for TitaNet-Large 192-dim embeddings extracted from
+// short diarization segments (2–14s). Real-world same-speaker cosine similarity
+// scores typically fall in the 0.40–0.60 range (not 0.80+ as with longer, clean
+// studio audio), so thresholds are set accordingly:
+//
+//   - score >= 0.50 → TierAutoAssign
+//   - 0.35 <= score < 0.50 → TierSuggest
+//   - score < 0.35 → TierUnknown
 func ClassifySpeakerMatch(score float64) SpeakerMatchTier {
 	switch {
-	case score >= 0.80:
+	case score >= 0.50:
 		return TierAutoAssign
-	case score >= 0.60:
+	case score >= 0.35:
 		return TierSuggest
 	default:
 		return TierUnknown

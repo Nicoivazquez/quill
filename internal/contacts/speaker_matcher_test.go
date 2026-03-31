@@ -27,7 +27,7 @@ func makeScaledVec(n int, scale float64) []float64 {
 }
 
 // nearlyIdentical returns a copy of v with a tiny epsilon nudge on index 0,
-// producing cosine similarity very close to 1.0 (well above the 0.80 threshold).
+// producing cosine similarity very close to 1.0 (well above the 0.50 threshold).
 func nearlyIdentical(v []float64) []float64 {
 	cp := make([]float64, len(v))
 	copy(cp, v)
@@ -81,8 +81,8 @@ func TestMatchSpeakers_SingleSpeaker_SingleContact_HighScore(t *testing.T) {
 	if m.Tier != TierAutoAssign {
 		t.Errorf("tier: got %q, want %q", m.Tier, TierAutoAssign)
 	}
-	if m.Score < 0.80 {
-		t.Errorf("score: got %f, want >= 0.80", m.Score)
+	if m.Score < 0.50 {
+		t.Errorf("score: got %f, want >= 0.50", m.Score)
 	}
 	if len(result.Unmatched) != 0 {
 		t.Errorf("unmatched: got %v, want none", result.Unmatched)
@@ -90,16 +90,16 @@ func TestMatchSpeakers_SingleSpeaker_SingleContact_HighScore(t *testing.T) {
 }
 
 // TestMatchSpeakers_SingleSpeaker_SingleContact_MidScore tests the suggest tier.
-// Uses vecWithCosine(0.70) so the similarity is guaranteed to land in [0.60, 0.80).
+// Uses vecWithCosine(0.40) so the similarity is guaranteed to land in [0.35, 0.50).
 func TestMatchSpeakers_SingleSpeaker_SingleContact_MidScore(t *testing.T) {
 	// contactVec = (1, 0): the reference direction.
-	// speakerVec = (0.70, sin(arccos(0.70))): cosine similarity with contactVec = 0.70.
+	// speakerVec = (0.40, sin(arccos(0.40))): cosine similarity with contactVec = 0.40.
 	contactVec := []float64{1.0, 0.0}
-	speakerVec := vecWithCosine(0.70)
+	speakerVec := vecWithCosine(0.40)
 
 	score := CosineSimilarity(contactVec, speakerVec)
-	if score < 0.60 || score >= 0.80 {
-		t.Fatalf("test setup error: expected score in [0.60, 0.80), got %f", score)
+	if score < 0.35 || score >= 0.50 {
+		t.Fatalf("test setup error: expected score in [0.35, 0.50), got %f", score)
 	}
 
 	speakers := map[string][]float64{
@@ -126,9 +126,9 @@ func TestMatchSpeakers_SingleSpeaker_SingleContact_MidScore(t *testing.T) {
 }
 
 // TestMatchSpeakers_SingleSpeaker_SingleContact_LowScore tests the unknown tier.
-// A score below 0.60 means the speaker should appear in Unmatched, not Matches.
+// A score below 0.35 means the speaker should appear in Unmatched, not Matches.
 func TestMatchSpeakers_SingleSpeaker_SingleContact_LowScore(t *testing.T) {
-	// Orthogonal vectors → cosine = 0.0, well below 0.60.
+	// Orthogonal vectors → cosine = 0.0, well below 0.35.
 	vecA := makeUnitBasis(4, 0) // (1, 0, 0, 0)
 	vecB := makeUnitBasis(4, 1) // (0, 1, 0, 0)
 
@@ -286,10 +286,10 @@ func TestMatchSpeakers_NilInputs(t *testing.T) {
 func TestMatchSpeakers_TwoSpeakers_SameContact_HigherScoreWins(t *testing.T) {
 	// contactVec = (1, 0): the reference direction.
 	// speaker_high = vecWithCosine(0.95) → score ≈ 0.95 → auto tier
-	// speaker_low  = vecWithCosine(0.65) → score ≈ 0.65 → suggest tier
+	// speaker_low  = vecWithCosine(0.40) → score ≈ 0.40 → suggest tier
 	contactVec := []float64{1.0, 0.0}
 	highVec := vecWithCosine(0.95)
-	lowVec := vecWithCosine(0.65)
+	lowVec := vecWithCosine(0.40)
 
 	scoreHigh := CosineSimilarity(contactVec, highVec)
 	scoreLow := CosineSimilarity(contactVec, lowVec)
@@ -297,8 +297,8 @@ func TestMatchSpeakers_TwoSpeakers_SameContact_HigherScoreWins(t *testing.T) {
 	if scoreHigh <= scoreLow {
 		t.Fatalf("test setup error: high score (%f) not greater than low score (%f)", scoreHigh, scoreLow)
 	}
-	if scoreLow < 0.60 {
-		t.Fatalf("test setup error: low score %f is below 0.60 threshold", scoreLow)
+	if scoreLow < 0.35 {
+		t.Fatalf("test setup error: low score %f is below 0.35 threshold", scoreLow)
 	}
 
 	speakers := map[string][]float64{
@@ -389,17 +389,17 @@ func TestMatchSpeakers_ResultStructure(t *testing.T) {
 }
 
 // TestMatchSpeakers_SuggestTierWithKnownScores uses vecWithCosine to construct
-// a speaker vector whose cosine similarity against the contact is exactly 0.70.
+// a speaker vector whose cosine similarity against the contact is exactly 0.40.
 func TestMatchSpeakers_SuggestTierWithKnownScores(t *testing.T) {
 	// contactVec = (1, 0): the reference unit axis.
-	// speakerVec = (0.70, sinθ) where sinθ = sqrt(1 - 0.70^2).
-	// cosine(contactVec, speakerVec) = 0.70 → TierSuggest.
+	// speakerVec = (0.40, sinθ) where sinθ = sqrt(1 - 0.40^2).
+	// cosine(contactVec, speakerVec) = 0.40 → TierSuggest.
 	contactVec := []float64{1.0, 0.0}
-	speakerVec := vecWithCosine(0.70)
+	speakerVec := vecWithCosine(0.40)
 
 	score := CosineSimilarity(contactVec, speakerVec)
-	if score < 0.60 || score >= 0.80 {
-		t.Fatalf("test setup error: expected score in [0.60, 0.80), got %f", score)
+	if score < 0.35 || score >= 0.50 {
+		t.Fatalf("test setup error: expected score in [0.35, 0.50), got %f", score)
 	}
 
 	speakers := map[string][]float64{"speaker_00": speakerVec}

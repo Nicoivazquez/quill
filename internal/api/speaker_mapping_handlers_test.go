@@ -37,6 +37,8 @@ func setupSpeakerMappingHarness(t *testing.T) (*Handler, *gorm.DB, func()) {
 		&models.Summary{},
 		&models.SummaryTemplate{},
 		&models.SummarySetting{},
+		&models.Vault{},
+		&models.Contact{},
 	); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
@@ -48,6 +50,7 @@ func setupSpeakerMappingHarness(t *testing.T) (*Handler, *gorm.DB, func()) {
 		jobRepo:            repository.NewJobRepository(db),
 		speakerMappingRepo: repository.NewSpeakerMappingRepository(db),
 		summaryRepo:        repository.NewSummaryRepository(db),
+		contactRepo:        repository.NewContactRepository(db),
 	}
 
 	cleanup := func() {
@@ -1712,6 +1715,15 @@ func (r *errSpeakerMappingRepo) UpsertMapping(ctx context.Context, jobID string,
 func (r *errSpeakerMappingRepo) DeleteByJobID(ctx context.Context, jobID string) error {
 	return r.delegate.DeleteByJobID(ctx, jobID)
 }
+func (r *errSpeakerMappingRepo) GetSpeakerAttentionSummary(ctx context.Context, jobIDs []string) (map[string]repository.SpeakerAttentionSummary, error) {
+	return r.delegate.GetSpeakerAttentionSummary(ctx, jobIDs)
+}
+func (r *errSpeakerMappingRepo) ListJobIDsByContactID(ctx context.Context, contactID uint) ([]string, error) {
+	return r.delegate.ListJobIDsByContactID(ctx, contactID)
+}
+func (r *errSpeakerMappingRepo) SetContactID(ctx context.Context, mappingID uint, contactID *uint) error {
+	return r.delegate.SetContactID(ctx, mappingID, contactID)
+}
 
 // --- GetSpeakerMappings: internal server error on ListByJob ---
 
@@ -1892,5 +1904,108 @@ func TestUpdateSpeakerMappings_ResponseIncludesConfidenceFields(t *testing.T) {
 	}
 	if r.MatchTier != "" {
 		t.Errorf("response MatchTier: got %q, want empty", r.MatchTier)
+	}
+}
+
+// --- UpdateSpeakerMappings: auto-link contact_id ---
+
+func TestUpdateSpeakerMappings_AutoLinksContactID(t *testing.T) {
+	h, db, cleanup := setupSpeakerMappingHarness(t)
+	defer cleanup()
+
+	vault := models.Vault{Name: "TestVault", Path: t.TempDir(), IsActive: true}
+	db.Create(&vault)
+
+	contact := models.Contact{VaultID: vault.ID, Name: "Alice", ContactUID: "alice-uid", Slug: "alice", SignatureStatus: "none"}
+	db.Create(&contact)
+
+	job := &models.TranscriptionJob{ID: "job-autolink", AudioPath: "/tmp/a.wav", Status: models.StatusCompleted, VaultID: &vault.ID}
+	db.Create(job)
+
+	reqBody := SpeakerMappingsUpdateRequest{
+		Mappings: []SpeakerMappingRequest{
+			{OriginalSpeaker: "speaker_0", CustomName: "Alice"},
+			{OriginalSpeaker: "speaker_1", CustomName: "UnknownPerson"},
+		},
+	}
+	body, _ := json.Marshal(reqBody)
+
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: "job-autolink"}}
+	c.Request, _ = http.NewRequest("POST", "/api/v1/transcription/job-autolink/speakers", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.UpdateSpeakerMappings(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: got %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var mappings []models.SpeakerMapping
+	db.Where("transcription_job_id = ?", "job-autolink").Order("original_speaker").Find(&mappings)
+
+	if len(mappings) != 2 {
+		t.Fatalf("expected 2 mappings, got %d", len(mappings))
+	}
+
+	// Alice should be linked to the contact
+	alice := mappings[0]
+	if alice.ContactID == nil {
+		t.Fatal("Alice mapping: expected contact_id to be set, got nil")
+	}
+	if *alice.ContactID != contact.ID {
+		t.Errorf("Alice mapping: contact_id got %d, want %d", *alice.ContactID, contact.ID)
+	}
+
+	// UnknownPerson should NOT be linked
+	unknown := mappings[1]
+	if unknown.ContactID != nil {
+		t.Errorf("UnknownPerson mapping: expected contact_id nil, got %d", *unknown.ContactID)
+	}
+}
+
+func TestUpdateSpeakerMappings_AutoLinksContactID_CaseInsensitive(t *testing.T) {
+	h, db, cleanup := setupSpeakerMappingHarness(t)
+	defer cleanup()
+
+	vault := models.Vault{Name: "TestVault", Path: t.TempDir(), IsActive: true}
+	db.Create(&vault)
+
+	contact := models.Contact{VaultID: vault.ID, Name: "Alice", ContactUID: "alice-uid", Slug: "alice", SignatureStatus: "none"}
+	db.Create(&contact)
+
+	job := &models.TranscriptionJob{ID: "job-autolink-ci", AudioPath: "/tmp/a.wav", Status: models.StatusCompleted, VaultID: &vault.ID}
+	db.Create(job)
+
+	reqBody := SpeakerMappingsUpdateRequest{
+		Mappings: []SpeakerMappingRequest{
+			{OriginalSpeaker: "speaker_0", CustomName: "alice"}, // lowercase
+		},
+	}
+	body, _ := json.Marshal(reqBody)
+
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: "job-autolink-ci"}}
+	c.Request, _ = http.NewRequest("POST", "/api/v1/transcription/job-autolink-ci/speakers", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.UpdateSpeakerMappings(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: got %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var mapping models.SpeakerMapping
+	db.Where("transcription_job_id = ? AND original_speaker = ?", "job-autolink-ci", "speaker_0").First(&mapping)
+
+	if mapping.ContactID == nil {
+		t.Fatal("expected contact_id to be set for case-insensitive match, got nil")
+	}
+	if *mapping.ContactID != contact.ID {
+		t.Errorf("contact_id: got %d, want %d", *mapping.ContactID, contact.ID)
 	}
 }

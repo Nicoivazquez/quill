@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"quill/internal/models"
 	"quill/internal/repository"
@@ -16,15 +17,15 @@ import (
 // AutoLabelResult holds the categorised outcome of an auto-label run.
 type AutoLabelResult struct {
 	// AutoAssigned contains speakers that were automatically mapped to a contact
-	// (cosine similarity >= 0.80).
+	// (combined score >= 0.50).
 	AutoAssigned []SpeakerMatch
 
 	// Suggestions contains speakers for which a likely contact was found but
-	// confidence was not high enough to auto-apply (0.60 <= score < 0.80).
+	// confidence was not high enough to auto-apply (0.35 <= score < 0.50).
 	Suggestions []SpeakerMatch
 
 	// Unmatched contains speaker labels for which no contact embedding scored
-	// above the minimum threshold (0.60).
+	// above the minimum threshold (0.35).
 	Unmatched []string
 }
 
@@ -58,6 +59,7 @@ type AutoLabelService struct {
 	speakerMapRepo repository.SpeakerMappingRepository
 	db             *gorm.DB
 	llmCaller      LLMCaller
+	llmTimeout     time.Duration
 }
 
 // NewAutoLabelService creates a ready-to-use AutoLabelService.
@@ -70,6 +72,7 @@ func NewAutoLabelService(
 		contactRepo:    contactRepo,
 		speakerMapRepo: speakerMapRepo,
 		db:             db,
+		llmTimeout:     2 * time.Minute,
 	}
 }
 
@@ -166,6 +169,18 @@ func (s *AutoLabelService) LabelSpeakers(
 	// Step 3: match speakers against contacts.
 	matchResult := MatchSpeakers(speakerEmbeddings, contactEmbeddings)
 
+	// Log match scores for diagnostics.
+	for _, m := range matchResult.Matches {
+		logger.Info("auto-label: voice match score",
+			"job_id", jobID, "speaker", m.Speaker,
+			"contact", m.ContactName, "score", fmt.Sprintf("%.4f", m.Score),
+			"tier", string(m.Tier))
+	}
+	if len(matchResult.Unmatched) > 0 {
+		logger.Info("auto-label: unmatched speakers",
+			"job_id", jobID, "speakers", matchResult.Unmatched)
+	}
+
 	// Step 3b: optionally fuse voice scores with LLM contextual analysis.
 	fusedMatches := matchResult.Matches
 	fusedUnmatched := matchResult.Unmatched
@@ -181,7 +196,9 @@ func (s *AutoLabelService) LabelSpeakers(
 		}
 
 		prompt := BuildSpeakerIDPrompt(transcriptText, speakerLabels, contactNames)
-		llmResponse, llmErr := s.llmCaller(ctx, prompt)
+		llmCtx, llmCancel := context.WithTimeout(context.Background(), s.llmTimeout)
+		llmResponse, llmErr := s.llmCaller(llmCtx, prompt)
+		llmCancel() // release immediately, not deferred — persistence steps follow
 		if llmErr != nil {
 			logger.Warn("auto-label: LLM call failed, falling back to voice-only",
 				"job_id", jobID, "error", llmErr)
@@ -226,6 +243,40 @@ func (s *AutoLabelService) LabelSpeakers(
 		}
 	}
 
+	// Step 5: create raw mappings for unmatched speakers so total counts are accurate.
+	// Use a fresh context so an exhausted caller context does not prevent persistence.
+	if len(result.Unmatched) > 0 {
+		rawCtx, rawCancel := context.WithTimeout(context.Background(), 30*time.Second)
+
+		existing, listErr := s.speakerMapRepo.ListByJob(rawCtx, jobID)
+		if listErr != nil {
+			logger.Warn("auto-label: failed to list existing mappings for raw mapping creation",
+				"job_id", jobID, "error", listErr)
+		} else {
+			existingSet := make(map[string]struct{}, len(existing))
+			for _, em := range existing {
+				existingSet[em.OriginalSpeaker] = struct{}{}
+			}
+			for _, speaker := range result.Unmatched {
+				if _, exists := existingSet[speaker]; exists {
+					continue
+				}
+				rawMapping := &models.SpeakerMapping{
+					TranscriptionJobID: jobID,
+					OriginalSpeaker:    speaker,
+					CustomName:         speaker,
+					MatchSource:        "auto",
+					MatchTier:          "none",
+				}
+				if createErr := s.speakerMapRepo.Create(rawCtx, rawMapping); createErr != nil {
+					logger.Warn("auto-label: failed to persist raw mapping",
+						"job_id", jobID, "speaker", speaker, "error", createErr)
+				}
+			}
+		}
+		rawCancel()
+	}
+
 	return result, nil
 }
 
@@ -234,9 +285,14 @@ func (s *AutoLabelService) LabelSpeakers(
 // skips creation if one already exists for this job+speaker combination.
 // reviewStatus should be "" for auto-tier (immediately accepted) and "pending"
 // for suggest-tier (awaiting user review).
-func (s *AutoLabelService) persistMapping(ctx context.Context, jobID string, m SpeakerMatch, reviewStatus string) error {
+func (s *AutoLabelService) persistMapping(_ context.Context, jobID string, m SpeakerMatch, reviewStatus string) error {
+	// Use a fresh context for DB operations so that an exhausted caller context
+	// (e.g. after an LLM timeout) does not prevent persistence.
+	dbCtx, dbCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer dbCancel()
+
 	// Check if a mapping already exists for this job+speaker combination.
-	existing, err := s.speakerMapRepo.ListByJob(ctx, jobID)
+	existing, err := s.speakerMapRepo.ListByJob(dbCtx, jobID)
 	if err != nil {
 		return fmt.Errorf("persistMapping: list existing: %w", err)
 	}
@@ -258,5 +314,5 @@ func (s *AutoLabelService) persistMapping(ctx context.Context, jobID string, m S
 		MatchTier:          string(m.Tier),
 		ReviewStatus:       reviewStatus,
 	}
-	return s.speakerMapRepo.Create(ctx, mapping)
+	return s.speakerMapRepo.Create(dbCtx, mapping)
 }

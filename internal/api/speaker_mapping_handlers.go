@@ -130,15 +130,26 @@ func (h *Handler) UpdateSpeakerMappings(c *gin.Context) {
 		return
 	}
 
+	// Resolve vault for contact linking (best-effort — don't block save).
+	vault, _ := resolveJobVault(c.Request.Context(), job)
+
 	// Convert request to model — user-entered mappings are always "manual".
+	// When the custom_name matches an existing contact, auto-link via contact_id.
 	var mappings []models.SpeakerMapping
 	for _, mapping := range req.Mappings {
-		mappings = append(mappings, models.SpeakerMapping{
+		m := models.SpeakerMapping{
 			TranscriptionJobID: jobID,
 			OriginalSpeaker:    mapping.OriginalSpeaker,
 			CustomName:         mapping.CustomName,
 			MatchSource:        "manual",
-		})
+		}
+		if vault != nil && h.contactRepo != nil {
+			if contact, err := h.contactRepo.FindByNameInVault(c.Request.Context(), vault.ID, mapping.CustomName); err == nil {
+				cid := contact.ID
+				m.ContactID = &cid
+			}
+		}
+		mappings = append(mappings, m)
 	}
 
 	// Update mappings using repository

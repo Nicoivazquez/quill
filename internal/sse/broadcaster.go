@@ -30,22 +30,24 @@ type Message struct {
 
 // Broadcaster manages SSE connections and broadcasting
 type Broadcaster struct {
-	subscribers map[string]map[chan Event]bool // JobID -> Set of Clients
-	register    chan Subscription
-	unregister  chan Subscription
-	broadcast   chan Message
-	shutdown    chan struct{}
-	mutex       sync.RWMutex
+	subscribers       map[string]map[chan Event]bool // JobID -> Set of Clients
+	globalSubscribers map[chan Event]bool            // Global subscribers (no job filter)
+	register          chan Subscription
+	unregister        chan Subscription
+	broadcast         chan Message
+	shutdown          chan struct{}
+	mutex             sync.RWMutex
 }
 
 // NewBroadcaster creates a new Broadcaster
 func NewBroadcaster() *Broadcaster {
 	b := &Broadcaster{
-		subscribers: make(map[string]map[chan Event]bool),
-		register:    make(chan Subscription),
-		unregister:  make(chan Subscription),
-		broadcast:   make(chan Message),
-		shutdown:    make(chan struct{}),
+		subscribers:       make(map[string]map[chan Event]bool),
+		globalSubscribers: make(map[chan Event]bool),
+		register:          make(chan Subscription),
+		unregister:        make(chan Subscription),
+		broadcast:         make(chan Message),
+		shutdown:          make(chan struct{}),
 	}
 
 	go b.listen()
@@ -112,7 +114,7 @@ func (b *Broadcaster) Shutdown() {
 	close(b.shutdown)
 }
 
-// ServeHTTP handles the SSE connection
+// ServeHTTP handles the SSE connection for job-scoped events.
 func (b *Broadcaster) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Require Job ID
 	jobID := r.URL.Query().Get("job_id")
@@ -179,6 +181,48 @@ func (b *Broadcaster) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// ServeGlobalHTTP handles SSE connections for global (list-level) events.
+// Unlike ServeHTTP, no job_id is required — clients receive all BroadcastGlobal events.
+func (b *Broadcaster) ServeGlobalHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported!", http.StatusInternalServerError)
+		return
+	}
+
+	ch := make(chan Event, 10)
+	b.SubscribeGlobal(ch)
+	defer b.UnsubscribeGlobal(ch)
+
+	fmt.Fprintf(w, "data: {\"type\":\"connected\"}\n\n")
+	flusher.Flush()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case evt, ok := <-ch:
+			if !ok {
+				return
+			}
+			data, err := json.Marshal(evt)
+			if err != nil {
+				logger.Error("Failed to marshal global SSE message", "error", err)
+				continue
+			}
+			fmt.Fprintf(w, "data: %s\n\n", data)
+			flusher.Flush()
+		case <-time.After(30 * time.Second):
+			fmt.Fprintf(w, ": keepalive\n\n")
+			flusher.Flush()
+		}
+	}
+}
+
 // Broadcast sends an event to clients subscribed to the specific job
 func (b *Broadcaster) Broadcast(jobID string, eventType string, payload interface{}) {
 	b.broadcast <- Message{
@@ -187,5 +231,33 @@ func (b *Broadcaster) Broadcast(jobID string, eventType string, payload interfac
 			Type:    eventType,
 			Payload: payload,
 		},
+	}
+}
+
+// SubscribeGlobal registers a channel to receive all global broadcast events.
+func (b *Broadcaster) SubscribeGlobal(ch chan Event) {
+	b.mutex.Lock()
+	defer b.mutex.Unlock()
+	b.globalSubscribers[ch] = true
+}
+
+// UnsubscribeGlobal removes a global subscriber.
+func (b *Broadcaster) UnsubscribeGlobal(ch chan Event) {
+	b.mutex.Lock()
+	defer b.mutex.Unlock()
+	delete(b.globalSubscribers, ch)
+}
+
+// BroadcastGlobal sends an event to all global subscribers.
+func (b *Broadcaster) BroadcastGlobal(eventType string, payload interface{}) {
+	evt := Event{Type: eventType, Payload: payload}
+	b.mutex.RLock()
+	defer b.mutex.RUnlock()
+	for ch := range b.globalSubscribers {
+		select {
+		case ch <- evt:
+		default:
+			logger.Warn("Skipping slow global SSE client")
+		}
 	}
 }

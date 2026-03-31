@@ -202,8 +202,8 @@ func TestRetroactiveScan_MatchesNewContact(t *testing.T) {
 	if mappings[0].MatchSource != "retroactive" {
 		t.Errorf("MatchSource: got %q, want %q", mappings[0].MatchSource, "retroactive")
 	}
-	if mappings[0].ConfidenceScore < 0.80 {
-		t.Errorf("ConfidenceScore: got %f, want >= 0.80", mappings[0].ConfidenceScore)
+	if mappings[0].ConfidenceScore < 0.50 {
+		t.Errorf("ConfidenceScore: got %f, want >= 0.50", mappings[0].ConfidenceScore)
 	}
 }
 
@@ -291,17 +291,17 @@ func TestRetroactiveScan_SuggestTierRecorded(t *testing.T) {
 
 	seedDiarizedJob(t, db, "job-suggest", vaultID, filepath.Join(vaultPath, "audio.wav"))
 
-	// Create a contact embedding that will produce a suggest-tier match (0.60 - 0.79).
+	// Create a contact embedding that will produce a suggest-tier match (0.35 - 0.49).
 	aliceVec := makeRetroVec(256, 0)
 	contactID := seedContactWithReadyEmbedding(t, db, vaultPath, vaultID, "Alice", aliceVec)
 
-	// Build a speaker vector that has ~0.70 cosine similarity with basis-0.
+	// Build a speaker vector that has ~0.40 cosine similarity with basis-0.
 	// cos(a, b) = dot(a,b) / (|a|*|b|)
-	// a = [1, 0, 0, ...], b = [0.7, 0.7141, 0, ...]
-	// dot = 0.7, |b| = sqrt(0.49 + 0.51) = 1.0 → cos = 0.7
+	// a = [1, 0, 0, ...], b = [0.4, 0.9165, 0, ...]
+	// dot = 0.4, |b| = sqrt(0.16 + 0.84) = 1.0 → cos = 0.4
 	suggestVec := make([]float64, 256)
-	suggestVec[0] = 0.7
-	suggestVec[1] = 0.7141428 // sqrt(1 - 0.49)
+	suggestVec[0] = 0.4
+	suggestVec[1] = 0.9165151 // sqrt(1 - 0.16)
 
 	svc.SetExtractor(mockExtractor(map[string]map[string][]float64{
 		"job-suggest": {"speaker_00": suggestVec},
@@ -513,12 +513,12 @@ func TestRetroactiveScan_ContactIDSetOnSuggestTier(t *testing.T) {
 	aliceVec := makeRetroVec(256, 0)
 	contactID := seedContactWithReadyEmbedding(t, db, vaultPath, vaultID, "Alice", aliceVec)
 
-	// Build a vector with cosine similarity ≈ 0.70 against basis-0:
-	// a = [1, 0, ...], b = [0.7, sqrt(1-0.49), 0, ...] = [0.7, ~0.7141, 0, ...]
-	// dot = 0.7, |b| = 1.0, so cos = 0.7 → TierSuggest.
+	// Build a vector with cosine similarity ≈ 0.40 against basis-0:
+	// a = [1, 0, ...], b = [0.4, sqrt(1-0.16), 0, ...] = [0.4, ~0.9165, 0, ...]
+	// dot = 0.4, |b| = 1.0, so cos = 0.4 → TierSuggest.
 	suggestVec := make([]float64, 256)
-	suggestVec[0] = 0.7
-	suggestVec[1] = 0.7141428
+	suggestVec[0] = 0.4
+	suggestVec[1] = 0.9165151
 
 	svc.SetExtractor(mockExtractor(map[string]map[string][]float64{
 		"job-suggest-cid": {"speaker_00": suggestVec},
@@ -579,7 +579,7 @@ func TestRetroactiveScan_ReviewStatusByTier(t *testing.T) {
 	}{
 		{
 			name:           "auto-tier has empty review status",
-			score:          0.85, // well above 0.80 threshold
+			score:          0.85, // well above 0.50 threshold
 			wantTier:       "auto",
 			wantReview:     "",
 			wantAutoCount:  1,
@@ -587,7 +587,7 @@ func TestRetroactiveScan_ReviewStatusByTier(t *testing.T) {
 		},
 		{
 			name:           "suggest-tier has pending review status",
-			score:          0.70, // 0.60–0.79 range
+			score:          0.40, // 0.35–0.49 range
 			wantTier:       "suggest",
 			wantReview:     "pending",
 			wantAutoCount:  0,
@@ -750,8 +750,8 @@ func TestRetroactiveScan_NonDiarizedJobProducesZeroScanned(t *testing.T) {
 // TestRetroactiveScan_ScoreBoundaries is a table-driven test covering the
 // exact threshold values defined in ClassifySpeakerMatch:
 //
-//	score == 0.60 → TierSuggest  (boundary: 0.60 is inclusive for suggest)
-//	score == 0.80 → TierAutoAssign (boundary: 0.80 is inclusive for auto)
+//	score == 0.35 → TierSuggest  (boundary: 0.35 is inclusive for suggest)
+//	score == 0.50 → TierAutoAssign (boundary: 0.50 is inclusive for auto)
 //
 // Vectors are constructed so that cos(contactVec, speakerVec) equals the
 // target score exactly using the identity: v = [s, sqrt(1-s^2), 0, ...].
@@ -765,16 +765,16 @@ func TestRetroactiveScan_ScoreBoundaries(t *testing.T) {
 		wantReview  string
 	}{
 		{
-			name:        "exact 0.60 is suggest tier",
-			score:       0.60,
+			name:        "exact 0.35 is suggest tier",
+			score:       0.35,
 			wantAuto:    0,
 			wantSuggest: 1,
 			wantTier:    "suggest",
 			wantReview:  "pending",
 		},
 		{
-			name:        "exact 0.80 is auto-assign tier",
-			score:       0.80,
+			name:        "exact 0.50 is auto-assign tier",
+			score:       0.50,
 			wantAuto:    1,
 			wantSuggest: 0,
 			wantTier:    "auto",

@@ -3,6 +3,7 @@ package contacts
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"quill/internal/models"
@@ -94,16 +95,20 @@ func (s *RetroactiveScanService) ScanForContact(ctx context.Context, contactID u
 		return result, nil
 	}
 
-	// Load the contact's embedding vector.
-	contactVec, err := LoadEmbeddingVector(*contact.SignatureEmbeddingPath)
-	if err != nil {
-		return result, fmt.Errorf("retroactive scan: load contact embedding: %w", err)
-	}
-
-	// Resolve vault.
+	// Resolve vault (needed to turn relative paths into absolute ones).
 	var vault models.Vault
 	if err := s.db.WithContext(ctx).First(&vault, contact.VaultID).Error; err != nil {
 		return result, fmt.Errorf("retroactive scan: resolve vault: %w", err)
+	}
+
+	// Load the contact's embedding vector, resolving the vault-relative path.
+	embPath := *contact.SignatureEmbeddingPath
+	if !filepath.IsAbs(embPath) {
+		embPath = filepath.Join(vault.Path, embPath)
+	}
+	contactVec, err := LoadEmbeddingVector(embPath)
+	if err != nil {
+		return result, fmt.Errorf("retroactive scan: load contact embedding: %w", err)
 	}
 
 	// Find all completed diarized jobs in this vault.
