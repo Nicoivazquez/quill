@@ -10,7 +10,7 @@ import (
 
 func TestBundleTargetDir_WithTitle(t *testing.T) {
 	got := BundleTargetDir("/vault", "My Interview Recording", "abcdefgh-1234")
-	want := filepath.Join("/vault", "Transcripts", "my-interview-recording-abcdefgh")
+	want := filepath.Join("/vault", "Transcripts", "My Interview Recording")
 	if got != want {
 		t.Errorf("BundleTargetDir = %q, want %q", got, want)
 	}
@@ -18,7 +18,7 @@ func TestBundleTargetDir_WithTitle(t *testing.T) {
 
 func TestBundleTargetDir_EmptyTitle(t *testing.T) {
 	got := BundleTargetDir("/vault", "", "abcdefgh-1234")
-	want := filepath.Join("/vault", "Transcripts", "transcript-abcdefgh")
+	want := filepath.Join("/vault", "Transcripts", "Transcript")
 	if got != want {
 		t.Errorf("BundleTargetDir = %q, want %q", got, want)
 	}
@@ -35,7 +35,8 @@ func TestBundleTargetDir_NoDateNesting(t *testing.T) {
 
 func TestBundleTargetDir_SpecialCharactersInTitle(t *testing.T) {
 	got := BundleTargetDir("/vault", "Hello, World! @#$% Test", "deadbeef")
-	want := filepath.Join("/vault", "Transcripts", "hello-world-test-deadbeef")
+	// SafeFilename strips : / ? * but preserves commas, !, @, #, $, %, etc.
+	want := filepath.Join("/vault", "Transcripts", "Hello, World! @#$% Test")
 	if got != want {
 		t.Errorf("BundleTargetDir = %q, want %q", got, want)
 	}
@@ -166,7 +167,7 @@ func mustSetup(t *testing.T, dir string, files map[string]string) {
 func TestRenameBundleDir_RenamesDirectory(t *testing.T) {
 	vaultDir := t.TempDir()
 	transcriptsDir := filepath.Join(vaultDir, "Transcripts")
-	oldDir := filepath.Join(transcriptsDir, "old-title-abcdefgh")
+	oldDir := filepath.Join(transcriptsDir, "Old Title")
 
 	mustSetup(t, oldDir, map[string]string{
 		"audio.mp3":       "audio",
@@ -196,16 +197,16 @@ func TestRenameBundleDir_RenamesDirectory(t *testing.T) {
 		}
 	}
 
-	// NewDir should contain new-title slug
-	if base := filepath.Base(result.NewDir); base != "new-title-abcdefgh" {
-		t.Errorf("new dir base = %q, want %q", base, "new-title-abcdefgh")
+	// NewDir should contain human-readable name
+	if base := filepath.Base(result.NewDir); base != "New Title" {
+		t.Errorf("new dir base = %q, want %q", base, "New Title")
 	}
 }
 
 func TestRenameBundleDir_UpdatesPaths(t *testing.T) {
 	vaultDir := t.TempDir()
 	transcriptsDir := filepath.Join(vaultDir, "Transcripts")
-	oldDir := filepath.Join(transcriptsDir, "old-title-abcd1234")
+	oldDir := filepath.Join(transcriptsDir, "Old Title")
 
 	mustSetup(t, oldDir, map[string]string{
 		"audio.wav":       "wav",
@@ -218,7 +219,7 @@ func TestRenameBundleDir_UpdatesPaths(t *testing.T) {
 		t.Fatalf("RenameBundleDir error: %v", err)
 	}
 
-	expectedDir := filepath.Join(transcriptsDir, "updated-title-abcd1234")
+	expectedDir := filepath.Join(transcriptsDir, "Updated Title")
 	if result.NewDir != expectedDir {
 		t.Errorf("NewDir = %q, want %q", result.NewDir, expectedDir)
 	}
@@ -238,7 +239,7 @@ func TestRenameBundleDir_UpdatesPaths(t *testing.T) {
 func TestRenameBundleDir_SameTitle_NoOp(t *testing.T) {
 	vaultDir := t.TempDir()
 	transcriptsDir := filepath.Join(vaultDir, "Transcripts")
-	dir := filepath.Join(transcriptsDir, "my-title-abcdefgh")
+	dir := filepath.Join(transcriptsDir, "My Title")
 
 	mustSetup(t, dir, map[string]string{"audio.mp3": "data"})
 
@@ -260,7 +261,7 @@ func TestRenameBundleDir_SameTitle_NoOp(t *testing.T) {
 func TestRenameBundleDir_PreservesAllFiles(t *testing.T) {
 	vaultDir := t.TempDir()
 	transcriptsDir := filepath.Join(vaultDir, "Transcripts")
-	oldDir := filepath.Join(transcriptsDir, "old-abcdefgh")
+	oldDir := filepath.Join(transcriptsDir, "Old Name")
 
 	files := map[string]string{
 		"audio.m4a":       "audio content",
@@ -291,8 +292,8 @@ func TestRenameBundleDir_PreservesAllFiles(t *testing.T) {
 func TestRenameBundleDir_DestinationExists(t *testing.T) {
 	vaultDir := t.TempDir()
 	transcriptsDir := filepath.Join(vaultDir, "Transcripts")
-	oldDir := filepath.Join(transcriptsDir, "old-title-abcdefgh")
-	conflictDir := filepath.Join(transcriptsDir, "new-title-abcdefgh")
+	oldDir := filepath.Join(transcriptsDir, "Old Title")
+	conflictDir := filepath.Join(transcriptsDir, "New Title")
 
 	// Create both directories
 	if err := os.MkdirAll(oldDir, 0755); err != nil {
@@ -329,7 +330,7 @@ func TestRenameBundleDir_NonExistentDir(t *testing.T) {
 func TestRenameBundleDir_DiscoverAudioExtension(t *testing.T) {
 	vaultDir := t.TempDir()
 	transcriptsDir := filepath.Join(vaultDir, "Transcripts")
-	oldDir := filepath.Join(transcriptsDir, "old-abc12345")
+	oldDir := filepath.Join(transcriptsDir, "Old Name")
 
 	mustSetup(t, oldDir, map[string]string{
 		"audio.ogg":       "ogg",

@@ -7,15 +7,19 @@ import (
 	"path/filepath"
 	"strings"
 
+	"quill/pkg/logger"
 	"quill/pkg/slug"
 )
 
 // BundleTargetDir computes the artifact bundle directory path for a transcript.
-// Layout: {vaultPath}/Transcripts/{slug}-{shortID}/
+// Layout: {vaultPath}/Transcripts/{human-readable title}/
 // No date-based nesting — flat under Transcripts for Obsidian-like organization.
+// Uses SafeFilename for a clean, human-readable folder name and UniqueName
+// to resolve collisions (Finder-style " 2", " 3" suffixes).
 func BundleTargetDir(vaultPath, title, jobID string) string {
-	safeTitle := slug.Sanitize(strings.TrimSpace(title), "transcript")
-	return filepath.Join(vaultPath, "Transcripts", fmt.Sprintf("%s-%s", safeTitle, shortID(jobID)))
+	safeTitle := slug.SafeFilename(strings.TrimSpace(title), "Transcript")
+	transcriptsDir := filepath.Join(vaultPath, "Transcripts")
+	return filepath.Join(transcriptsDir, slug.UniqueName(transcriptsDir, safeTitle))
 }
 
 // MoveAudioToBundle moves an audio file into the bundle directory, renaming it
@@ -34,8 +38,13 @@ func MoveAudioToBundle(audioPath, bundleDir string) (string, error) {
 	absAudio, _ := filepath.Abs(audioPath)
 	absTarget, _ := filepath.Abs(targetPath)
 	if absAudio == absTarget {
+		logger.Debug("MoveAudioToBundle: no-op, audio already in bundle",
+			"audio_path", audioPath, "bundle_dir", bundleDir)
 		return audioPath, nil
 	}
+
+	logger.Debug("MoveAudioToBundle: moving audio to bundle",
+		"from", absAudio, "to", absTarget, "bundle_dir", bundleDir)
 
 	// Ensure bundle directory exists
 	if err := os.MkdirAll(bundleDir, 0755); err != nil {
@@ -44,6 +53,7 @@ func MoveAudioToBundle(audioPath, bundleDir string) (string, error) {
 
 	// Try os.Rename first (fast, same filesystem)
 	if err := os.Rename(audioPath, targetPath); err == nil {
+		logger.Debug("MoveAudioToBundle: rename succeeded", "target", targetPath)
 		return targetPath, nil
 	}
 
@@ -78,10 +88,8 @@ func RenameBundleDir(currentDir, newTitle, jobID string) (BundleRenameResult, er
 	}
 
 	parentDir := filepath.Dir(currentDir)
-	sid := shortID(jobID)
-	newSlug := slug.Sanitize(strings.TrimSpace(newTitle), "transcript")
-	newDirName := fmt.Sprintf("%s-%s", newSlug, sid)
-	newDir := filepath.Join(parentDir, newDirName)
+	safeName := slug.SafeFilename(strings.TrimSpace(newTitle), "Transcript")
+	newDir := filepath.Join(parentDir, safeName)
 
 	// No-op if names match (clean both paths for robustness)
 	if filepath.Clean(currentDir) == filepath.Clean(newDir) {
@@ -94,6 +102,8 @@ func RenameBundleDir(currentDir, newTitle, jobID string) (BundleRenameResult, er
 	}
 
 	// Rename directory
+	logger.Debug("RenameBundleDir: renaming bundle",
+		"from", currentDir, "to", newDir, "job_id", jobID)
 	if err := os.Rename(currentDir, newDir); err != nil {
 		return BundleRenameResult{}, fmt.Errorf("renaming bundle dir: %w", err)
 	}

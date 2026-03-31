@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Youtube, Download, AlertCircle, CheckCircle } from "lucide-react";
 import { useYouTubeDownload } from "@/features/transcription/hooks/useAudioFiles";
+import { sanitizeInputValue } from "@/lib/filename-validation";
 
 interface YouTubeDownloadDialogProps {
   isOpen: boolean;
@@ -137,7 +138,7 @@ export function YouTubeDownloadDialog({
                 type="text"
                 placeholder="Leave empty to use video title"
                 value={title}
-                onChange={(e) => setTitle(e.target.value)}
+                onChange={(e) => setTitle(sanitizeInputValue(e.target.value))}
                 disabled={isDownloading}
               />
               <p className="text-xs text-[var(--text-tertiary)]">

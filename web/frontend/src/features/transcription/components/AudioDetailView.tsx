@@ -12,6 +12,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Input } from "@/components/ui/input";
 import { EmberPlayer, type EmberPlayerRef } from "@/components/audio/EmberPlayer";
 import { cn } from "@/lib/utils";
+import { sanitizeInputValue } from "@/lib/filename-validation";
 
 // Custom Hooks
 import { useAudioDetail, useUpdateTitle, useTranscript, type TranscriptSegment } from "@/features/transcription/hooks/useAudioDetail";
@@ -386,7 +387,7 @@ export const AudioDetailView = function AudioDetailView({ audioId: propAudioId }
                                             {isEditingTitle ? (
                                                 <Input
                                                     value={newTitle}
-                                                    onChange={(e) => setNewTitle(e.target.value)}
+                                                    onChange={(e) => setNewTitle(sanitizeInputValue(e.target.value))}
                                                     onBlur={handleTitleSave}
                                                     onKeyDown={(e) => e.key === 'Enter' && handleTitleSave()}
                                                     className="h-10 text-3xl font-bold tracking-tight bg-transparent border-none focus:ring-0 focus:outline-none p-0 placeholder:text-[var(--text-tertiary)]"

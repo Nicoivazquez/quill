@@ -11,6 +11,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Upload, X, FileAudio, File, AlertCircle } from "lucide-react";
+import { sanitizeInputValue } from "@/lib/filename-validation";
 
 interface MultiTrackUploadDialogProps {
 	open: boolean;
@@ -139,7 +140,7 @@ export function MultiTrackUploadDialog({
 							id="title"
 							placeholder="Enter a title for this recording..."
 							value={title}
-							onChange={(e) => setTitle(e.target.value)}
+							onChange={(e) => setTitle(sanitizeInputValue(e.target.value))}
 						/>
 					</div>
 

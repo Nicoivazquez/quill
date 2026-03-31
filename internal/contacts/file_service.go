@@ -44,7 +44,7 @@ func (s *FileService) ContactsBaseAbsPath() string {
 }
 
 func (s *FileService) ContactFolderRelPath(contact *models.Contact) string {
-	folderName := fmt.Sprintf("%s--%s", slug.Sanitize(contact.Slug, "contact"), strings.TrimSpace(contact.ContactUID))
+	folderName := slug.SafeFilename(strings.TrimSpace(contact.Name), "Contact")
 	return filepath.ToSlash(filepath.Join(filepath.FromSlash(contactsPeopleDir), folderName))
 }
 
@@ -182,21 +182,41 @@ func (s *FileService) ScanAllContactFolders() ([]ContactFileInfo, error) {
 		if !entry.IsDir() {
 			continue
 		}
-		slug, uid := parseContactFolderName(entry.Name())
-		if uid == "" {
-			continue
-		}
 		folderAbs := filepath.Join(base, entry.Name())
 		noteAbs := filepath.Join(folderAbs, contactNoteFileName)
 		stat, statErr := os.Stat(noteAbs)
 		if statErr != nil || stat.IsDir() {
 			continue
 		}
+
+		// Read frontmatter to get the contact UID (source of truth).
+		raw, readErr := os.ReadFile(noteAbs)
+		if readErr != nil {
+			continue
+		}
+		fm, _, parseErr := parseFrontmatter(raw)
+		if parseErr != nil || strings.TrimSpace(fm.ContactUID) == "" {
+			// Legacy folder: try parsing UID from folder name as fallback.
+			legacySlug, legacyUID := parseContactFolderName(entry.Name())
+			if legacyUID == "" {
+				continue
+			}
+			infos = append(infos, ContactFileInfo{
+				FolderAbsPath: folderAbs,
+				NoteAbsPath:   noteAbs,
+				ContactUID:    legacyUID,
+				Slug:          legacySlug,
+				MtimeNS:       stat.ModTime().UnixNano(),
+			})
+			continue
+		}
+
+		contactSlug := slug.Sanitize(defaultString(strings.TrimSpace(fm.Slug), entry.Name()), "contact")
 		infos = append(infos, ContactFileInfo{
 			FolderAbsPath: folderAbs,
 			NoteAbsPath:   noteAbs,
-			ContactUID:    uid,
-			Slug:          slug,
+			ContactUID:    strings.TrimSpace(fm.ContactUID),
+			Slug:          contactSlug,
 			MtimeNS:       stat.ModTime().UnixNano(),
 		})
 	}
@@ -229,10 +249,6 @@ func (s *FileService) ReadContactFromNotePath(noteAbsPath string) (*models.Conta
 
 	folderAbs := filepath.Dir(noteAbsPath)
 	folderName := filepath.Base(folderAbs)
-	slugFromFolder, uidFromFolder := parseContactFolderName(folderName)
-	if uidFromFolder != "" && uidFromFolder != strings.TrimSpace(fm.ContactUID) {
-		return nil, fmt.Errorf("contact_uid mismatch between frontmatter and folder")
-	}
 
 	noteRel, relErr := filepath.Rel(s.vaultPath, noteAbsPath)
 	if relErr != nil {
@@ -245,7 +261,7 @@ func (s *FileService) ReadContactFromNotePath(noteAbsPath string) (*models.Conta
 
 	contact := &models.Contact{
 		ContactUID:  strings.TrimSpace(fm.ContactUID),
-		Slug:        slug.Sanitize(defaultString(strings.TrimSpace(fm.Slug), slugFromFolder), "contact"),
+		Slug:        slug.Sanitize(defaultString(strings.TrimSpace(fm.Slug), folderName), "contact"),
 		Name:        strings.TrimSpace(fm.Name),
 		NotePath:    filepath.ToSlash(noteRel),
 		FileMtimeNS: stat.ModTime().UnixNano(),

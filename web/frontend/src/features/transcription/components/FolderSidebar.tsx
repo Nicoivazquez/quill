@@ -11,6 +11,7 @@ import {
     MoreHorizontal,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { sanitizeInputValue } from "@/lib/filename-validation";
 import { Button } from "@/components/ui/button";
 import {
     DropdownMenu,
@@ -329,7 +330,7 @@ export function FolderSidebar({ selectedFolder, onFolderSelect }: FolderSidebarP
                                 <input
                                     ref={renameInputRef}
                                     value={renameValue}
-                                    onChange={(e) => setRenameValue(e.target.value)}
+                                    onChange={(e) => setRenameValue(sanitizeInputValue(e.target.value))}
                                     onBlur={handleRename}
                                     onKeyDown={(e) => {
                                         if (e.key === "Enter") handleRename();
@@ -360,7 +361,7 @@ export function FolderSidebar({ selectedFolder, onFolderSelect }: FolderSidebarP
                             <input
                                 ref={createInputRef}
                                 value={newFolderName}
-                                onChange={(e) => setNewFolderName(e.target.value)}
+                                onChange={(e) => setNewFolderName(sanitizeInputValue(e.target.value))}
                                 onBlur={handleCreate}
                                 onKeyDown={(e) => {
                                     if (e.key === "Enter") handleCreate();

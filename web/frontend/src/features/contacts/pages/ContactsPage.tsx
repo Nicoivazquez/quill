@@ -3,7 +3,7 @@ import {
   ArrowLeft,
   FileAudio,
   FileJson,
-  FolderTree,
+  Mic,
   RefreshCcw,
   Save,
   Trash2,
@@ -17,15 +17,17 @@ import { Header } from "@/components/Header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { useNavigate } from "react-router-dom";
 import {
   useContact,
-  useContactFiles,
+  useContactAppearances,
   useContacts,
   useCreateContact,
   useDeleteContact,
   useDeleteSignature,
   useDeleteSnippet,
   useExtractSignature,
+  usePullSnippet,
   useReindexContacts,
   useRescanContact,
   useUpdateContact,
@@ -33,6 +35,7 @@ import {
   useUploadSnippet,
 } from "@/features/contacts/hooks/useContacts";
 import { useRetryRuntimeWarmup, useRuntimeWarmup } from "@/features/runtime/hooks/useRuntimeWarmup";
+import { sanitizeInputValue } from "@/lib/filename-validation";
 
 type BannerState = {
   type: "success" | "error";
@@ -69,7 +72,7 @@ export function ContactsPage() {
   const [search, setSearch] = useState("");
   const [selectedContactID, setSelectedContactID] = useState<number | null>(null);
   const [banner, setBanner] = useState<BannerState>(null);
-  const [showFilesPanel, setShowFilesPanel] = useState(false);
+  const [showAppearances, setShowAppearances] = useState(false);
 
   const [createName, setCreateName] = useState("");
   const [createEmail, setCreateEmail] = useState("");
@@ -116,7 +119,7 @@ export function ContactsPage() {
     runtimeWarmup.state === "failed";
 
   useEffect(() => {
-    setShowFilesPanel(false);
+    setShowAppearances(false);
   }, [selectedContactID]);
 
   useEffect(() => {
@@ -138,7 +141,8 @@ export function ContactsPage() {
     setDraftNotes(selectedContact.notes ?? "");
   }, [selectedContact]);
 
-  const filesQuery = useContactFiles(selectedContactID, showFilesPanel);
+  const appearancesQuery = useContactAppearances(selectedContactID);
+  const navigate = useNavigate();
 
   const createContact = useCreateContact();
   const updateContact = useUpdateContact(selectedContactID);
@@ -149,6 +153,7 @@ export function ContactsPage() {
   const uploadSignature = useUploadSignature(selectedContactID);
   const deleteSignature = useDeleteSignature(selectedContactID);
   const extractSignature = useExtractSignature(selectedContactID);
+  const pullSnippet = usePullSnippet(selectedContactID);
   const rescanContact = useRescanContact(selectedContactID);
 
   const setErrorBanner = (error: unknown, fallback: string) => {
@@ -318,7 +323,7 @@ export function ContactsPage() {
               <Input
                 placeholder="Name *"
                 value={createName}
-                onChange={(event) => setCreateName(event.target.value)}
+                onChange={(event) => setCreateName(sanitizeInputValue(event.target.value))}
               />
               <Input
                 placeholder="Email (optional)"
@@ -399,7 +404,7 @@ export function ContactsPage() {
                   <div className="grid gap-3 md:grid-cols-2">
                     <div className="space-y-1">
                       <label className="text-xs text-[var(--text-tertiary)] uppercase tracking-wide">Name</label>
-                      <Input value={draftName} onChange={(event) => setDraftName(event.target.value)} />
+                      <Input value={draftName} onChange={(event) => setDraftName(sanitizeInputValue(event.target.value))} />
                     </div>
                     <div className="space-y-1">
                       <label className="text-xs text-[var(--text-tertiary)] uppercase tracking-wide">Email</label>
@@ -462,6 +467,17 @@ export function ContactsPage() {
                       >
                         <X className="h-4 w-4" />
                         Remove Snippet
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => pullSnippet.mutate(undefined, {
+                          onSuccess: () => setBanner({ type: "success", message: "Voice snippet pulled from latest transcript." }),
+                          onError: (error) => setErrorBanner(error, "Failed to pull snippet"),
+                        })}
+                        disabled={pullSnippet.isPending}
+                      >
+                        <Mic className="h-4 w-4" />
+                        {pullSnippet.isPending ? "Pulling..." : "Pull from Transcript"}
                       </Button>
                     </div>
                     <input
@@ -587,29 +603,42 @@ export function ContactsPage() {
                   <button
                     type="button"
                     className="w-full flex items-center justify-between rounded-[var(--radius-btn)] border border-[var(--border-subtle)] bg-[var(--bg-muted-pane)] px-3 py-2 text-left"
-                    onClick={() => setShowFilesPanel((current) => !current)}
+                    onClick={() => setShowAppearances((current) => !current)}
                   >
                     <span className="flex items-center gap-2 text-sm font-medium text-[var(--text-primary)]">
-                      <FolderTree className="h-4 w-4" />
-                      File Paths
+                      <Mic className="h-4 w-4" />
+                      Appears In
+                      {appearancesQuery.data?.appearances?.length ? (
+                        <span className="text-xs text-[var(--text-tertiary)]">({appearancesQuery.data.appearances.length})</span>
+                      ) : null}
                     </span>
-                    <span className="text-xs text-[var(--text-secondary)]">{showFilesPanel ? "Hide" : "Show"}</span>
+                    <span className="text-xs text-[var(--text-secondary)]">{showAppearances ? "Hide" : "Show"}</span>
                   </button>
-                  {showFilesPanel && (
-                    <div className="mt-3 rounded-[var(--radius-btn)] border border-[var(--border-subtle)] bg-[var(--bg-main)] p-3 text-xs">
-                      {filesQuery.isLoading ? (
-                        <p className="text-[var(--text-tertiary)]">Loading file paths...</p>
-                      ) : filesQuery.data ? (
-                        <div className="space-y-2 text-[var(--text-secondary)]">
-                          <p><span className="font-semibold text-[var(--text-primary)]">Note:</span> <span className="break-all">{filesQuery.data.note_path}</span></p>
-                          <p><span className="font-semibold text-[var(--text-primary)]">Note (abs):</span> <span className="break-all">{filesQuery.data.note_abs_path || "-"}</span></p>
-                          <p><span className="font-semibold text-[var(--text-primary)]">Snippet:</span> <span className="break-all">{filesQuery.data.voice_snippet_path || "-"}</span></p>
-                          <p><span className="font-semibold text-[var(--text-primary)]">Snippet (abs):</span> <span className="break-all">{filesQuery.data.voice_snippet_abs_path || "-"}</span></p>
-                          <p><span className="font-semibold text-[var(--text-primary)]">Signature:</span> <span className="break-all">{filesQuery.data.signature_embedding_path || "-"}</span></p>
-                          <p><span className="font-semibold text-[var(--text-primary)]">Signature (abs):</span> <span className="break-all">{filesQuery.data.signature_embedding_abs_path || "-"}</span></p>
-                        </div>
+                  {showAppearances && (
+                    <div className="mt-3 rounded-[var(--radius-btn)] border border-[var(--border-subtle)] bg-[var(--bg-main)] p-1">
+                      {appearancesQuery.isLoading ? (
+                        <p className="px-3 py-2 text-sm text-[var(--text-tertiary)]">Loading appearances...</p>
+                      ) : !appearancesQuery.data?.appearances?.length ? (
+                        <p className="px-3 py-2 text-sm text-[var(--text-tertiary)]">No transcript appearances found.</p>
                       ) : (
-                        <p className="text-red-700">Unable to load file diagnostics.</p>
+                        <div className="divide-y divide-[var(--border-subtle)]">
+                          {appearancesQuery.data.appearances.map((appearance) => (
+                            <button
+                              key={`${appearance.job_id}-${appearance.speaker_label}`}
+                              type="button"
+                              className="w-full flex items-center justify-between gap-3 px-3 py-2 text-left rounded-[var(--radius-btn)] hover:bg-[var(--bg-muted-pane)] transition"
+                              onClick={() => navigate(`/audio/${appearance.job_id}`)}
+                            >
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-medium text-[var(--text-primary)] truncate">{appearance.title || appearance.job_id}</p>
+                                <p className="text-xs text-[var(--text-tertiary)] mt-0.5">
+                                  {appearance.speaker_label} &middot; {appearance.match_source} &middot; {Math.round(appearance.confidence_score * 100)}% confidence
+                                </p>
+                              </div>
+                              <ArrowLeft className="h-3.5 w-3.5 text-[var(--text-tertiary)] rotate-180 shrink-0" />
+                            </button>
+                          ))}
+                        </div>
                       )}
                     </div>
                   )}

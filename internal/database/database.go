@@ -3,9 +3,11 @@ package database
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"quill/internal/contacts"
@@ -112,11 +114,147 @@ func Initialize(dbPath string) error {
 		return fmt.Errorf("failed to create unique constraint for speaker mappings: %v", err)
 	}
 
+	// Backfill raw speaker mappings for existing completed diarized jobs
+	if err := backfillRawSpeakerMappings(DB); err != nil {
+		fmt.Printf("Warning: Failed to backfill raw speaker mappings: %v\n", err)
+	}
+
+	// Link orphaned speaker_mappings to contacts by name match
+	if err := backfillSpeakerMappingContactIDs(DB); err != nil {
+		fmt.Printf("Warning: Failed to backfill speaker mapping contact IDs: %v\n", err)
+	}
+
 	// Seed default summary template if none exist
 	if err := seedDefaultSummaryTemplate(DB); err != nil {
 		return fmt.Errorf("failed to seed default summary template: %v", err)
 	}
 
+	// Migrate legacy machine-readable folder names to human-readable names.
+	if err := MigrateHumanReadableFolderNames(DB); err != nil {
+		fmt.Printf("Warning: Failed to migrate folder names: %v\n", err)
+	}
+
+	return nil
+}
+
+// backfillRawSpeakerMappings ensures every speaker label found in completed
+// diarized transcripts has a corresponding speaker_mappings row.  Older jobs
+// only had mappings for matched/suggested speakers; unmatched speakers were
+// invisible to the attention-summary query.  This is idempotent — the unique
+// index on (transcription_job_id, original_speaker) prevents duplicates.
+func backfillRawSpeakerMappings(db *gorm.DB) error {
+	type jobRow struct {
+		ID         string
+		Transcript *string
+	}
+
+	// Find completed diarized jobs that have a transcript.
+	var jobs []jobRow
+	err := db.Model(&models.TranscriptionJob{}).
+		Select("id, transcript").
+		Where("status = ? AND diarization = ? AND transcript IS NOT NULL AND transcript != ''", "completed", true).
+		Scan(&jobs).Error
+	if err != nil {
+		return fmt.Errorf("query diarized jobs: %w", err)
+	}
+
+	if len(jobs) == 0 {
+		return nil
+	}
+
+	type segment struct {
+		Speaker *string `json:"speaker,omitempty"`
+	}
+	type payload struct {
+		Segments []segment `json:"segments,omitempty"`
+	}
+
+	var totalCreated int
+	for _, job := range jobs {
+		if job.Transcript == nil || strings.TrimSpace(*job.Transcript) == "" {
+			continue
+		}
+
+		var p payload
+		if err := json.Unmarshal([]byte(*job.Transcript), &p); err != nil {
+			continue
+		}
+
+		// Collect unique speaker labels from transcript.
+		speakerSet := make(map[string]struct{})
+		for _, seg := range p.Segments {
+			if seg.Speaker != nil && strings.TrimSpace(*seg.Speaker) != "" {
+				speakerSet[strings.TrimSpace(*seg.Speaker)] = struct{}{}
+			}
+		}
+		if len(speakerSet) == 0 {
+			continue
+		}
+
+		// Find existing mappings for this job.
+		var existing []models.SpeakerMapping
+		if err := db.Where("transcription_job_id = ?", job.ID).Find(&existing).Error; err != nil {
+			continue
+		}
+		existingSet := make(map[string]struct{}, len(existing))
+		for _, m := range existing {
+			existingSet[m.OriginalSpeaker] = struct{}{}
+		}
+
+		// Create raw mappings for missing speakers.
+		for speaker := range speakerSet {
+			if _, exists := existingSet[speaker]; exists {
+				continue
+			}
+			raw := models.SpeakerMapping{
+				TranscriptionJobID: job.ID,
+				OriginalSpeaker:    speaker,
+				CustomName:         speaker,
+				MatchSource:        "auto",
+				MatchTier:          "none",
+			}
+			if err := db.Create(&raw).Error; err != nil {
+				continue // unique index violation or other — skip
+			}
+			totalCreated++
+		}
+	}
+
+	if totalCreated > 0 {
+		fmt.Printf("Backfilled %d raw speaker mappings for existing jobs\n", totalCreated)
+	}
+	return nil
+}
+
+// backfillSpeakerMappingContactIDs links orphaned speaker_mappings (custom_name
+// set but contact_id NULL) to existing contacts by case-insensitive name match
+// within the same vault.  This is idempotent — already-linked rows are skipped.
+func backfillSpeakerMappingContactIDs(db *gorm.DB) error {
+	result := db.Exec(`
+		UPDATE speaker_mappings
+		SET contact_id = (
+			SELECT c.id FROM contacts c
+			JOIN transcription_jobs j ON j.vault_id = c.vault_id
+			WHERE j.id = speaker_mappings.transcription_job_id
+			AND LOWER(c.name) = LOWER(speaker_mappings.custom_name)
+			LIMIT 1
+		)
+		WHERE contact_id IS NULL
+		AND custom_name != original_speaker
+		AND custom_name != ''
+		AND EXISTS (
+			SELECT 1 FROM contacts c
+			JOIN transcription_jobs j ON j.vault_id = c.vault_id
+			WHERE j.id = speaker_mappings.transcription_job_id
+			AND LOWER(c.name) = LOWER(speaker_mappings.custom_name)
+		)
+	`)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
+		fmt.Printf("Backfilled contact_id on %d speaker mappings\n", result.RowsAffected)
+	}
 	return nil
 }
 
