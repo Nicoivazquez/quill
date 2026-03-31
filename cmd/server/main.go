@@ -137,6 +137,12 @@ func main() {
 	logger.Startup("transcription", "Initializing transcription service")
 	unifiedProcessor := transcription.NewUnifiedJobProcessor(jobRepo, cfg.TempDir, cfg.TranscriptsDir, cfg.WhisperXEnv)
 	unifiedProcessor.GetUnifiedService().SetBroadcaster(broadcaster)
+	// Seed HF_TOKEN env var from cloud provider store so all adapters
+	// (Go checks + Python subprocesses) can find it via os.Getenv.
+	if stored, err := cloudProviderRepo.GetByProvider(context.Background(), "huggingface"); err == nil && stored != nil && strings.TrimSpace(stored.APIKey) != "" {
+		_ = os.Setenv("HF_TOKEN", strings.TrimSpace(stored.APIKey))
+		logger.Info("HF_TOKEN seeded from cloud provider store")
+	}
 	// Initialize FTS5 full-text search
 	logger.Startup("fts", "Initializing full-text search")
 	ftsManager := search.NewFTSManager(database.DB)
@@ -415,6 +421,11 @@ func registerAdapters(cfg *config.Config) {
 		adapters.NewPyAnnoteAdapter(pyannoteEnvPath)) // Dedicated environment
 	registry.RegisterDiarizationAdapter("sortformer",
 		adapters.NewSortformerAdapter(nvidiaEnvPath)) // Shares with Parakeet
+
+	// sherpa-onnx: native Go/C++ diarization — no Python, no HF token
+	sherpaOnnxModelsPath := filepath.Join(cfg.WhisperXEnv, "sherpa-onnx")
+	registry.RegisterDiarizationAdapter("sherpa-onnx",
+		adapters.NewSherpaOnnxAdapter(sherpaOnnxModelsPath))
 
 	logger.Info("Adapter registration complete")
 }

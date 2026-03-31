@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { Header } from "@/components/Header";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { AudioFilesTable } from "./AudioFilesTable";
-import { FolderSidebar } from "./FolderSidebar";
+import { FolderSidebar, DND_TYPE_FILES, DND_TYPE_FOLDER } from "./FolderSidebar";
 import { DragDropOverlay } from "@/components/DragDropOverlay";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
@@ -49,9 +49,14 @@ export function Dashboard() {
 
 	// Global drag and drop handlers
 	useEffect(() => {
+		// Check if this is an internal drag (folder/file reorganization) — skip upload overlay
+		const isInternalDrag = (e: DragEvent) =>
+			e.dataTransfer?.types.includes(DND_TYPE_FILES) || e.dataTransfer?.types.includes(DND_TYPE_FOLDER);
+
 		const handleWindowDragEnter = (e: DragEvent) => {
 			e.preventDefault();
 			e.stopPropagation();
+			if (isInternalDrag(e)) return;
 			dragCounter.current++;
 
 			if (e.dataTransfer?.items && e.dataTransfer.items.length > 0) {
@@ -74,6 +79,7 @@ export function Dashboard() {
 		const handleWindowDragLeave = (e: DragEvent) => {
 			e.preventDefault();
 			e.stopPropagation();
+			if (isInternalDrag(e)) return;
 			dragCounter.current--;
 
 			if (dragCounter.current === 0) {
@@ -84,11 +90,13 @@ export function Dashboard() {
 		};
 
 		const handleWindowDragOver = (e: DragEvent) => {
+			if (isInternalDrag(e)) return;
 			e.preventDefault();
 			e.stopPropagation();
 		};
 
 		const handleWindowDrop = async (e: DragEvent) => {
+			if (isInternalDrag(e)) return;
 			e.preventDefault();
 			e.stopPropagation();
 

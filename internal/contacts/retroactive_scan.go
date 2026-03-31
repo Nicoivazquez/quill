@@ -89,9 +89,14 @@ func (s *RetroactiveScanService) ScanForContact(ctx context.Context, contactID u
 
 	// Must have a ready voice signature.
 	if contact.SignatureStatus != "ready" {
+		logger.Info("retroactive scan: skipping — contact signature not ready",
+			"contact_id", contactID, "contact_name", contact.Name,
+			"signature_status", contact.SignatureStatus)
 		return result, nil
 	}
 	if contact.SignatureEmbeddingPath == nil || *contact.SignatureEmbeddingPath == "" {
+		logger.Info("retroactive scan: skipping — no embedding path",
+			"contact_id", contactID, "contact_name", contact.Name)
 		return result, nil
 	}
 
@@ -123,17 +128,29 @@ func (s *RetroactiveScanService) ScanForContact(ctx context.Context, contactID u
 		Vector:      contactVec,
 	}
 
+	logger.Info("retroactive scan: starting",
+		"contact_id", contactID, "contact_name", contact.Name,
+		"eligible_jobs", len(jobs))
+
 	for i := range jobs {
 		job := &jobs[i]
+
+		// Dereference title pointer for logging.
+		jobTitle := ""
+		if job.Title != nil {
+			jobTitle = *job.Title
+		}
 
 		speakerEmbeddings, extractErr := s.extractFunc(ctx, job, vault.Path)
 		if extractErr != nil {
 			logger.Warn("retroactive scan: extraction failed",
-				"job_id", job.ID, "error", extractErr)
+				"job_id", job.ID, "title", jobTitle, "error", extractErr)
 			result.Errors++
 			continue
 		}
 		if len(speakerEmbeddings) == 0 {
+			logger.Info("retroactive scan: no speaker embeddings",
+				"job_id", job.ID, "title", jobTitle)
 			continue
 		}
 
@@ -144,9 +161,18 @@ func (s *RetroactiveScanService) ScanForContact(ctx context.Context, contactID u
 		unmappedSpeakers := filterUnmappedSpeakers(speakerEmbeddings, existingMappings)
 
 		if len(unmappedSpeakers) == 0 {
+			logger.Info("retroactive scan: all speakers already mapped",
+				"job_id", job.ID, "title", jobTitle,
+				"total_speakers", len(speakerEmbeddings),
+				"existing_mappings", len(existingMappings))
 			result.Skipped++
 			continue
 		}
+
+		logger.Info("retroactive scan: processing job",
+			"job_id", job.ID, "title", jobTitle,
+			"unmapped_speakers", len(unmappedSpeakers),
+			"total_speakers", len(speakerEmbeddings))
 
 		// Match remaining speakers against the single contact.
 		matchResult := MatchSpeakers(unmappedSpeakers, []ContactEmbedding{contactEmb})
@@ -167,6 +193,14 @@ func (s *RetroactiveScanService) ScanForContact(ctx context.Context, contactID u
 				guesses := ParseLLMSpeakerGuesses(llmResp, speakerLabels)
 				fusedMatches = FuseScores(matchResult.Matches, guesses)
 			}
+		}
+
+		// Log every match result for diagnostics.
+		for _, m := range fusedMatches {
+			logger.Info("retroactive scan: match result",
+				"job_id", job.ID, "title", jobTitle,
+				"speaker", m.Speaker, "contact", m.ContactName,
+				"score", fmt.Sprintf("%.4f", m.Score), "tier", string(m.Tier))
 		}
 
 		jobMatched := false
@@ -235,11 +269,12 @@ func filterUnmappedSpeakers(
 	return result
 }
 
-// persistRetroactiveMapping creates a speaker mapping from a retroactive scan
-// match, marking it with MatchSource="retroactive".
+// persistRetroactiveMapping upserts a speaker mapping from a retroactive scan
+// match, marking it with MatchSource="retroactive".  Uses upsert so that
+// pre-existing raw mappings (from the backfill) are updated in place.
 func (s *RetroactiveScanService) persistRetroactiveMapping(ctx context.Context, jobID string, m SpeakerMatch, reviewStatus string) error {
 	contactID := m.ContactID
-	mapping := &models.SpeakerMapping{
+	mapping := models.SpeakerMapping{
 		TranscriptionJobID: jobID,
 		OriginalSpeaker:    m.Speaker,
 		CustomName:         m.ContactName,
@@ -249,5 +284,6 @@ func (s *RetroactiveScanService) persistRetroactiveMapping(ctx context.Context, 
 		MatchTier:          string(m.Tier),
 		ReviewStatus:       reviewStatus,
 	}
-	return s.speakerMapRepo.Create(ctx, mapping)
+	_, err := s.speakerMapRepo.UpsertMapping(ctx, jobID, mapping)
+	return err
 }

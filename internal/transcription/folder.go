@@ -153,6 +153,57 @@ func ListFoldersOnDisk(transcriptsDir string) ([]string, error) {
 	return folders, nil
 }
 
+// MoveFolderOnDisk moves a folder into another parent folder under Transcripts/.
+// If destParent is empty, moves to the Transcripts root.
+// Prevents circular moves (moving a folder into its own subtree).
+func MoveFolderOnDisk(transcriptsDir, srcFolder, destParent string) error {
+	if err := validateFolderPath(transcriptsDir, srcFolder); err != nil {
+		return err
+	}
+	if destParent != "" {
+		if err := validateFolderPath(transcriptsDir, destParent); err != nil {
+			return err
+		}
+	}
+
+	srcPath := filepath.Join(transcriptsDir, srcFolder)
+	if _, err := os.Stat(srcPath); err != nil {
+		return fmt.Errorf("source folder not found: %w", err)
+	}
+
+	folderName := filepath.Base(srcFolder)
+	var newPath string
+	if destParent == "" {
+		newPath = filepath.Join(transcriptsDir, folderName)
+	} else {
+		newPath = filepath.Join(transcriptsDir, destParent, folderName)
+	}
+
+	// No-op if already in the right place
+	if filepath.Clean(srcPath) == filepath.Clean(newPath) {
+		return nil
+	}
+
+	// Prevent circular move: destination cannot be inside source
+	cleanSrc := filepath.Clean(srcPath) + string(filepath.Separator)
+	cleanDest := filepath.Clean(newPath)
+	if strings.HasPrefix(cleanDest, cleanSrc) {
+		return fmt.Errorf("cannot move folder into itself or its own subtree (circular move)")
+	}
+
+	// Guard: destination must not already exist
+	if _, err := os.Stat(newPath); err == nil {
+		return fmt.Errorf("destination already exists: %s", newPath)
+	}
+
+	// Ensure parent directory exists
+	if err := os.MkdirAll(filepath.Dir(newPath), 0755); err != nil {
+		return fmt.Errorf("creating destination parent: %w", err)
+	}
+
+	return os.Rename(srcPath, newPath)
+}
+
 // findTranscriptsRoot walks up from a bundle directory to find the Transcripts/ root.
 func findTranscriptsRoot(bundleDir string) string {
 	dir := filepath.Dir(bundleDir)

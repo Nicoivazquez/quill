@@ -183,6 +183,7 @@ func SetupRoutes(handler *Handler, authService *auth.AuthService) *gin.Engine {
 			transcription.GET("/folders", handler.ListFolders)
 			transcription.POST("/folders", handler.CreateFolder)
 			transcription.PUT("/folders/rename", handler.RenameFolder)
+			transcription.PUT("/folders/move", handler.MoveFolder)
 			transcription.DELETE("/folders", handler.DeleteFolder)
 			transcription.PUT("/:id/folder", handler.MoveTranscriptToFolder)
 		}

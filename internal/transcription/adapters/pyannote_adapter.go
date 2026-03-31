@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -128,27 +129,6 @@ func NewPyAnnoteAdapter(envPath string) *PyAnnoteAdapter {
 			Group:       "advanced",
 		},
 
-		// Quality settings
-		{
-			Name:        "segmentation_onset",
-			Type:        "float",
-			Required:    false,
-			Default:     0.5,
-			Min:         &[]float64{0.0}[0],
-			Max:         &[]float64{1.0}[0],
-			Description: "Voice activity detection onset threshold",
-			Group:       "advanced",
-		},
-		{
-			Name:        "segmentation_offset",
-			Type:        "float",
-			Required:    false,
-			Default:     0.363,
-			Min:         &[]float64{0.0}[0],
-			Max:         &[]float64{1.0}[0],
-			Description: "Voice activity detection offset threshold",
-			Group:       "advanced",
-		},
 		{
 			Name:        "auto_convert_audio",
 			Type:        "bool",
@@ -188,8 +168,11 @@ func (p *PyAnnoteAdapter) PrepareEnvironment(ctx context.Context) error {
 		return fmt.Errorf("failed to create diarization script: %w", err)
 	}
 
+	// Check if dependencies changed (e.g. pyannote version pin update)
+	needsResync := p.pyprojectChanged()
+
 	// Check if PyAnnote is already available (using cache to speed up repeated checks)
-	if CheckEnvironmentReady(p.envPath, "from pyannote.audio import Pipeline") {
+	if !needsResync && CheckEnvironmentReady(p.envPath, "from pyannote.audio import Pipeline") {
 		logger.Info("PyAnnote already available in environment")
 		// Still ensure script exists
 		if err := p.copyDiarizationScript(); err != nil {
@@ -197,6 +180,10 @@ func (p *PyAnnoteAdapter) PrepareEnvironment(ctx context.Context) error {
 		}
 		p.initialized = true
 		return nil
+	}
+
+	if needsResync {
+		logger.Info("PyAnnote pyproject.toml changed, re-syncing environment")
 	}
 
 	// Create environment if it doesn't exist or is incomplete
@@ -215,6 +202,26 @@ func (p *PyAnnoteAdapter) PrepareEnvironment(ctx context.Context) error {
 	return nil
 }
 
+// applyPyprojectTransforms applies all dynamic transformations to the embedded
+// pyproject.toml content: CUDA URL replacement and platform-scoped environments
+// to prevent cross-platform resolution failures (e.g. cu126 index lacks torch<2.6.0).
+func applyPyprojectTransforms(content string) string {
+	// Replace the hardcoded PyTorch URL with the dynamic one based on environment
+	result := strings.Replace(content, "https://download.pytorch.org/whl/cu126", GetPyTorchWheelURL(), 1)
+
+	// Add platform-specific environment constraint so uv only resolves for the
+	// current OS. Without this, uv tries to resolve all platform splits and fails
+	// when a CUDA index lacks compatible torch versions for our constraints.
+	envConstraint := `"sys_platform == 'darwin'"`
+	if runtime.GOOS == "linux" {
+		envConstraint = `"sys_platform == 'linux'"`
+	}
+	result = strings.Replace(result, "[tool.uv.sources]",
+		fmt.Sprintf("[tool.uv]\nenvironments = [%s]\n\n[tool.uv.sources]", envConstraint), 1)
+
+	return result
+}
+
 // setupPyAnnoteEnvironment creates the Python environment
 func (p *PyAnnoteAdapter) setupPyAnnoteEnvironment() error {
 	if err := os.MkdirAll(p.envPath, 0755); err != nil {
@@ -227,18 +234,17 @@ func (p *PyAnnoteAdapter) setupPyAnnoteEnvironment() error {
 		return fmt.Errorf("failed to read embedded pyproject.toml: %w", err)
 	}
 
-	// Replace the hardcoded PyTorch URL with the dynamic one based on environment
-	// The static file contains the default cu126 URL
-	contentStr := strings.Replace(
-		string(pyprojectContent),
-		"https://download.pytorch.org/whl/cu126",
-		GetPyTorchWheelURL(),
-		1,
-	)
+	contentStr := applyPyprojectTransforms(string(pyprojectContent))
 
 	pyprojectPath := filepath.Join(p.envPath, "pyproject.toml")
 	if err := os.WriteFile(pyprojectPath, []byte(contentStr), 0644); err != nil {
 		return fmt.Errorf("failed to write pyproject.toml: %w", err)
+	}
+
+	// Remove stale lock file to force fresh resolution with new constraints
+	lockPath := filepath.Join(p.envPath, "uv.lock")
+	if _, err := os.Stat(lockPath); err == nil {
+		os.Remove(lockPath)
 	}
 
 	// Run uv sync
@@ -251,6 +257,24 @@ func (p *PyAnnoteAdapter) setupPyAnnoteEnvironment() error {
 	}
 
 	return nil
+}
+
+// pyprojectChanged returns true if the embedded pyproject.toml differs from the
+// one on disk, indicating dependencies need to be re-synced.
+func (p *PyAnnoteAdapter) pyprojectChanged() bool {
+	embeddedContent, err := pyannoteScripts.ReadFile("py/pyannote/pyproject.toml")
+	if err != nil {
+		return false
+	}
+
+	expected := applyPyprojectTransforms(string(embeddedContent))
+
+	diskContent, err := os.ReadFile(filepath.Join(p.envPath, "pyproject.toml"))
+	if err != nil {
+		return true // file missing, needs setup
+	}
+
+	return string(diskContent) != expected
 }
 
 // copyDiarizationScript creates the Python script for PyAnnote diarization
@@ -319,12 +343,15 @@ func (p *PyAnnoteAdapter) Diarize(ctx context.Context, input interfaces.AudioInp
 	cmd := exec.CommandContext(ctx, binaries.UV(), args...)
 	cmd.Env = append(os.Environ(), "PYTHONUNBUFFERED=1")
 
-	// Setup log file
-	logFile, err := os.OpenFile(filepath.Join(procCtx.OutputDirectory, "transcription.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	// Setup log file — write diagnostic markers and capture stderr separately
+	// so we can see errors even when the Python process crashes.
+	logPath := filepath.Join(procCtx.OutputDirectory, "transcription.log")
+	logFile, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		logger.Warn("Failed to create log file", "error", err)
 	} else {
 		defer logFile.Close()
+		fmt.Fprintf(logFile, "\n[diarization] Starting PyAnnote speaker diarization...\n")
 		cmd.Stdout = logFile
 		cmd.Stderr = logFile
 	}
@@ -332,12 +359,15 @@ func (p *PyAnnoteAdapter) Diarize(ctx context.Context, input interfaces.AudioInp
 	logger.Info("Executing PyAnnote command", "args", strings.Join(args, " "))
 
 	if err := cmd.Run(); err != nil {
+		errMsg := fmt.Sprintf("PyAnnote execution failed: %v", err)
+		if logFile != nil {
+			fmt.Fprintf(logFile, "\n[diarization] ERROR: %s\n", errMsg)
+		}
+
 		if ctx.Err() == context.Canceled {
 			return nil, fmt.Errorf("diarization was cancelled")
 		}
 
-		// Read tail of log file for context
-		logPath := filepath.Join(procCtx.OutputDirectory, "transcription.log")
 		logTail, readErr := p.ReadLogTail(logPath, 2048)
 		if readErr != nil {
 			logger.Warn("Failed to read log tail", "error", readErr)
@@ -345,6 +375,10 @@ func (p *PyAnnoteAdapter) Diarize(ctx context.Context, input interfaces.AudioInp
 
 		logger.Error("PyAnnote execution failed", "error", err)
 		return nil, fmt.Errorf("PyAnnote execution failed: %w\nLogs:\n%s", err, logTail)
+	}
+
+	if logFile != nil {
+		fmt.Fprintf(logFile, "\n[diarization] PyAnnote completed successfully\n")
 	}
 
 	// Parse result
@@ -398,14 +432,6 @@ func (p *PyAnnoteAdapter) buildPyAnnoteArgs(input interfaces.AudioInput, params 
 
 	// Add output format
 	args = append(args, "--output-format", outputFormat)
-
-	// Add segmentation thresholds if provided
-	if onset := p.GetFloatParameter(params, "segmentation_onset"); onset > 0 {
-		args = append(args, "--segmentation-onset", fmt.Sprintf("%.3f", onset))
-	}
-	if offset := p.GetFloatParameter(params, "segmentation_offset"); offset > 0 {
-		args = append(args, "--segmentation-offset", fmt.Sprintf("%.3f", offset))
-	}
 
 	// Device is handled automatically by the script
 
@@ -504,7 +530,7 @@ func (p *PyAnnoteAdapter) parseRTTMResult(tempDir string, input interfaces.Audio
 		}
 
 		end := start + duration
-		speaker := parts[7]
+		speaker := strings.ToLower(parts[7])
 		speakers[speaker] = true
 
 		segments = append(segments, interfaces.DiarizationSegment{

@@ -9,6 +9,7 @@ import {
     Trash2,
     FileAudio,
     MoreHorizontal,
+    FolderInput,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { sanitizeInputValue } from "@/lib/filename-validation";
@@ -34,6 +35,8 @@ import {
     useCreateFolder,
     useRenameFolder,
     useDeleteFolder,
+    useMoveFolder,
+    useMoveToFolder,
 } from "@/features/transcription/hooks/useFolders";
 
 interface FolderSidebarProps {
@@ -71,6 +74,10 @@ function buildFolderTree(folders: string[]): FolderNode[] {
     return root;
 }
 
+// Drag data type constants
+export const DND_TYPE_FILES = "application/x-quill-files";
+export const DND_TYPE_FOLDER = "application/x-quill-folder";
+
 function FolderTreeItem({
     node,
     level,
@@ -78,6 +85,11 @@ function FolderTreeItem({
     onSelect,
     onRename,
     onDelete,
+    onCreateSubfolder,
+    onDropFiles,
+    onDropFolder,
+    creatingSubfolderIn,
+    renderSubfolderInput,
 }: {
     node: FolderNode;
     level: number;
@@ -85,19 +97,74 @@ function FolderTreeItem({
     onSelect: (folder: string) => void;
     onRename: (oldName: string) => void;
     onDelete: (name: string) => void;
+    onCreateSubfolder: (parentPath: string) => void;
+    onDropFiles: (jobIds: string[], targetFolder: string) => void;
+    onDropFolder: (srcFolder: string, destParent: string) => void;
+    creatingSubfolderIn: string | null;
+    renderSubfolderInput: (parentPath: string, level: number) => React.ReactNode;
 }) {
     const [expanded, setExpanded] = useState(true);
+    const [dragOver, setDragOver] = useState(false);
     const hasChildren = node.children.length > 0;
     const isSelected = selectedFolder === node.path;
+
+    const handleDragOver = useCallback((e: React.DragEvent) => {
+        if (e.dataTransfer.types.includes(DND_TYPE_FILES) || e.dataTransfer.types.includes(DND_TYPE_FOLDER)) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+            setDragOver(true);
+        }
+    }, []);
+
+    const handleDragLeave = useCallback((e: React.DragEvent) => {
+        // Only clear if leaving the folder item itself (not entering a child)
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+            setDragOver(false);
+        }
+    }, []);
+
+    const handleDrop = useCallback((e: React.DragEvent) => {
+        e.preventDefault();
+        setDragOver(false);
+
+        const filesData = e.dataTransfer.getData(DND_TYPE_FILES);
+        if (filesData) {
+            try {
+                const jobIds = JSON.parse(filesData) as string[];
+                onDropFiles(jobIds, node.path);
+            } catch { /* ignore parse errors */ }
+            return;
+        }
+
+        const folderData = e.dataTransfer.getData(DND_TYPE_FOLDER);
+        if (folderData) {
+            // Don't allow dropping a folder onto itself
+            if (folderData !== node.path && !node.path.startsWith(folderData + "/")) {
+                onDropFolder(folderData, node.path);
+            }
+        }
+    }, [node.path, onDropFiles, onDropFolder]);
+
+    const handleDragStart = useCallback((e: React.DragEvent) => {
+        e.dataTransfer.setData(DND_TYPE_FOLDER, node.path);
+        e.dataTransfer.effectAllowed = "move";
+    }, [node.path]);
 
     return (
         <div>
             <div
+                draggable
+                onDragStart={handleDragStart}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
                 className={cn(
                     "group flex items-center gap-1 py-1.5 px-2 rounded-[var(--radius-btn)] cursor-pointer transition-colors text-sm",
                     "hover:bg-[var(--bg-elevated)]",
                     isSelected &&
-                        "bg-[var(--brand-light)] dark:bg-[var(--accent)] text-[var(--brand-solid)] font-medium"
+                        "bg-[var(--brand-light)] dark:bg-[var(--accent)] text-[var(--brand-solid)] font-medium",
+                    dragOver &&
+                        "ring-2 ring-[var(--brand-solid)] bg-[var(--brand-light)] dark:bg-[var(--accent)]"
                 )}
                 style={{ paddingLeft: `${level * 16 + 8}px` }}
                 onClick={() => onSelect(node.path)}
@@ -137,7 +204,11 @@ function FolderTreeItem({
                             <MoreHorizontal className="h-3.5 w-3.5 text-[var(--text-tertiary)]" />
                         </button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-40">
+                    <DropdownMenuContent align="end" className="w-44">
+                        <DropdownMenuItem onClick={() => onCreateSubfolder(node.path)}>
+                            <FolderPlus className="h-3.5 w-3.5 mr-2" />
+                            New Subfolder
+                        </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => onRename(node.path)}>
                             <Pencil className="h-3.5 w-3.5 mr-2" />
                             Rename
@@ -153,7 +224,7 @@ function FolderTreeItem({
                 </DropdownMenu>
             </div>
 
-            {hasChildren && expanded && (
+            {(hasChildren || creatingSubfolderIn === node.path) && expanded && (
                 <div>
                     {node.children.map((child) => (
                         <FolderTreeItem
@@ -164,8 +235,14 @@ function FolderTreeItem({
                             onSelect={onSelect}
                             onRename={onRename}
                             onDelete={onDelete}
+                            onCreateSubfolder={onCreateSubfolder}
+                            onDropFiles={onDropFiles}
+                            onDropFolder={onDropFolder}
+                            creatingSubfolderIn={creatingSubfolderIn}
+                            renderSubfolderInput={renderSubfolderInput}
                         />
                     ))}
+                    {renderSubfolderInput(node.path, level)}
                 </div>
             )}
         </div>
@@ -177,15 +254,21 @@ export function FolderSidebar({ selectedFolder, onFolderSelect }: FolderSidebarP
     const createFolder = useCreateFolder();
     const renameFolder = useRenameFolder();
     const deleteFolder = useDeleteFolder();
+    const moveFolder = useMoveFolder();
+    const moveToFolder = useMoveToFolder();
 
     const [isCreating, setIsCreating] = useState(false);
     const [newFolderName, setNewFolderName] = useState("");
     const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
     const [renameValue, setRenameValue] = useState("");
     const [deletingFolder, setDeletingFolder] = useState<string | null>(null);
+    const [creatingSubfolderIn, setCreatingSubfolderIn] = useState<string | null>(null);
+    const [subfolderName, setSubfolderName] = useState("");
+    const [rootDragOver, setRootDragOver] = useState(false);
 
     const createInputRef = useRef<HTMLInputElement>(null);
     const renameInputRef = useRef<HTMLInputElement>(null);
+    const subfolderInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         if (isCreating && createInputRef.current) {
@@ -199,6 +282,12 @@ export function FolderSidebar({ selectedFolder, onFolderSelect }: FolderSidebarP
             renameInputRef.current.select();
         }
     }, [renamingFolder]);
+
+    useEffect(() => {
+        if (creatingSubfolderIn && subfolderInputRef.current) {
+            subfolderInputRef.current.focus();
+        }
+    }, [creatingSubfolderIn]);
 
     const tree = buildFolderTree(folders);
 
@@ -216,6 +305,23 @@ export function FolderSidebar({ selectedFolder, onFolderSelect }: FolderSidebarP
             // Error handled by mutation
         }
     }, [newFolderName, createFolder]);
+
+    const handleCreateSubfolder = useCallback(async () => {
+        const name = subfolderName.trim();
+        if (!name || !creatingSubfolderIn) {
+            setCreatingSubfolderIn(null);
+            setSubfolderName("");
+            return;
+        }
+        const fullPath = `${creatingSubfolderIn}/${name}`;
+        try {
+            await createFolder.mutateAsync(fullPath);
+            setSubfolderName("");
+            setCreatingSubfolderIn(null);
+        } catch {
+            // Error handled by mutation
+        }
+    }, [subfolderName, creatingSubfolderIn, createFolder]);
 
     const handleRename = useCallback(async () => {
         const newSegment = renameValue.trim();
@@ -262,6 +368,90 @@ export function FolderSidebar({ selectedFolder, onFolderSelect }: FolderSidebarP
         setRenameValue(parts[parts.length - 1]);
     }, []);
 
+    const startCreateSubfolder = useCallback((parentPath: string) => {
+        setCreatingSubfolderIn(parentPath);
+        setSubfolderName("");
+    }, []);
+
+    const handleDropFiles = useCallback(async (jobIds: string[], targetFolder: string) => {
+        for (const jobId of jobIds) {
+            try {
+                await moveToFolder.mutateAsync({ jobId, folder: targetFolder });
+            } catch {
+                // Error handled by mutation
+            }
+        }
+    }, [moveToFolder]);
+
+    const handleDropFolder = useCallback(async (srcFolder: string, destParent: string) => {
+        try {
+            await moveFolder.mutateAsync({ folder: srcFolder, destParent });
+        } catch {
+            // Error handled by mutation
+        }
+    }, [moveFolder]);
+
+    // Handle drop on "Unfiled" (root) — move files out of folders
+    const handleRootDragOver = useCallback((e: React.DragEvent) => {
+        if (e.dataTransfer.types.includes(DND_TYPE_FILES) || e.dataTransfer.types.includes(DND_TYPE_FOLDER)) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+            setRootDragOver(true);
+        }
+    }, []);
+
+    const handleRootDragLeave = useCallback((e: React.DragEvent) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+            setRootDragOver(false);
+        }
+    }, []);
+
+    const handleRootDrop = useCallback((e: React.DragEvent) => {
+        e.preventDefault();
+        setRootDragOver(false);
+
+        const filesData = e.dataTransfer.getData(DND_TYPE_FILES);
+        if (filesData) {
+            try {
+                const jobIds = JSON.parse(filesData) as string[];
+                handleDropFiles(jobIds, "");
+            } catch { /* ignore */ }
+            return;
+        }
+
+        const folderData = e.dataTransfer.getData(DND_TYPE_FOLDER);
+        if (folderData) {
+            handleDropFolder(folderData, "");
+        }
+    }, [handleDropFiles, handleDropFolder]);
+
+    // Render the subfolder input inline beneath the target folder's children
+    const renderSubfolderInput = useCallback((parentPath: string, level: number) => {
+        if (creatingSubfolderIn !== parentPath) return null;
+        return (
+            <div className="px-2 py-1" style={{ paddingLeft: `${(level + 1) * 16 + 8}px` }}>
+                <div className="flex items-center gap-1.5">
+                    <FolderPlus className="h-3.5 w-3.5 text-[var(--brand-solid)] flex-shrink-0" />
+                    <input
+                        ref={subfolderInputRef}
+                        value={subfolderName}
+                        onChange={(e) => setSubfolderName(sanitizeInputValue(e.target.value))}
+                        onBlur={handleCreateSubfolder}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter") handleCreateSubfolder();
+                            if (e.key === "Escape") {
+                                setCreatingSubfolderIn(null);
+                                setSubfolderName("");
+                            }
+                        }}
+                        placeholder="Subfolder name..."
+                        className="flex-1 px-2 py-0.5 text-sm rounded border border-[var(--brand-solid)] bg-[var(--bg-elevated)] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
+                    />
+                </div>
+            </div>
+        );
+    }, [creatingSubfolderIn, subfolderName, handleCreateSubfolder]);
+
     return (
         <div className="flex flex-col h-full">
             {/* Header */}
@@ -295,17 +485,22 @@ export function FolderSidebar({ selectedFolder, onFolderSelect }: FolderSidebarP
                     <span>All Files</span>
                 </div>
 
-                {/* Root (unfiled) */}
+                {/* Root (unfiled) — also a drop target */}
                 <div
                     className={cn(
                         "flex items-center gap-2 py-1.5 px-2 rounded-[var(--radius-btn)] cursor-pointer transition-colors text-sm",
                         "hover:bg-[var(--bg-elevated)]",
                         selectedFolder === "" &&
-                            "bg-[var(--brand-light)] dark:bg-[var(--accent)] text-[var(--brand-solid)] font-medium"
+                            "bg-[var(--brand-light)] dark:bg-[var(--accent)] text-[var(--brand-solid)] font-medium",
+                        rootDragOver &&
+                            "ring-2 ring-[var(--brand-solid)] bg-[var(--brand-light)] dark:bg-[var(--accent)]"
                     )}
                     onClick={() => onFolderSelect("")}
+                    onDragOver={handleRootDragOver}
+                    onDragLeave={handleRootDragLeave}
+                    onDrop={handleRootDrop}
                 >
-                    <Folder className="h-4 w-4 flex-shrink-0 text-[var(--text-tertiary)]" />
+                    <FolderInput className="h-4 w-4 flex-shrink-0 text-[var(--text-tertiary)]" />
                     <span>Unfiled</span>
                 </div>
 
@@ -340,15 +535,22 @@ export function FolderSidebar({ selectedFolder, onFolderSelect }: FolderSidebarP
                                 />
                             </div>
                         ) : (
-                            <FolderTreeItem
-                                key={node.path}
-                                node={node}
-                                level={0}
-                                selectedFolder={selectedFolder}
-                                onSelect={onFolderSelect}
-                                onRename={startRename}
-                                onDelete={setDeletingFolder}
-                            />
+                            <div key={node.path}>
+                                <FolderTreeItem
+                                    node={node}
+                                    level={0}
+                                    selectedFolder={selectedFolder}
+                                    onSelect={onFolderSelect}
+                                    onRename={startRename}
+                                    onDelete={setDeletingFolder}
+                                    onCreateSubfolder={startCreateSubfolder}
+                                    onDropFiles={handleDropFiles}
+                                    onDropFolder={handleDropFolder}
+                                    creatingSubfolderIn={creatingSubfolderIn}
+                                    renderSubfolderInput={renderSubfolderInput}
+                                />
+                                {renderSubfolderInput(node.path, 0)}
+                            </div>
                         )
                     )
                 )}

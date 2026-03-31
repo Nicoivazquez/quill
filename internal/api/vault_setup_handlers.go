@@ -200,16 +200,6 @@ func migrateLegacyInbox(vaultPath string) {
 	}
 }
 
-func formatMMSS(seconds float64) string {
-	if seconds < 0 {
-		seconds = 0
-	}
-	total := int(seconds)
-	minutes := total / 60
-	secs := total % 60
-	return fmt.Sprintf("%d:%02d", minutes, secs)
-}
-
 func parseTranscriptJSON(raw string) (*transcriptPayload, error) {
 	var payload transcriptPayload
 	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
@@ -579,20 +569,43 @@ func renderTranscriptMarkdown(job *models.TranscriptionJob, transcript *transcri
 		return b.String()
 	}
 
+	// Condensed view: group consecutive same-speaker segments, no timestamps.
+	var currentSpeaker string
+	var groupTexts []string
+
+	flushGroup := func() {
+		if len(groupTexts) == 0 {
+			return
+		}
+		if currentSpeaker != "" {
+			b.WriteString("**" + currentSpeaker + "**\n")
+		}
+		b.WriteString(strings.Join(groupTexts, " "))
+		b.WriteString("\n\n")
+		groupTexts = nil
+	}
+
 	for _, segment := range transcript.Segments {
-		prefix := fmt.Sprintf("[%s - %s]", formatMMSS(segment.Start), formatMMSS(segment.End))
+		speaker := ""
 		if segment.Speaker != nil && strings.TrimSpace(*segment.Speaker) != "" {
-			speaker := strings.TrimSpace(*segment.Speaker)
+			speaker = strings.TrimSpace(*segment.Speaker)
 			if name, ok := speakerNames[speaker]; ok && name != "" {
 				speaker = name
+			} else {
+				speaker = transcription.FormatSpeakerLabel(speaker)
 			}
-			prefix += " " + speaker + ":"
 		}
-		b.WriteString(prefix)
-		b.WriteString(" ")
-		b.WriteString(strings.TrimSpace(segment.Text))
-		b.WriteString("\n\n")
+
+		if speaker != currentSpeaker {
+			flushGroup()
+			currentSpeaker = speaker
+		}
+		if text := strings.TrimSpace(segment.Text); text != "" {
+			groupTexts = append(groupTexts, text)
+		}
 	}
+	flushGroup()
+
 	return b.String()
 }
 
@@ -1435,10 +1448,28 @@ func (h *Handler) OpenClawIngest(c *gin.Context) {
 		vaultID = &activeVault.ID
 	}
 
-	filePath, err := h.fileService.SaveUpload(header, ingestDir)
+	uploadResult, err := h.fileService.SaveUploadWithHash(header, ingestDir)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save file"})
 		return
+	}
+	filePath := uploadResult.FilePath
+
+	// Check for duplicate upload (skip if force=true)
+	if c.Query("force") != "true" && uploadResult.FileHash != "" {
+		if existing, findErr := h.jobRepo.FindByFileHash(c.Request.Context(), uploadResult.FileHash); findErr == nil && existing != nil {
+			_ = h.fileService.RemoveFile(filePath)
+			existingTitle := ""
+			if existing.Title != nil {
+				existingTitle = *existing.Title
+			}
+			c.JSON(http.StatusConflict, gin.H{
+				"error":          "This file has already been uploaded",
+				"existing_id":    existing.ID,
+				"existing_title": existingTitle,
+			})
+			return
+		}
 	}
 
 	jobID := strings.TrimSuffix(filepath.Base(filePath), filepath.Ext(filePath))
@@ -1448,11 +1479,13 @@ func (h *Handler) OpenClawIngest(c *gin.Context) {
 	}
 
 	job := models.TranscriptionJob{
-		ID:        jobID,
-		AudioPath: filePath,
-		VaultID:   vaultID,
-		Status:    models.StatusUploaded,
-		Title:     &title,
+		ID:               jobID,
+		AudioPath:        filePath,
+		VaultID:          vaultID,
+		Status:           models.StatusUploaded,
+		Title:            &title,
+		OriginalFilename: header.Filename,
+		FileHash:         uploadResult.FileHash,
 	}
 	if err := h.jobRepo.Create(c.Request.Context(), &job); err != nil {
 		_ = h.fileService.RemoveFile(filePath)

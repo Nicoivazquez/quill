@@ -45,6 +45,8 @@ const (
 	ModelMLXWhisper            = "mlx_whisper"
 	ModelWhisperCpp            = "whisper_cpp"
 	DiarizeSortformer          = "nvidia_sortformer"
+	DiarizeSherpaOnnx          = "sherpa-onnx"
+	ModelSherpaOnnx            = "sherpa-onnx"
 	OutputFormatJSON           = "json"
 )
 
@@ -62,7 +64,7 @@ type UnifiedTranscriptionService struct {
 	webhookService        *webhook.Service
 	broadcaster           *sse.Broadcaster
 	postMaterializeHook   func(job *models.TranscriptionJob) // Called after successful artifact materialization
-	markSelfWriteHook     func(metadataPath string)          // Called after writing metadata.json to prevent watcher re-import
+	markSelfWriteHook func(metadataPath string) // Called after writing metadata.json to prevent watcher re-import
 }
 
 // NewUnifiedTranscriptionService creates a new unified transcription service
@@ -345,7 +347,11 @@ func (u *UnifiedTranscriptionService) processSingleTrackJob(ctx context.Context,
 			"transcription_model", transcriptionModelID,
 			"diarization_model", diarizationModelID)
 
-		g, gCtx := errgroup.WithContext(ctx)
+		// Use errgroup WITHOUT derived context so that diarization failure
+		// does not cancel transcription. Transcription is the critical path;
+		// diarization is best-effort — a failure just means no speaker labels.
+		var g errgroup.Group
+		var diarizationErr error
 
 		// Transcription goroutine
 		g.Go(func() error {
@@ -353,14 +359,14 @@ func (u *UnifiedTranscriptionService) processSingleTrackJob(ctx context.Context,
 			if tErr != nil {
 				return fmt.Errorf("failed to get transcription adapter: %w", tErr)
 			}
-			if !tAdapter.IsReady(gCtx) {
+			if !tAdapter.IsReady(ctx) {
 				logger.Info("Preparing transcription model environment on demand", "model_id", transcriptionModelID)
-				if pErr := tAdapter.PrepareEnvironment(gCtx); pErr != nil {
+				if pErr := tAdapter.PrepareEnvironment(ctx); pErr != nil {
 					return fmt.Errorf("failed to prepare transcription model %s: %w", transcriptionModelID, pErr)
 				}
 			}
 			params := u.convertParametersForModel(job.Parameters, transcriptionModelID)
-			result, tErr := tAdapter.Transcribe(gCtx, preprocessedInput, params, procCtx)
+			result, tErr := tAdapter.Transcribe(ctx, preprocessedInput, params, procCtx)
 			if tErr != nil {
 				return fmt.Errorf("transcription failed: %w", tErr)
 			}
@@ -379,22 +385,39 @@ func (u *UnifiedTranscriptionService) processSingleTrackJob(ctx context.Context,
 			return nil
 		})
 
-		// Diarization goroutine
+		// Diarization goroutine — best-effort, failure is non-fatal
 		g.Go(func() error {
+			logPath := filepath.Join(procCtx.OutputDirectory, "transcription.log")
+			writeDiaLog := func(msg string) {
+				if f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
+					fmt.Fprintf(f, "\n[diarization] %s\n", msg)
+					f.Close()
+				}
+			}
+
 			dAdapter, dErr := u.registry.GetDiarizationAdapter(diarizationModelID)
 			if dErr != nil {
-				return fmt.Errorf("failed to get diarization adapter: %w", dErr)
+				diarizationErr = fmt.Errorf("failed to get diarization adapter: %w", dErr)
+				logger.Warn("Diarization skipped: adapter unavailable", "error", diarizationErr)
+				writeDiaLog(fmt.Sprintf("ERROR: adapter unavailable: %v", dErr))
+				return nil // non-fatal
 			}
-			if !dAdapter.IsReady(gCtx) {
+			if !dAdapter.IsReady(ctx) {
 				logger.Info("Preparing diarization model environment on demand", "model_id", diarizationModelID)
-				if pErr := dAdapter.PrepareEnvironment(gCtx); pErr != nil {
-					return fmt.Errorf("failed to prepare diarization model %s: %w", diarizationModelID, pErr)
+				if pErr := dAdapter.PrepareEnvironment(ctx); pErr != nil {
+					diarizationErr = fmt.Errorf("failed to prepare diarization model %s: %w", diarizationModelID, pErr)
+					logger.Warn("Diarization skipped: environment setup failed", "error", diarizationErr)
+					writeDiaLog(fmt.Sprintf("ERROR: environment setup failed: %v", pErr))
+					return nil // non-fatal
 				}
 			}
 			dParams := u.convertParametersForModel(job.Parameters, diarizationModelID)
-			result, dErr := dAdapter.Diarize(gCtx, diarizationInput, dParams, procCtx)
+			result, dErr := dAdapter.Diarize(ctx, diarizationInput, dParams, procCtx)
 			if dErr != nil {
-				return fmt.Errorf("diarization failed: %w", dErr)
+				diarizationErr = fmt.Errorf("diarization failed: %w", dErr)
+				logger.Warn("Diarization failed, transcription will proceed without speaker labels", "error", diarizationErr)
+				writeDiaLog(fmt.Sprintf("ERROR: diarization failed: %v", dErr))
+				return nil // non-fatal
 			}
 			diarizationResult = result
 			return nil
@@ -402,6 +425,10 @@ func (u *UnifiedTranscriptionService) processSingleTrackJob(ctx context.Context,
 
 		if err := g.Wait(); err != nil {
 			return err
+		}
+
+		if diarizationErr != nil {
+			logger.Warn("Proceeding without diarization results", "error", diarizationErr)
 		}
 
 		// Merge diarization results with transcription
@@ -444,24 +471,36 @@ func (u *UnifiedTranscriptionService) processSingleTrackJob(ctx context.Context,
 			}
 		}
 
-		// Perform diarization if requested and not already done by transcription
+		// Perform diarization if requested and not already done by transcription.
+		// Diarization is best-effort — failure means no speaker labels but
+		// transcription still succeeds (consistent with the parallel path).
 		if needsSeparateDiarization {
 			logger.Info("Running separate diarization", "model_id", diarizationModelID)
-			diarizationAdapter, dErr := u.registry.GetDiarizationAdapter(diarizationModelID)
-			if dErr != nil {
-				return fmt.Errorf("failed to get diarization adapter: %w", dErr)
-			}
-			if !diarizationAdapter.IsReady(ctx) {
-				logger.Info("Preparing diarization model environment on demand", "model_id", diarizationModelID)
-				if pErr := diarizationAdapter.PrepareEnvironment(ctx); pErr != nil {
-					return fmt.Errorf("failed to prepare diarization model %s: %w", diarizationModelID, pErr)
+			logPath := filepath.Join(procCtx.OutputDirectory, "transcription.log")
+			writeDiaLog := func(msg string) {
+				if f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
+					fmt.Fprintf(f, "\n[diarization] %s\n", msg)
+					f.Close()
 				}
 			}
-
-			dParams := u.convertParametersForModel(job.Parameters, diarizationModelID)
-			diarizationResult, err = diarizationAdapter.Diarize(ctx, diarizationInput, dParams, procCtx)
-			if err != nil {
-				return fmt.Errorf("diarization failed: %w", err)
+			if dResult, dErr := func() (*interfaces.DiarizationResult, error) {
+				dAdapter, aErr := u.registry.GetDiarizationAdapter(diarizationModelID)
+				if aErr != nil {
+					return nil, fmt.Errorf("adapter unavailable: %w", aErr)
+				}
+				if !dAdapter.IsReady(ctx) {
+					logger.Info("Preparing diarization model environment on demand", "model_id", diarizationModelID)
+					if pErr := dAdapter.PrepareEnvironment(ctx); pErr != nil {
+						return nil, fmt.Errorf("environment setup failed: %w", pErr)
+					}
+				}
+				dParams := u.convertParametersForModel(job.Parameters, diarizationModelID)
+				return dAdapter.Diarize(ctx, diarizationInput, dParams, procCtx)
+			}(); dErr != nil {
+				logger.Warn("Diarization failed, transcription will proceed without speaker labels", "error", dErr)
+				writeDiaLog(fmt.Sprintf("ERROR: %v", dErr))
+			} else {
+				diarizationResult = dResult
 			}
 
 			// Merge diarization results with transcription
@@ -542,6 +581,8 @@ func (u *UnifiedTranscriptionService) selectModels(params models.WhisperXParams)
 		switch params.DiarizeModel {
 		case DiarizeSortformer:
 			diarizationModelID = ModelSortformer
+		case DiarizeSherpaOnnx:
+			diarizationModelID = ModelSherpaOnnx
 		case ModelPyannote, ModelDiarization31, ModelDiarizationCommunity1:
 			diarizationModelID = ModelPyannote
 		default:
@@ -564,8 +605,8 @@ func (u *UnifiedTranscriptionService) transcriptionIncludesDiarization(modelID s
 	// WhisperX includes diarization when enabled
 	if modelID == ModelWhisperX {
 		if params.Diarize {
-			// Check if it's using nvidia_sortformer (which requires separate processing)
-			if params.DiarizeModel == DiarizeSortformer {
+			// Check if it's using a separate diarization adapter (not WhisperX's built-in pyannote)
+			if params.DiarizeModel == DiarizeSortformer || params.DiarizeModel == DiarizeSherpaOnnx {
 				return false
 			}
 			return true
@@ -707,6 +748,8 @@ func (u *UnifiedTranscriptionService) convertParametersForModel(params models.Wh
 		return u.convertToPyannoteParams(params)
 	case ModelSortformer:
 		return u.convertToSortformerParams(params)
+	case ModelSherpaOnnx:
+		return u.convertToSherpaOnnxParams(params)
 	case ModelOpenAI:
 		return u.convertToOpenAIParams(params)
 	case ModelVoxtral:
@@ -830,7 +873,7 @@ func (u *UnifiedTranscriptionService) convertToCanaryParams(params models.Whispe
 
 // convertToWhisperXParams converts to WhisperX-specific parameters
 func (u *UnifiedTranscriptionService) convertToWhisperXParams(params models.WhisperXParams) map[string]interface{} {
-	useWhisperXDiarization := params.Diarize && params.DiarizeModel != DiarizeSortformer
+	useWhisperXDiarization := params.Diarize && params.DiarizeModel != DiarizeSortformer && params.DiarizeModel != DiarizeSherpaOnnx
 
 	// For WhisperX, we use the standard WhisperX parameters (no NVIDIA-specific ones)
 	paramMap := map[string]interface{}{
@@ -909,17 +952,13 @@ func (u *UnifiedTranscriptionService) convertToPyannoteParams(params models.Whis
 	if params.MaxSpeakers != nil {
 		paramMap["max_speakers"] = *params.MaxSpeakers
 	}
-	if params.HfToken != nil {
-		paramMap["hf_token"] = *params.HfToken
-	}
 
-	// Map VAD thresholds to Pyannote segmentation parameters
-	// These control voice activity detection sensitivity for diarization
-	if params.VadOnset > 0 {
-		paramMap["segmentation_onset"] = params.VadOnset
-	}
-	if params.VadOffset > 0 {
-		paramMap["segmentation_offset"] = params.VadOffset
+	// HF token: prefer explicit job param, fall back to HF_TOKEN env var
+	// (seeded from cloud provider store at startup / on save).
+	if params.HfToken != nil && strings.TrimSpace(*params.HfToken) != "" {
+		paramMap["hf_token"] = *params.HfToken
+	} else if token := strings.TrimSpace(os.Getenv("HF_TOKEN")); token != "" {
+		paramMap["hf_token"] = token
 	}
 
 	return paramMap
@@ -930,6 +969,21 @@ func (u *UnifiedTranscriptionService) convertToSortformerParams(params models.Wh
 	paramMap := map[string]interface{}{
 		"output_format":      OutputFormatJSON,
 		"auto_convert_audio": true,
+	}
+	if params.MaxSpeakers != nil {
+		paramMap["max_speakers"] = *params.MaxSpeakers
+	}
+	return paramMap
+}
+
+// convertToSherpaOnnxParams converts to sherpa-onnx diarization parameters
+func (u *UnifiedTranscriptionService) convertToSherpaOnnxParams(params models.WhisperXParams) map[string]interface{} {
+	paramMap := map[string]interface{}{
+		"output_format":      OutputFormatJSON,
+		"auto_convert_audio": true,
+	}
+	if params.MinSpeakers != nil {
+		paramMap["min_speakers"] = *params.MinSpeakers
 	}
 	if params.MaxSpeakers != nil {
 		paramMap["max_speakers"] = *params.MaxSpeakers
@@ -1205,6 +1259,8 @@ func renderMarkdownTranscript(job *models.TranscriptionJob, payload *markdownTra
 			speaker = strings.TrimSpace(*segment.Speaker)
 			if name, ok := speakerNames[speaker]; ok && name != "" {
 				speaker = name
+			} else {
+				speaker = FormatSpeakerLabel(speaker)
 			}
 		}
 
@@ -1230,26 +1286,35 @@ func (u *UnifiedTranscriptionService) materializeTranscriptArtifacts(ctx context
 	var activeVault models.Vault
 	vaultErr := database.DB.WithContext(ctx).Where("is_active = ?", true).First(&activeVault).Error
 
+	// Re-transcription: reuse the existing bundle directory if it exists on disk.
+	// This prevents creating duplicate " 2" directories via BundleTargetDir.
 	var targetDir string
-	if vaultErr == nil {
-		title := "transcript"
-		if job.Title != nil && strings.TrimSpace(*job.Title) != "" {
-			title = *job.Title
+	if job.ArtifactDir != nil && *job.ArtifactDir != "" {
+		if _, statErr := os.Stat(*job.ArtifactDir); statErr == nil {
+			targetDir = *job.ArtifactDir
+			logger.Info("materialize: re-transcription — reusing existing bundle dir",
+				"job_id", jobID, "dir", targetDir)
+			if vaultErr == nil {
+				job.VaultID = &activeVault.ID
+			}
 		}
-		targetDir = BundleTargetDir(activeVault.Path, title, job.ID)
-		job.VaultID = &activeVault.ID
-	} else {
-		targetDir = filepath.Join(u.outputDirectory, job.ID)
 	}
 
-	// Debug: log computed paths vs existing for re-transcription diagnosis
-	existingDir := ""
-	if job.ArtifactDir != nil {
-		existingDir = *job.ArtifactDir
+	// First transcription (or existing dir was deleted): compute a new bundle dir.
+	if targetDir == "" {
+		if vaultErr == nil {
+			title := "transcript"
+			if job.Title != nil && strings.TrimSpace(*job.Title) != "" {
+				title = *job.Title
+			}
+			targetDir = BundleTargetDir(activeVault.Path, title, job.ID)
+			job.VaultID = &activeVault.ID
+		} else {
+			targetDir = filepath.Join(u.outputDirectory, job.ID)
+		}
+		logger.Debug("materialize: new bundle dir",
+			"job_id", jobID, "target_dir", targetDir)
 	}
-	logger.Debug("materialize: computed target dir",
-		"job_id", jobID, "target_dir", targetDir, "existing_dir", existingDir,
-		"audio_path", job.AudioPath, "title", job.Title)
 
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		return err

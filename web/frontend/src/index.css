@@ -438,6 +438,21 @@ body[style*="padding"] {
   background-color: var(--scroll-thumb-hover);
 }
 
+/* Transcript Search Highlights (CSS Custom Highlight API) */
+::highlight(search-match) {
+  background-color: rgba(107, 63, 160, 0.12);
+  text-decoration: underline wavy var(--brand-solid);
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+
+::highlight(search-match-active) {
+  background-color: rgba(107, 63, 160, 0.28);
+  text-decoration: underline wavy var(--brand-solid);
+  text-underline-offset: 3px;
+  text-decoration-thickness: 2px;
+}
+
 /* Chat Specifics */
 .chat-shell {
   @apply font-sans text-base leading-relaxed;

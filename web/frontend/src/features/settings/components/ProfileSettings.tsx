@@ -450,7 +450,7 @@ export function ProfileSettings() {
 						Hugging Face Token
 					</h3>
 					<p className="text-sm text-[var(--text-secondary)] mt-1">
-						Required for Pyannote speaker diarization. Not needed if you only use NVIDIA Sortformer.
+						Required for Pyannote speaker diarization. Not needed if you use NVIDIA Sortformer or sherpa-onnx.
 					</p>
 				</div>
 
@@ -536,13 +536,9 @@ export function ProfileSettings() {
 									</a>
 								</li>
 								<li>
-									Accept the model licenses for{" "}
-									<a href="https://huggingface.co/pyannote/speaker-diarization-3.1" target="_blank" rel="noreferrer" className="text-[var(--brand-solid)] underline underline-offset-2">
-										pyannote/speaker-diarization-3.1
-									</a>{" "}
-									and{" "}
-									<a href="https://huggingface.co/pyannote/segmentation-3.0" target="_blank" rel="noreferrer" className="text-[var(--brand-solid)] underline underline-offset-2">
-										pyannote/segmentation-3.0
+									Accept the model conditions for{" "}
+									<a href="https://huggingface.co/pyannote/speaker-diarization-community-1" target="_blank" rel="noreferrer" className="text-[var(--brand-solid)] underline underline-offset-2">
+										pyannote/speaker-diarization-community-1
 									</a>
 								</li>
 								<li>

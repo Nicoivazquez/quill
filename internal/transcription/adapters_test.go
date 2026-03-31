@@ -154,6 +154,11 @@ func (m *MockJobRepository) BulkUpdateFolder(ctx context.Context, oldFolder stri
 	return args.Get(0).(int64), args.Error(1)
 }
 
+func (m *MockJobRepository) BulkUpdateFolderPrefix(ctx context.Context, oldPrefix, newPrefix string, vaultID *uint) (int64, error) {
+	args := m.Called(ctx, oldPrefix, newPrefix, vaultID)
+	return args.Get(0).(int64), args.Error(1)
+}
+
 func (m *MockJobRepository) UpdateBundlePaths(ctx context.Context, jobID string, artifactDir, audioPath, jsonPath, mdPath *string, folder *string) error {
 	args := m.Called(ctx, jobID, artifactDir, audioPath, jsonPath, mdPath, folder)
 	return args.Error(0)
@@ -165,6 +170,14 @@ func (m *MockJobRepository) FindByIDs(ctx context.Context, ids []string) ([]mode
 		return nil, args.Error(1)
 	}
 	return args.Get(0).([]models.TranscriptionJob), args.Error(1)
+}
+
+func (m *MockJobRepository) FindByFileHash(ctx context.Context, hash string) (*models.TranscriptionJob, error) {
+	args := m.Called(ctx, hash)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.TranscriptionJob), args.Error(1)
 }
 
 // MockTranscriptionAdapter is a mock implementation of TranscriptionAdapter

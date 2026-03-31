@@ -133,8 +133,17 @@ func (h *Handler) UpdateSpeakerMappings(c *gin.Context) {
 	// Resolve vault for contact linking (best-effort — don't block save).
 	vault, _ := resolveJobVault(c.Request.Context(), job)
 
-	// Convert request to model — user-entered mappings are always "manual".
-	// When the custom_name matches an existing contact, auto-link via contact_id.
+	// Load existing mappings so we can preserve auto-identified metadata
+	// for speakers whose names haven't changed.
+	existingMappings, _ := h.speakerMappingRepo.ListByJob(c.Request.Context(), jobID)
+	existingByKey := make(map[string]models.SpeakerMapping)
+	for _, em := range existingMappings {
+		existingByKey[em.OriginalSpeaker] = em
+	}
+
+	// Convert request to model.  When the custom_name matches an existing
+	// auto-identified mapping, preserve its metadata (confidence, contact_id,
+	// match_source, match_tier).  Otherwise mark as "manual".
 	var mappings []models.SpeakerMapping
 	for _, mapping := range req.Mappings {
 		m := models.SpeakerMapping{
@@ -143,7 +152,22 @@ func (h *Handler) UpdateSpeakerMappings(c *gin.Context) {
 			CustomName:         mapping.CustomName,
 			MatchSource:        "manual",
 		}
-		if vault != nil && h.contactRepo != nil {
+
+		if existing, ok := existingByKey[mapping.OriginalSpeaker]; ok && existing.CustomName == mapping.CustomName {
+			// Name unchanged — preserve the original metadata.
+			m.MatchSource = existing.MatchSource
+			m.MatchTier = existing.MatchTier
+			m.ContactID = existing.ContactID
+			m.ConfidenceScore = existing.ConfidenceScore
+			m.ReviewStatus = existing.ReviewStatus
+		}
+
+		// If match_source is still empty (legacy data), default to "manual".
+		if m.MatchSource == "" {
+			m.MatchSource = "manual"
+		}
+
+		if vault != nil && h.contactRepo != nil && m.ContactID == nil {
 			if contact, err := h.contactRepo.FindByNameInVault(c.Request.Context(), vault.ID, mapping.CustomName); err == nil {
 				cid := contact.ID
 				m.ContactID = &cid

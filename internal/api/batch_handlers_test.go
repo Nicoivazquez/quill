@@ -24,6 +24,9 @@ type noopFileService struct{}
 func (n *noopFileService) SaveUpload(_ *multipart.FileHeader, _ string) (string, error) {
 	return "", nil
 }
+func (n *noopFileService) SaveUploadWithHash(_ *multipart.FileHeader, _ string) (*service.SaveUploadResult, error) {
+	return &service.SaveUploadResult{}, nil
+}
 func (n *noopFileService) CreateDirectory(_ string) error             { return nil }
 func (n *noopFileService) RemoveFile(_ string) error                  { return nil }
 func (n *noopFileService) RemoveDirectory(_ string) error             { return nil }

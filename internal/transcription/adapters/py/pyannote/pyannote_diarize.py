@@ -8,7 +8,48 @@ import argparse
 import json
 import sys
 import os
+import functools
 from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# Compatibility shim: older pyannote.audio internally passes the deprecated
+# `use_auth_token` kwarg to huggingface_hub functions.  Newer huggingface_hub
+# (>=0.24) removed it entirely, causing a TypeError.  We monkey-patch BEFORE
+# importing pyannote so its `from huggingface_hub import ...` picks up the
+# wrapped versions.  We also patch submodules (e.g. huggingface_hub.file_download)
+# to catch imports that bypass the top-level namespace.
+# ---------------------------------------------------------------------------
+import huggingface_hub as _hfh
+
+def _strip_use_auth_token(fn):
+    """Wrap a huggingface_hub function to silently drop `use_auth_token`."""
+    @functools.wraps(fn)
+    def _wrapper(*args, **kwargs):
+        kwargs.pop("use_auth_token", None)
+        return fn(*args, **kwargs)
+    return _wrapper
+
+_FUNCS_TO_PATCH = ("hf_hub_download", "snapshot_download", "cached_download",
+                   "model_info", "repo_info", "list_repo_files")
+
+# Patch top-level huggingface_hub namespace
+for _name in _FUNCS_TO_PATCH:
+    if hasattr(_hfh, _name):
+        setattr(_hfh, _name, _strip_use_auth_token(getattr(_hfh, _name)))
+
+# Also patch submodules that pyannote may import directly (e.g.
+# `from huggingface_hub.file_download import hf_hub_download`).
+import importlib as _imp
+for _submod_name in ("file_download", "_hf_api", "hub_mixin", "utils"):
+    try:
+        _submod = _imp.import_module(f"huggingface_hub.{_submod_name}")
+        for _name in _FUNCS_TO_PATCH:
+            if hasattr(_submod, _name):
+                setattr(_submod, _name, _strip_use_auth_token(getattr(_submod, _name)))
+    except (ImportError, ModuleNotFoundError):
+        pass
+# ---------------------------------------------------------------------------
+
 from pyannote.audio import Pipeline
 import torch
 
@@ -33,8 +74,6 @@ def diarize_audio(
     max_speakers: int = None,
     output_format: str = "rttm",
     device: str = "auto",
-    segmentation_onset: float = None,
-    segmentation_offset: float = None,
 ):
     """
     Perform speaker diarization on audio file using PyAnnote.
@@ -42,11 +81,12 @@ def diarize_audio(
     print(f"Loading PyAnnote speaker diarization pipeline: {model}")
 
     try:
-        # Initialize the diarization pipeline
-        pipeline = Pipeline.from_pretrained(
-            model,
-            token=hf_token
-        )
+        # Set the token in the environment so huggingface_hub picks it up
+        # automatically — avoids version-specific kwarg issues with
+        # Pipeline.from_pretrained().
+        os.environ["HF_TOKEN"] = hf_token
+
+        pipeline = Pipeline.from_pretrained(model)
 
         # Move to specified device
         # if device == "auto" or device == "cuda":
@@ -62,30 +102,6 @@ def diarize_audio(
             print("PyTorch not available for CUDA, using CPU")
         except Exception as e:
             print(f"Error moving to device: {e}, using CPU")
-
-        # Apply segmentation thresholds if provided
-        if segmentation_onset is not None or segmentation_offset is not None:
-            try:
-                # Get current parameters
-                params = pipeline.parameters(instantiated=True)
-
-                # Update segmentation thresholds
-                if "segmentation" in params:
-                    if segmentation_onset is not None:
-                        params["segmentation"]["threshold"] = segmentation_onset
-                        print(f"Set segmentation onset threshold: {segmentation_onset}")
-                    if segmentation_offset is not None:
-                        # PyAnnote uses min_duration_off for offset behavior
-                        params["segmentation"]["min_duration_off"] = segmentation_offset
-                        print(f"Set segmentation offset (min_duration_off): {segmentation_offset}")
-
-                    # Instantiate pipeline with new parameters
-                    pipeline.instantiate(params)
-                else:
-                    print("Warning: Could not find segmentation parameters in pipeline")
-            except Exception as e:
-                print(f"Warning: Could not set segmentation thresholds: {e}")
-                print("Continuing with default thresholds")
 
         print("Pipeline loaded successfully")
     except Exception as e:
@@ -215,8 +231,8 @@ def main():
     )
     parser.add_argument(
         "--hf-token",
-        required=True,
-        help="Hugging Face access token"
+        default=os.environ.get("HF_TOKEN", ""),
+        help="Hugging Face access token (defaults to HF_TOKEN env var)"
     )
     parser.add_argument(
         "--model",
@@ -245,17 +261,6 @@ def main():
         default="auto",
         help="Device to use for computation"
     )
-    parser.add_argument(
-        "--segmentation-onset",
-        type=float,
-        help="Voice activity detection onset threshold (0.0-1.0). Lower values detect quieter speech."
-    )
-    parser.add_argument(
-        "--segmentation-offset",
-        type=float,
-        help="Voice activity detection offset/min_duration_off (0.0-1.0). Lower values are more sensitive to speech endings."
-    )
-
     args = parser.parse_args()
 
     # Validate input file
@@ -291,8 +296,6 @@ def main():
             max_speakers=args.max_speakers,
             output_format=args.output_format,
             device=args.device,
-            segmentation_onset=args.segmentation_onset,
-            segmentation_offset=args.segmentation_offset,
         )
     except Exception as e:
         print(f"Error during diarization: {e}")

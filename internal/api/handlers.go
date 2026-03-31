@@ -387,13 +387,31 @@ func (h *Handler) UploadAudio(c *gin.Context) {
 		return
 	}
 
-	// Save file using FileService
+	// Save file using FileService (with hash for duplicate detection)
 	uploadBase, vaultID := resolveInboundUploadBase(h.config.UploadDir)
 	uploadDir := filepath.Join(uploadBase, "Media")
-	filePath, err := h.fileService.SaveUpload(header, uploadDir)
+	uploadResult, err := h.fileService.SaveUploadWithHash(header, uploadDir)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save file"})
 		return
+	}
+	filePath := uploadResult.FilePath
+
+	// Check for duplicate upload (skip if force=true)
+	if c.Query("force") != "true" && uploadResult.FileHash != "" {
+		if existing, findErr := h.jobRepo.FindByFileHash(c.Request.Context(), uploadResult.FileHash); findErr == nil && existing != nil {
+			_ = h.fileService.RemoveFile(filePath)
+			existingTitle := ""
+			if existing.Title != nil {
+				existingTitle = *existing.Title
+			}
+			c.JSON(http.StatusConflict, gin.H{
+				"error":       "This file has already been uploaded",
+				"existing_id": existing.ID,
+				"existing_title": existingTitle,
+			})
+			return
+		}
 	}
 
 	// Check if file is .webm and convert to MP3
@@ -428,10 +446,12 @@ func (h *Handler) UploadAudio(c *gin.Context) {
 	jobID = jobID[:len(jobID)-len(filepath.Ext(jobID))] // Extract ID from filename
 
 	job := models.TranscriptionJob{
-		ID:        jobID,
-		AudioPath: filePath,
-		VaultID:   vaultID,
-		Status:    models.StatusUploaded,
+		ID:               jobID,
+		AudioPath:        filePath,
+		VaultID:          vaultID,
+		Status:           models.StatusUploaded,
+		OriginalFilename: header.Filename,
+		FileHash:         uploadResult.FileHash,
 	}
 
 	if title := c.PostForm(paramTitle); title != "" {
@@ -513,13 +533,31 @@ func (h *Handler) UploadVideo(c *gin.Context) {
 		return
 	}
 
-	// Save file using FileService
+	// Save file using FileService (with hash for duplicate detection)
 	uploadBase, vaultID := resolveInboundUploadBase(h.config.UploadDir)
 	uploadDir := filepath.Join(uploadBase, "Media")
-	videoPath, err := h.fileService.SaveUpload(header, uploadDir)
+	uploadResult, err := h.fileService.SaveUploadWithHash(header, uploadDir)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save file"})
 		return
+	}
+	videoPath := uploadResult.FilePath
+
+	// Check for duplicate upload (skip if force=true)
+	if c.Query("force") != "true" && uploadResult.FileHash != "" {
+		if existing, findErr := h.jobRepo.FindByFileHash(c.Request.Context(), uploadResult.FileHash); findErr == nil && existing != nil {
+			_ = h.fileService.RemoveFile(videoPath)
+			existingTitle := ""
+			if existing.Title != nil {
+				existingTitle = *existing.Title
+			}
+			c.JSON(http.StatusConflict, gin.H{
+				"error":          "This file has already been uploaded",
+				"existing_id":    existing.ID,
+				"existing_title": existingTitle,
+			})
+			return
+		}
 	}
 
 	// Generate job ID from filename
@@ -537,10 +575,12 @@ func (h *Handler) UploadVideo(c *gin.Context) {
 
 	// Create job record
 	job := models.TranscriptionJob{
-		ID:        jobID,
-		AudioPath: audioPath, // Use the extracted audio path
-		VaultID:   vaultID,
-		Status:    models.StatusUploaded,
+		ID:               jobID,
+		AudioPath:        audioPath, // Use the extracted audio path
+		VaultID:          vaultID,
+		Status:           models.StatusUploaded,
+		OriginalFilename: header.Filename,
+		FileHash:         uploadResult.FileHash,
 	}
 
 	if title := c.PostForm(paramTitle); title != "" {
@@ -834,12 +874,30 @@ func (h *Handler) SubmitJob(c *gin.Context) {
 		return
 	}
 
-	// Save file using FileService
+	// Save file using FileService (with hash for duplicate detection)
 	uploadDir := h.config.UploadDir
-	filePath, err := h.fileService.SaveUpload(header, uploadDir)
+	uploadResult, err := h.fileService.SaveUploadWithHash(header, uploadDir)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save file"})
 		return
+	}
+	filePath := uploadResult.FilePath
+
+	// Check for duplicate upload (skip if force=true)
+	if c.Query("force") != "true" && uploadResult.FileHash != "" {
+		if existing, findErr := h.jobRepo.FindByFileHash(c.Request.Context(), uploadResult.FileHash); findErr == nil && existing != nil {
+			_ = h.fileService.RemoveFile(filePath)
+			existingTitle := ""
+			if existing.Title != nil {
+				existingTitle = *existing.Title
+			}
+			c.JSON(http.StatusConflict, gin.H{
+				"error":          "This file has already been uploaded",
+				"existing_id":    existing.ID,
+				"existing_title": existingTitle,
+			})
+			return
+		}
 	}
 
 	// Generate job ID from filename
@@ -888,7 +946,7 @@ func (h *Handler) SubmitJob(c *gin.Context) {
 		getFormValueWithDefault(c, "diarize_model", transcription.DiarizeSortformer),
 	)
 	if !validDiarizeModel {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid diarize_model. Must be 'pyannote' or 'nvidia_sortformer'"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid diarize_model. Must be 'pyannote', 'nvidia_sortformer', or 'sherpa-onnx'"})
 		_ = h.fileService.RemoveFile(filePath)
 		return
 	}
@@ -897,11 +955,13 @@ func (h *Handler) SubmitJob(c *gin.Context) {
 
 	// Create job
 	job := models.TranscriptionJob{
-		ID:          jobID,
-		AudioPath:   filePath,
-		Status:      models.StatusPending,
-		Diarization: diarize,
-		Parameters:  params,
+		ID:               jobID,
+		AudioPath:        filePath,
+		Status:           models.StatusPending,
+		Diarization:      diarize,
+		Parameters:       params,
+		OriginalFilename: header.Filename,
+		FileHash:         uploadResult.FileHash,
 	}
 
 	if title := c.PostForm(paramTitle); title != "" {
@@ -1335,7 +1395,7 @@ func (h *Handler) getValidatedTranscriptionParams(c *gin.Context, job *models.Tr
 
 	normalizedDiarizeModel, validDiarizeModel := normalizeDiarizeModel(requestParams.DiarizeModel)
 	if !validDiarizeModel {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid diarize_model. Must be 'pyannote' or 'nvidia_sortformer'"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid diarize_model. Must be 'pyannote', 'nvidia_sortformer', or 'sherpa-onnx'"})
 		return nil, fmt.Errorf("invalid diarize_model")
 	}
 	requestParams.DiarizeModel = normalizedDiarizeModel
@@ -3147,6 +3207,8 @@ func normalizeDiarizeModel(rawModel string) (string, bool) {
 		return transcription.DiarizeSortformer, true
 	case transcription.ModelPyannote, transcription.ModelDiarization31, transcription.ModelDiarizationCommunity1:
 		return transcription.ModelPyannote, true
+	case transcription.DiarizeSherpaOnnx:
+		return transcription.DiarizeSherpaOnnx, true
 	default:
 		return "", false
 	}
@@ -3535,7 +3597,7 @@ func (h *Handler) SubmitQuickTranscription(c *gin.Context) {
 
 	normalizedDiarizeModel, validDiarizeModel := normalizeDiarizeModel(params.DiarizeModel)
 	if !validDiarizeModel {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid diarize_model. Must be 'pyannote' or 'nvidia_sortformer'"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid diarize_model. Must be 'pyannote', 'nvidia_sortformer', or 'sherpa-onnx'"})
 		return
 	}
 	params.DiarizeModel = normalizedDiarizeModel
