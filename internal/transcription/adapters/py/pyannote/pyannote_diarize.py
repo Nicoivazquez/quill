@@ -41,10 +41,17 @@ def diarize_audio(
 
     try:
         # Initialize the diarization pipeline
-        pipeline = Pipeline.from_pretrained(
-            model,
-            token=hf_token
-        )
+        # pyannote.audio 3.x uses use_auth_token, 4.x+ uses token
+        try:
+            pipeline = Pipeline.from_pretrained(
+                model,
+                use_auth_token=hf_token
+            )
+        except TypeError:
+            pipeline = Pipeline.from_pretrained(
+                model,
+                token=hf_token
+            )
 
         # Move to specified device
         # if device == "auto" or device == "cuda":
