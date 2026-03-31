@@ -958,7 +958,7 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 															{renamedCount > 0 && (
 																<Tooltip>
 																	<TooltipTrigger asChild>
-																		<span className="flex-shrink-0 inline-flex items-center text-teal-500 dark:text-teal-400 animate-in fade-in duration-300">
+																		<span className="flex-shrink-0 inline-flex items-center text-[var(--brand-solid)] animate-in fade-in duration-300">
 																			<InkDropFilled className="w-4 h-5" count={renamedCount} />
 																		</span>
 																	</TooltipTrigger>

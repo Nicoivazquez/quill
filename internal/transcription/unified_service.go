@@ -45,6 +45,8 @@ const (
 	ModelMLXWhisper            = "mlx_whisper"
 	ModelWhisperCpp            = "whisper_cpp"
 	DiarizeSortformer          = "nvidia_sortformer"
+	DiarizeSherpaOnnx          = "sherpa-onnx"
+	ModelSherpaOnnx            = "sherpa-onnx"
 	OutputFormatJSON           = "json"
 )
 
@@ -62,7 +64,7 @@ type UnifiedTranscriptionService struct {
 	webhookService        *webhook.Service
 	broadcaster           *sse.Broadcaster
 	postMaterializeHook   func(job *models.TranscriptionJob) // Called after successful artifact materialization
-	markSelfWriteHook     func(metadataPath string)          // Called after writing metadata.json to prevent watcher re-import
+	markSelfWriteHook func(metadataPath string) // Called after writing metadata.json to prevent watcher re-import
 }
 
 // NewUnifiedTranscriptionService creates a new unified transcription service
@@ -385,10 +387,19 @@ func (u *UnifiedTranscriptionService) processSingleTrackJob(ctx context.Context,
 
 		// Diarization goroutine — best-effort, failure is non-fatal
 		g.Go(func() error {
+			logPath := filepath.Join(procCtx.OutputDirectory, "transcription.log")
+			writeDiaLog := func(msg string) {
+				if f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
+					fmt.Fprintf(f, "\n[diarization] %s\n", msg)
+					f.Close()
+				}
+			}
+
 			dAdapter, dErr := u.registry.GetDiarizationAdapter(diarizationModelID)
 			if dErr != nil {
 				diarizationErr = fmt.Errorf("failed to get diarization adapter: %w", dErr)
 				logger.Warn("Diarization skipped: adapter unavailable", "error", diarizationErr)
+				writeDiaLog(fmt.Sprintf("ERROR: adapter unavailable: %v", dErr))
 				return nil // non-fatal
 			}
 			if !dAdapter.IsReady(ctx) {
@@ -396,6 +407,7 @@ func (u *UnifiedTranscriptionService) processSingleTrackJob(ctx context.Context,
 				if pErr := dAdapter.PrepareEnvironment(ctx); pErr != nil {
 					diarizationErr = fmt.Errorf("failed to prepare diarization model %s: %w", diarizationModelID, pErr)
 					logger.Warn("Diarization skipped: environment setup failed", "error", diarizationErr)
+					writeDiaLog(fmt.Sprintf("ERROR: environment setup failed: %v", pErr))
 					return nil // non-fatal
 				}
 			}
@@ -404,6 +416,7 @@ func (u *UnifiedTranscriptionService) processSingleTrackJob(ctx context.Context,
 			if dErr != nil {
 				diarizationErr = fmt.Errorf("diarization failed: %w", dErr)
 				logger.Warn("Diarization failed, transcription will proceed without speaker labels", "error", diarizationErr)
+				writeDiaLog(fmt.Sprintf("ERROR: diarization failed: %v", dErr))
 				return nil // non-fatal
 			}
 			diarizationResult = result
@@ -458,24 +471,36 @@ func (u *UnifiedTranscriptionService) processSingleTrackJob(ctx context.Context,
 			}
 		}
 
-		// Perform diarization if requested and not already done by transcription
+		// Perform diarization if requested and not already done by transcription.
+		// Diarization is best-effort — failure means no speaker labels but
+		// transcription still succeeds (consistent with the parallel path).
 		if needsSeparateDiarization {
 			logger.Info("Running separate diarization", "model_id", diarizationModelID)
-			diarizationAdapter, dErr := u.registry.GetDiarizationAdapter(diarizationModelID)
-			if dErr != nil {
-				return fmt.Errorf("failed to get diarization adapter: %w", dErr)
-			}
-			if !diarizationAdapter.IsReady(ctx) {
-				logger.Info("Preparing diarization model environment on demand", "model_id", diarizationModelID)
-				if pErr := diarizationAdapter.PrepareEnvironment(ctx); pErr != nil {
-					return fmt.Errorf("failed to prepare diarization model %s: %w", diarizationModelID, pErr)
+			logPath := filepath.Join(procCtx.OutputDirectory, "transcription.log")
+			writeDiaLog := func(msg string) {
+				if f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
+					fmt.Fprintf(f, "\n[diarization] %s\n", msg)
+					f.Close()
 				}
 			}
-
-			dParams := u.convertParametersForModel(job.Parameters, diarizationModelID)
-			diarizationResult, err = diarizationAdapter.Diarize(ctx, diarizationInput, dParams, procCtx)
-			if err != nil {
-				return fmt.Errorf("diarization failed: %w", err)
+			if dResult, dErr := func() (*interfaces.DiarizationResult, error) {
+				dAdapter, aErr := u.registry.GetDiarizationAdapter(diarizationModelID)
+				if aErr != nil {
+					return nil, fmt.Errorf("adapter unavailable: %w", aErr)
+				}
+				if !dAdapter.IsReady(ctx) {
+					logger.Info("Preparing diarization model environment on demand", "model_id", diarizationModelID)
+					if pErr := dAdapter.PrepareEnvironment(ctx); pErr != nil {
+						return nil, fmt.Errorf("environment setup failed: %w", pErr)
+					}
+				}
+				dParams := u.convertParametersForModel(job.Parameters, diarizationModelID)
+				return dAdapter.Diarize(ctx, diarizationInput, dParams, procCtx)
+			}(); dErr != nil {
+				logger.Warn("Diarization failed, transcription will proceed without speaker labels", "error", dErr)
+				writeDiaLog(fmt.Sprintf("ERROR: %v", dErr))
+			} else {
+				diarizationResult = dResult
 			}
 
 			// Merge diarization results with transcription
@@ -556,6 +581,8 @@ func (u *UnifiedTranscriptionService) selectModels(params models.WhisperXParams)
 		switch params.DiarizeModel {
 		case DiarizeSortformer:
 			diarizationModelID = ModelSortformer
+		case DiarizeSherpaOnnx:
+			diarizationModelID = ModelSherpaOnnx
 		case ModelPyannote, ModelDiarization31, ModelDiarizationCommunity1:
 			diarizationModelID = ModelPyannote
 		default:
@@ -578,8 +605,8 @@ func (u *UnifiedTranscriptionService) transcriptionIncludesDiarization(modelID s
 	// WhisperX includes diarization when enabled
 	if modelID == ModelWhisperX {
 		if params.Diarize {
-			// Check if it's using nvidia_sortformer (which requires separate processing)
-			if params.DiarizeModel == DiarizeSortformer {
+			// Check if it's using a separate diarization adapter (not WhisperX's built-in pyannote)
+			if params.DiarizeModel == DiarizeSortformer || params.DiarizeModel == DiarizeSherpaOnnx {
 				return false
 			}
 			return true
@@ -721,6 +748,8 @@ func (u *UnifiedTranscriptionService) convertParametersForModel(params models.Wh
 		return u.convertToPyannoteParams(params)
 	case ModelSortformer:
 		return u.convertToSortformerParams(params)
+	case ModelSherpaOnnx:
+		return u.convertToSherpaOnnxParams(params)
 	case ModelOpenAI:
 		return u.convertToOpenAIParams(params)
 	case ModelVoxtral:
@@ -844,7 +873,7 @@ func (u *UnifiedTranscriptionService) convertToCanaryParams(params models.Whispe
 
 // convertToWhisperXParams converts to WhisperX-specific parameters
 func (u *UnifiedTranscriptionService) convertToWhisperXParams(params models.WhisperXParams) map[string]interface{} {
-	useWhisperXDiarization := params.Diarize && params.DiarizeModel != DiarizeSortformer
+	useWhisperXDiarization := params.Diarize && params.DiarizeModel != DiarizeSortformer && params.DiarizeModel != DiarizeSherpaOnnx
 
 	// For WhisperX, we use the standard WhisperX parameters (no NVIDIA-specific ones)
 	paramMap := map[string]interface{}{
@@ -923,10 +952,14 @@ func (u *UnifiedTranscriptionService) convertToPyannoteParams(params models.Whis
 	if params.MaxSpeakers != nil {
 		paramMap["max_speakers"] = *params.MaxSpeakers
 	}
-	if params.HfToken != nil {
-		paramMap["hf_token"] = *params.HfToken
-	}
 
+	// HF token: prefer explicit job param, fall back to HF_TOKEN env var
+	// (seeded from cloud provider store at startup / on save).
+	if params.HfToken != nil && strings.TrimSpace(*params.HfToken) != "" {
+		paramMap["hf_token"] = *params.HfToken
+	} else if token := strings.TrimSpace(os.Getenv("HF_TOKEN")); token != "" {
+		paramMap["hf_token"] = token
+	}
 
 	return paramMap
 }
@@ -936,6 +969,21 @@ func (u *UnifiedTranscriptionService) convertToSortformerParams(params models.Wh
 	paramMap := map[string]interface{}{
 		"output_format":      OutputFormatJSON,
 		"auto_convert_audio": true,
+	}
+	if params.MaxSpeakers != nil {
+		paramMap["max_speakers"] = *params.MaxSpeakers
+	}
+	return paramMap
+}
+
+// convertToSherpaOnnxParams converts to sherpa-onnx diarization parameters
+func (u *UnifiedTranscriptionService) convertToSherpaOnnxParams(params models.WhisperXParams) map[string]interface{} {
+	paramMap := map[string]interface{}{
+		"output_format":      OutputFormatJSON,
+		"auto_convert_audio": true,
+	}
+	if params.MinSpeakers != nil {
+		paramMap["min_speakers"] = *params.MinSpeakers
 	}
 	if params.MaxSpeakers != nil {
 		paramMap["max_speakers"] = *params.MaxSpeakers

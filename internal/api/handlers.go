@@ -946,7 +946,7 @@ func (h *Handler) SubmitJob(c *gin.Context) {
 		getFormValueWithDefault(c, "diarize_model", transcription.DiarizeSortformer),
 	)
 	if !validDiarizeModel {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid diarize_model. Must be 'pyannote' or 'nvidia_sortformer'"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid diarize_model. Must be 'pyannote', 'nvidia_sortformer', or 'sherpa-onnx'"})
 		_ = h.fileService.RemoveFile(filePath)
 		return
 	}
@@ -1395,7 +1395,7 @@ func (h *Handler) getValidatedTranscriptionParams(c *gin.Context, job *models.Tr
 
 	normalizedDiarizeModel, validDiarizeModel := normalizeDiarizeModel(requestParams.DiarizeModel)
 	if !validDiarizeModel {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid diarize_model. Must be 'pyannote' or 'nvidia_sortformer'"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid diarize_model. Must be 'pyannote', 'nvidia_sortformer', or 'sherpa-onnx'"})
 		return nil, fmt.Errorf("invalid diarize_model")
 	}
 	requestParams.DiarizeModel = normalizedDiarizeModel
@@ -3207,6 +3207,8 @@ func normalizeDiarizeModel(rawModel string) (string, bool) {
 		return transcription.DiarizeSortformer, true
 	case transcription.ModelPyannote, transcription.ModelDiarization31, transcription.ModelDiarizationCommunity1:
 		return transcription.ModelPyannote, true
+	case transcription.DiarizeSherpaOnnx:
+		return transcription.DiarizeSherpaOnnx, true
 	default:
 		return "", false
 	}
@@ -3595,7 +3597,7 @@ func (h *Handler) SubmitQuickTranscription(c *gin.Context) {
 
 	normalizedDiarizeModel, validDiarizeModel := normalizeDiarizeModel(params.DiarizeModel)
 	if !validDiarizeModel {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid diarize_model. Must be 'pyannote' or 'nvidia_sortformer'"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid diarize_model. Must be 'pyannote', 'nvidia_sortformer', or 'sherpa-onnx'"})
 		return
 	}
 	params.DiarizeModel = normalizedDiarizeModel

@@ -8,7 +8,48 @@ import argparse
 import json
 import sys
 import os
+import functools
 from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# Compatibility shim: older pyannote.audio internally passes the deprecated
+# `use_auth_token` kwarg to huggingface_hub functions.  Newer huggingface_hub
+# (>=0.24) removed it entirely, causing a TypeError.  We monkey-patch BEFORE
+# importing pyannote so its `from huggingface_hub import ...` picks up the
+# wrapped versions.  We also patch submodules (e.g. huggingface_hub.file_download)
+# to catch imports that bypass the top-level namespace.
+# ---------------------------------------------------------------------------
+import huggingface_hub as _hfh
+
+def _strip_use_auth_token(fn):
+    """Wrap a huggingface_hub function to silently drop `use_auth_token`."""
+    @functools.wraps(fn)
+    def _wrapper(*args, **kwargs):
+        kwargs.pop("use_auth_token", None)
+        return fn(*args, **kwargs)
+    return _wrapper
+
+_FUNCS_TO_PATCH = ("hf_hub_download", "snapshot_download", "cached_download",
+                   "model_info", "repo_info", "list_repo_files")
+
+# Patch top-level huggingface_hub namespace
+for _name in _FUNCS_TO_PATCH:
+    if hasattr(_hfh, _name):
+        setattr(_hfh, _name, _strip_use_auth_token(getattr(_hfh, _name)))
+
+# Also patch submodules that pyannote may import directly (e.g.
+# `from huggingface_hub.file_download import hf_hub_download`).
+import importlib as _imp
+for _submod_name in ("file_download", "_hf_api", "hub_mixin", "utils"):
+    try:
+        _submod = _imp.import_module(f"huggingface_hub.{_submod_name}")
+        for _name in _FUNCS_TO_PATCH:
+            if hasattr(_submod, _name):
+                setattr(_submod, _name, _strip_use_auth_token(getattr(_submod, _name)))
+    except (ImportError, ModuleNotFoundError):
+        pass
+# ---------------------------------------------------------------------------
+
 from pyannote.audio import Pipeline
 import torch
 
@@ -40,18 +81,12 @@ def diarize_audio(
     print(f"Loading PyAnnote speaker diarization pipeline: {model}")
 
     try:
-        # Initialize the diarization pipeline
-        # pyannote.audio 3.x uses use_auth_token, 4.x+ uses token
-        try:
-            pipeline = Pipeline.from_pretrained(
-                model,
-                use_auth_token=hf_token
-            )
-        except TypeError:
-            pipeline = Pipeline.from_pretrained(
-                model,
-                token=hf_token
-            )
+        # Set the token in the environment so huggingface_hub picks it up
+        # automatically — avoids version-specific kwarg issues with
+        # Pipeline.from_pretrained().
+        os.environ["HF_TOKEN"] = hf_token
+
+        pipeline = Pipeline.from_pretrained(model)
 
         # Move to specified device
         # if device == "auto" or device == "cuda":
@@ -196,8 +231,8 @@ def main():
     )
     parser.add_argument(
         "--hf-token",
-        required=True,
-        help="Hugging Face access token"
+        default=os.environ.get("HF_TOKEN", ""),
+        help="Hugging Face access token (defaults to HF_TOKEN env var)"
     )
     parser.add_argument(
         "--model",

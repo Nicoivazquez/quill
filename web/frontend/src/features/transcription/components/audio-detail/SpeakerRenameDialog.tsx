@@ -148,9 +148,12 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
         }
       });
 
-      // Add any speakers from the transcript that don't have mappings yet
+      // Add any speakers from the transcript that don't have mappings yet.
+      // Use case-insensitive matching because PyAnnote RTTM labels are uppercase
+      // (SPEAKER_00) while speaker_mappings may store them lowercased (speaker_00).
+      const mappingKeysLower = new Set(Object.keys(mappingObj).map(k => k.toLowerCase()));
       initialSpeakers.forEach(speaker => {
-        if (!mappingObj[speaker]) {
+        if (!mappingObj[speaker] && !mappingKeysLower.has(speaker.toLowerCase())) {
           mappingObj[speaker] = ''; // Empty so placeholder shows friendly label
         }
       });

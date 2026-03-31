@@ -450,7 +450,7 @@ export function ProfileSettings() {
 						Hugging Face Token
 					</h3>
 					<p className="text-sm text-[var(--text-secondary)] mt-1">
-						Required for Pyannote speaker diarization. Not needed if you only use NVIDIA Sortformer.
+						Required for Pyannote speaker diarization. Not needed if you use NVIDIA Sortformer or sherpa-onnx.
 					</p>
 				</div>
 

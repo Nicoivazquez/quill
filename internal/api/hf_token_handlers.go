@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"os"
 	"strings"
 
 	"quill/internal/models"
@@ -81,6 +82,9 @@ func (h *Handler) UpsertHFToken(c *gin.Context) {
 		return
 	}
 
+	// Keep env var in sync so adapters and Python subprocesses see the token immediately.
+	_ = os.Setenv("HF_TOKEN", token)
+
 	c.JSON(http.StatusOK, hfTokenStatusResponse{HasToken: true})
 }
 
@@ -108,6 +112,8 @@ func (h *Handler) DeleteHFToken(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete token"})
 		return
 	}
+
+	_ = os.Unsetenv("HF_TOKEN")
 
 	c.Status(http.StatusNoContent)
 }

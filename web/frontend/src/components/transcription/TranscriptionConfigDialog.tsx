@@ -104,7 +104,7 @@ interface TranscriptionConfigDialogProps {
 
 const DEFAULT_DIARIZE_MODEL = "nvidia_sortformer";
 
-type DiarizationMode = "local" | "pyannote";
+type DiarizationMode = "local" | "pyannote" | "sherpa-onnx";
 
 const normalizeDiarizeModel = (model?: string): string => {
     if (
@@ -117,6 +117,9 @@ const normalizeDiarizeModel = (model?: string): string => {
     if (model === "nvidia_sortformer") {
         return "nvidia_sortformer";
     }
+    if (model === "sherpa-onnx" || model === "sherpa_onnx") {
+        return "sherpa-onnx";
+    }
     return DEFAULT_DIARIZE_MODEL;
 };
 
@@ -124,6 +127,9 @@ const getDiarizationMode = (params: WhisperXParams): DiarizationMode => {
     const diarizeModel = normalizeDiarizeModel(params.diarize_model);
     if (diarizeModel === "nvidia_sortformer") {
         return "local";
+    }
+    if (diarizeModel === "sherpa-onnx") {
+        return "sherpa-onnx";
     }
     return "pyannote";
 };
@@ -140,6 +146,11 @@ const applyDiarizationMode = (
         if (currentMaxSpeakers && currentMaxSpeakers > 4) {
             updateParam("max_speakers", 4);
         }
+        return;
+    }
+    if (mode === "sherpa-onnx") {
+        updateParam("diarize_model", "sherpa-onnx");
+        updateParam("hf_token", undefined);
         return;
     }
     // pyannote — backend resolves HF token from settings
@@ -277,7 +288,7 @@ const PARAM_DESCRIPTIONS = {
     compute_type: "Float16 (faster), Float32 (accurate), Int8 (fastest).",
     batch_size: "Segments processed at once. Higher = faster but more memory.",
     diarize: "Identify and separate different speakers.",
-    diarize_model: "Local (NVIDIA Sortformer, no token needed, up to 4 speakers) or Pyannote (high-accuracy, up to 20 speakers, requires HF token from Settings).",
+    diarize_model: "NVIDIA Sortformer (local, up to 4 speakers), sherpa-onnx (local, no token, up to 20 speakers), or Pyannote (requires HF token, up to 20 speakers).",
     temperature: "0 = deterministic, higher = more creative.",
     beam_size: "Search beams. Higher = better quality but slower.",
     vad_preprocess: "Strip silence before transcription using Silero VAD. Speeds up transcription on audio with pauses, with no accuracy loss.",
@@ -697,6 +708,7 @@ function WhisperConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
                                         </SelectTrigger>
                                         <SelectContent className={selectContentClassName}>
                                             <SelectItem value="local" className={selectItemClassName}>NVIDIA Sortformer</SelectItem>
+                                            <SelectItem value="sherpa-onnx" className={selectItemClassName}>sherpa-onnx</SelectItem>
                                             <SelectItem value="pyannote" className={selectItemClassName}>Pyannote</SelectItem>
                                         </SelectContent>
                                     </Select>
@@ -732,7 +744,7 @@ function WhisperConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
 
                                 {diarizationMode === "local" && params.max_speakers && params.max_speakers > 4 && (
                                     <p className="text-xs text-amber-500">
-                                        Sortformer supports up to 4 speakers. For more, switch to Pyannote (requires a Hugging Face token in Settings).
+                                        Sortformer supports up to 4 speakers. For more, switch to sherpa-onnx (no token needed) or Pyannote.
                                     </p>
                                 )}
 
@@ -740,6 +752,8 @@ function WhisperConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
                                 <p className="text-xs text-[var(--text-tertiary)]">
                                     {diarizationMode === "local"
                                         ? "NVIDIA Sortformer runs locally without a Hugging Face token. Supports up to 4 speakers."
+                                        : diarizationMode === "sherpa-onnx"
+                                        ? "sherpa-onnx runs locally via ONNX Runtime. No Hugging Face token needed. Supports up to 20 speakers. Models download automatically on first use."
                                         : "Uses your Hugging Face token from Settings \u2192 Transcription. Supports up to 20 speakers. Falls back to Sortformer if not configured."}
                                 </p>
                             </div>
@@ -950,6 +964,7 @@ function ParakeetConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
                                         </SelectTrigger>
                                         <SelectContent className={selectContentClassName}>
                                             <SelectItem value="local" className={selectItemClassName}>NVIDIA Sortformer</SelectItem>
+                                            <SelectItem value="sherpa-onnx" className={selectItemClassName}>sherpa-onnx</SelectItem>
                                             <SelectItem value="pyannote" className={selectItemClassName}>Pyannote</SelectItem>
                                         </SelectContent>
                                     </Select>
@@ -985,7 +1000,7 @@ function ParakeetConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
 
                                 {diarizationMode === "local" && params.max_speakers && params.max_speakers > 4 && (
                                     <p className="text-xs text-amber-500">
-                                        Sortformer supports up to 4 speakers. For more, switch to Pyannote (requires a Hugging Face token in Settings).
+                                        Sortformer supports up to 4 speakers. For more, switch to sherpa-onnx (no token needed) or Pyannote.
                                     </p>
                                 )}
 
@@ -993,6 +1008,8 @@ function ParakeetConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
                                 <p className="text-xs text-[var(--text-tertiary)]">
                                     {diarizationMode === "local"
                                         ? "NVIDIA Sortformer runs locally without a Hugging Face token. Supports up to 4 speakers."
+                                        : diarizationMode === "sherpa-onnx"
+                                        ? "sherpa-onnx runs locally via ONNX Runtime. No Hugging Face token needed. Supports up to 20 speakers. Models download automatically on first use."
                                         : "Uses your Hugging Face token from Settings \u2192 Transcription. Supports up to 20 speakers. Falls back to Sortformer if not configured."}
                                 </p>
                             </div>
@@ -1056,6 +1073,7 @@ function CanaryConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
                                         </SelectTrigger>
                                         <SelectContent className={selectContentClassName}>
                                             <SelectItem value="local" className={selectItemClassName}>NVIDIA Sortformer</SelectItem>
+                                            <SelectItem value="sherpa-onnx" className={selectItemClassName}>sherpa-onnx</SelectItem>
                                             <SelectItem value="pyannote" className={selectItemClassName}>Pyannote</SelectItem>
                                         </SelectContent>
                                     </Select>
@@ -1091,7 +1109,7 @@ function CanaryConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
 
                                 {diarizationMode === "local" && params.max_speakers && params.max_speakers > 4 && (
                                     <p className="text-xs text-amber-500">
-                                        Sortformer supports up to 4 speakers. For more, switch to Pyannote (requires a Hugging Face token in Settings).
+                                        Sortformer supports up to 4 speakers. For more, switch to sherpa-onnx (no token needed) or Pyannote.
                                     </p>
                                 )}
 
@@ -1099,6 +1117,8 @@ function CanaryConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
                                 <p className="text-xs text-[var(--text-tertiary)]">
                                     {diarizationMode === "local"
                                         ? "NVIDIA Sortformer runs locally without a Hugging Face token. Supports up to 4 speakers."
+                                        : diarizationMode === "sherpa-onnx"
+                                        ? "sherpa-onnx runs locally via ONNX Runtime. No Hugging Face token needed. Supports up to 20 speakers. Models download automatically on first use."
                                         : "Uses your Hugging Face token from Settings \u2192 Transcription. Supports up to 20 speakers. Falls back to Sortformer if not configured."}
                                 </p>
                             </div>
@@ -1291,6 +1311,7 @@ function MLXOrCppConfig({ params, updateParam, isMultiTrack, family }: ConfigPro
                                         </SelectTrigger>
                                         <SelectContent className={selectContentClassName}>
                                             <SelectItem value="local" className={selectItemClassName}>NVIDIA Sortformer</SelectItem>
+                                            <SelectItem value="sherpa-onnx" className={selectItemClassName}>sherpa-onnx</SelectItem>
                                             <SelectItem value="pyannote" className={selectItemClassName}>Pyannote</SelectItem>
                                         </SelectContent>
                                     </Select>
@@ -1326,7 +1347,7 @@ function MLXOrCppConfig({ params, updateParam, isMultiTrack, family }: ConfigPro
 
                                 {diarizationMode === "local" && params.max_speakers && params.max_speakers > 4 && (
                                     <p className="text-xs text-amber-500">
-                                        Sortformer supports up to 4 speakers. For more, switch to Pyannote (requires a Hugging Face token in Settings).
+                                        Sortformer supports up to 4 speakers. For more, switch to sherpa-onnx (no token needed) or Pyannote.
                                     </p>
                                 )}
 
@@ -1334,6 +1355,8 @@ function MLXOrCppConfig({ params, updateParam, isMultiTrack, family }: ConfigPro
                                 <p className="text-xs text-[var(--text-tertiary)]">
                                     {diarizationMode === "local"
                                         ? "NVIDIA Sortformer runs locally without a Hugging Face token. Supports up to 4 speakers."
+                                        : diarizationMode === "sherpa-onnx"
+                                        ? "sherpa-onnx runs locally via ONNX Runtime. No Hugging Face token needed. Supports up to 20 speakers. Models download automatically on first use."
                                         : "Uses your Hugging Face token from Settings \u2192 Transcription. Supports up to 20 speakers. Falls back to Sortformer if not configured."}
                                 </p>
                             </div>

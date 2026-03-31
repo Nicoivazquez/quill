@@ -343,12 +343,15 @@ func (p *PyAnnoteAdapter) Diarize(ctx context.Context, input interfaces.AudioInp
 	cmd := exec.CommandContext(ctx, binaries.UV(), args...)
 	cmd.Env = append(os.Environ(), "PYTHONUNBUFFERED=1")
 
-	// Setup log file
-	logFile, err := os.OpenFile(filepath.Join(procCtx.OutputDirectory, "transcription.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	// Setup log file — write diagnostic markers and capture stderr separately
+	// so we can see errors even when the Python process crashes.
+	logPath := filepath.Join(procCtx.OutputDirectory, "transcription.log")
+	logFile, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		logger.Warn("Failed to create log file", "error", err)
 	} else {
 		defer logFile.Close()
+		fmt.Fprintf(logFile, "\n[diarization] Starting PyAnnote speaker diarization...\n")
 		cmd.Stdout = logFile
 		cmd.Stderr = logFile
 	}
@@ -356,12 +359,15 @@ func (p *PyAnnoteAdapter) Diarize(ctx context.Context, input interfaces.AudioInp
 	logger.Info("Executing PyAnnote command", "args", strings.Join(args, " "))
 
 	if err := cmd.Run(); err != nil {
+		errMsg := fmt.Sprintf("PyAnnote execution failed: %v", err)
+		if logFile != nil {
+			fmt.Fprintf(logFile, "\n[diarization] ERROR: %s\n", errMsg)
+		}
+
 		if ctx.Err() == context.Canceled {
 			return nil, fmt.Errorf("diarization was cancelled")
 		}
 
-		// Read tail of log file for context
-		logPath := filepath.Join(procCtx.OutputDirectory, "transcription.log")
 		logTail, readErr := p.ReadLogTail(logPath, 2048)
 		if readErr != nil {
 			logger.Warn("Failed to read log tail", "error", readErr)
@@ -369,6 +375,10 @@ func (p *PyAnnoteAdapter) Diarize(ctx context.Context, input interfaces.AudioInp
 
 		logger.Error("PyAnnote execution failed", "error", err)
 		return nil, fmt.Errorf("PyAnnote execution failed: %w\nLogs:\n%s", err, logTail)
+	}
+
+	if logFile != nil {
+		fmt.Fprintf(logFile, "\n[diarization] PyAnnote completed successfully\n")
 	}
 
 	// Parse result
@@ -520,7 +530,7 @@ func (p *PyAnnoteAdapter) parseRTTMResult(tempDir string, input interfaces.Audio
 		}
 
 		end := start + duration
-		speaker := parts[7]
+		speaker := strings.ToLower(parts[7])
 		speakers[speaker] = true
 
 		segments = append(segments, interfaces.DiarizationSegment{

@@ -80,3 +80,8 @@ __pycache__/
 coverage_dg.out
 playwright-report/
 test-results/
+
+# Build binaries (root-level only)
+/server
+/quill-server
+/sherpa-diag
