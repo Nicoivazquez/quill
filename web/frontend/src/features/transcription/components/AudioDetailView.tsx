@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useParams, useNavigate } from "react-router-dom";
-import { MoreVertical, Edit2, Activity, FileText, Bot, Check, Loader2, List, AlignLeft, ArrowDownCircle, StickyNote, MessageCircle, FileImage, FileJson, FileDown, Clock, AlertCircle, Users, Layers, Trash2 } from "lucide-react";
+import { MoreVertical, Edit2, Activity, FileText, Bot, Check, Loader2, List, AlignLeft, ArrowDownCircle, StickyNote, MessageCircle, FileImage, FileJson, FileDown, Clock, AlertCircle, Users, Layers, Trash2, Wand2 } from "lucide-react";
 import { Header } from "@/components/Header";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -26,6 +26,8 @@ import { ExecutionInfoDialog } from "./audio-detail/ExecutionInfoDialog";
 import { LogsDialog } from "./audio-detail/LogsDialog";
 import { SummaryDialog } from "./audio-detail/SummaryDialog";
 import { ChatSidePanel } from "./ChatSidePanel";
+import { TranscriptionConfigDialog, type WhisperXParams } from "@/components/TranscriptionConfigDialog";
+import { WandAdvancedIcon } from "@/components/icons/WandAdvancedIcon";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { useSummaryTemplates, useExistingSummary, useSummarizer } from "@/features/transcription/hooks/useTranscriptionSummary";
@@ -67,6 +69,8 @@ export const AudioDetailView = function AudioDetailView({ audioId: propAudioId }
     const [llmReady, setLlmReady] = useState<boolean | null>(null);
     const [autoSummaryEnabled, setAutoSummaryEnabled] = useState(false);
     const [autoTitleEnabled, setAutoTitleEnabled] = useState(true);
+    const [configDialogOpen, setConfigDialogOpen] = useState(false);
+    const [transcriptionLoading, setTranscriptionLoading] = useState(false);
 
     // Data Fetching
     const { data: audioFile, isLoading, error } = useAudioDetail(audioId || "");
@@ -123,6 +127,30 @@ export const AudioDetailView = function AudioDetailView({ audioId: propAudioId }
             window.removeEventListener('mouseup', handleMouseUp);
         };
     }, [isResizing]);
+
+    // Advanced transcription handler
+    const handleStartTranscription = useCallback(async (params: WhisperXParams) => {
+        if (!audioId) return;
+        try {
+            setTranscriptionLoading(true);
+            const response = await fetch(`/api/v1/transcription/${audioId}/start`, {
+                method: "POST",
+                headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+                body: JSON.stringify(params),
+            });
+            if (response.ok) {
+                setConfigDialogOpen(false);
+                queryClient.invalidateQueries({ queryKey: ['audioDetail', audioId] });
+                queryClient.invalidateQueries({ queryKey: ['audioFiles'] });
+            } else {
+                alert("Failed to start transcription");
+            }
+        } catch {
+            alert("Error starting transcription");
+        } finally {
+            setTranscriptionLoading(false);
+        }
+    }, [audioId, getAuthHeaders, queryClient]);
 
     // Helpers
 
@@ -556,6 +584,14 @@ export const AudioDetailView = function AudioDetailView({ audioId: propAudioId }
                                                         <FileJson className="mr-2 h-4 w-4 opacity-70" /> Download JSON
                                                     </DropdownMenuItem>
                                                     <DropdownMenuSeparator className="bg-[var(--border-subtle)] my-1" />
+                                                    <DropdownMenuItem
+                                                        onClick={() => setConfigDialogOpen(true)}
+                                                        className="rounded-[8px] cursor-pointer"
+                                                        disabled={audioFile?.status === "processing" || audioFile?.status === "pending"}
+                                                    >
+                                                        <WandAdvancedIcon className="mr-2 h-4 w-4 opacity-70" /> Re-transcribe (Advanced)
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuSeparator className="bg-[var(--border-subtle)] my-1" />
                                                     <DropdownMenuItem onClick={() => setExecutionDialogOpen(true)} className="rounded-[8px] cursor-pointer">
                                                         <Activity className="mr-2 h-4 w-4 opacity-70" /> Execution Info
                                                     </DropdownMenuItem>
@@ -685,6 +721,14 @@ export const AudioDetailView = function AudioDetailView({ audioId: propAudioId }
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+
+            {/* Advanced Transcription Config */}
+            <TranscriptionConfigDialog
+                open={configDialogOpen}
+                onOpenChange={setConfigDialogOpen}
+                onStartTranscription={handleStartTranscription}
+                loading={transcriptionLoading}
+            />
 
             {/* Mobile / Overlay Chat */}
             {chatOpen && isMobile && createPortal(

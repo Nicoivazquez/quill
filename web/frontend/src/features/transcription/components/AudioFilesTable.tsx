@@ -1086,20 +1086,6 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 														</TooltipTrigger>
 														<TooltipContent>Transcribe</TooltipContent>
 													</Tooltip>
-
-													<Tooltip>
-														<TooltipTrigger asChild>
-															<Button
-																variant="ghost"
-																size="icon"
-																onClick={() => handleTranscribeClick(file.id)}
-																className="h-9 w-9 rounded-lg text-gray-400 hover:text-[var(--brand-solid)] hover:bg-[var(--brand-light)] cursor-pointer transition-colors"
-															>
-																<WandAdvancedIcon className="h-5 w-5" strokeWidth={2} />
-															</Button>
-														</TooltipTrigger>
-														<TooltipContent>Transcribe (Advanced)</TooltipContent>
-													</Tooltip>
 												</>
 											)}
 
