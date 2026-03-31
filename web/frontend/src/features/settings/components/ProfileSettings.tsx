@@ -1,13 +1,14 @@
 import { useState, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+// import { Input } from "@/components/ui/input"; // commented out with HF token UI
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { ProfilesTable } from "./ProfilesTable";
 import { TranscriptionConfigDialog, type WhisperXParams } from "@/components/TranscriptionConfigDialog";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Settings, Key, CheckCircle, AlertCircle, Trash2, Loader2, ExternalLink } from "lucide-react";
+import { Settings } from "lucide-react";
+// import { Key, CheckCircle, AlertCircle, Trash2, Loader2, ExternalLink } from "lucide-react"; // commented out with HF token UI
 
 interface TranscriptionProfile {
 	id: string;
@@ -42,13 +43,13 @@ export function ProfileSettings() {
 	const [error, setError] = useState("");
 	const [success, setSuccess] = useState("");
 
-	// Hugging Face token state
-	const [hfHasToken, setHfHasToken] = useState(false);
-	const [hfTokenInput, setHfTokenInput] = useState("");
-	const [hfLoading, setHfLoading] = useState(true);
-	const [hfSaving, setHfSaving] = useState(false);
-	const [hfDeleting, setHfDeleting] = useState(false);
-	const [hfMessage, setHfMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+	// // Hugging Face token state (commented out — pyannote disabled)
+	// const [hfHasToken, setHfHasToken] = useState(false);
+	// const [hfTokenInput, setHfTokenInput] = useState("");
+	// const [hfLoading, setHfLoading] = useState(true);
+	// const [hfSaving, setHfSaving] = useState(false);
+	// const [hfDeleting, setHfDeleting] = useState(false);
+	// const [hfMessage, setHfMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
 	// Load profiles and default profile
 	const loadProfiles = useCallback(async () => {
@@ -138,72 +139,72 @@ export function ProfileSettings() {
 		loadUserSettings();
 	}, [getAuthHeaders]);
 
-	// Load HF token status
-	useEffect(() => {
-		const loadHFToken = async () => {
-			try {
-				const response = await fetch("/api/v1/settings/hf-token", {
-					headers: getAuthHeaders(),
-				});
-				if (response.ok) {
-					const data = await response.json();
-					setHfHasToken(data.has_token);
-				}
-			} catch {
-				// silently handle
-			} finally {
-				setHfLoading(false);
-			}
-		};
-		loadHFToken();
-	}, [getAuthHeaders]);
+	// // Load HF token status (commented out — pyannote disabled)
+	// useEffect(() => {
+	// 	const loadHFToken = async () => {
+	// 		try {
+	// 			const response = await fetch("/api/v1/settings/hf-token", {
+	// 				headers: getAuthHeaders(),
+	// 			});
+	// 			if (response.ok) {
+	// 				const data = await response.json();
+	// 				setHfHasToken(data.has_token);
+	// 			}
+	// 		} catch {
+	// 			// silently handle
+	// 		} finally {
+	// 			setHfLoading(false);
+	// 		}
+	// 	};
+	// 	loadHFToken();
+	// }, [getAuthHeaders]);
 
-	const handleHFTokenSave = async () => {
-		const token = hfTokenInput.trim();
-		if (!token) return;
-		setHfSaving(true);
-		setHfMessage(null);
-		try {
-			const response = await fetch("/api/v1/settings/hf-token", {
-				method: "PUT",
-				headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-				body: JSON.stringify({ token }),
-			});
-			if (response.ok) {
-				setHfHasToken(true);
-				setHfTokenInput("");
-				setHfMessage({ type: "success", text: "Hugging Face token saved." });
-			} else {
-				const err = await response.json().catch(() => ({}));
-				setHfMessage({ type: "error", text: (err as { error?: string }).error || "Failed to save token" });
-			}
-		} catch {
-			setHfMessage({ type: "error", text: "Failed to save token. Please try again." });
-		} finally {
-			setHfSaving(false);
-		}
-	};
+	// const handleHFTokenSave = async () => {
+	// 	const token = hfTokenInput.trim();
+	// 	if (!token) return;
+	// 	setHfSaving(true);
+	// 	setHfMessage(null);
+	// 	try {
+	// 		const response = await fetch("/api/v1/settings/hf-token", {
+	// 			method: "PUT",
+	// 			headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+	// 			body: JSON.stringify({ token }),
+	// 		});
+	// 		if (response.ok) {
+	// 			setHfHasToken(true);
+	// 			setHfTokenInput("");
+	// 			setHfMessage({ type: "success", text: "Hugging Face token saved." });
+	// 		} else {
+	// 			const err = await response.json().catch(() => ({}));
+	// 			setHfMessage({ type: "error", text: (err as { error?: string }).error || "Failed to save token" });
+	// 		}
+	// 	} catch {
+	// 		setHfMessage({ type: "error", text: "Failed to save token. Please try again." });
+	// 	} finally {
+	// 		setHfSaving(false);
+	// 	}
+	// };
 
-	const handleHFTokenDelete = async () => {
-		setHfDeleting(true);
-		setHfMessage(null);
-		try {
-			const response = await fetch("/api/v1/settings/hf-token", {
-				method: "DELETE",
-				headers: getAuthHeaders(),
-			});
-			if (response.ok || response.status === 204) {
-				setHfHasToken(false);
-				setHfMessage({ type: "success", text: "Hugging Face token removed." });
-			} else {
-				setHfMessage({ type: "error", text: "Failed to remove token" });
-			}
-		} catch {
-			setHfMessage({ type: "error", text: "Failed to remove token. Please try again." });
-		} finally {
-			setHfDeleting(false);
-		}
-	};
+	// const handleHFTokenDelete = async () => {
+	// 	setHfDeleting(true);
+	// 	setHfMessage(null);
+	// 	try {
+	// 		const response = await fetch("/api/v1/settings/hf-token", {
+	// 			method: "DELETE",
+	// 			headers: getAuthHeaders(),
+	// 		});
+	// 		if (response.ok || response.status === 204) {
+	// 			setHfHasToken(false);
+	// 			setHfMessage({ type: "success", text: "Hugging Face token removed." });
+	// 		} else {
+	// 			setHfMessage({ type: "error", text: "Failed to remove token" });
+	// 		}
+	// 	} catch {
+	// 		setHfMessage({ type: "error", text: "Failed to remove token. Please try again." });
+	// 	} finally {
+	// 		setHfDeleting(false);
+	// 	}
+	// };
 
 	const updateUserSettings = async (payload: Partial<UserSettings>, successMessage: string) => {
 		setError("");
@@ -442,7 +443,7 @@ export function ProfileSettings() {
 				)}
 			</div>
 
-			{/* Hugging Face Token */}
+			{/* Hugging Face Token — commented out, pyannote disabled
 			<div className="bg-[var(--bg-main)]/50 border border-[var(--border-subtle)] rounded-[var(--radius-card)] p-4 sm:p-6 shadow-sm">
 				<div className="mb-4 sm:mb-6">
 					<h3 className="text-lg font-medium text-[var(--text-primary)] flex items-center gap-2">
@@ -552,6 +553,7 @@ export function ProfileSettings() {
 					</div>
 				)}
 			</div>
+			*/}
 
 			{/* Transcription Profiles */}
 			<div className="bg-[var(--bg-main)]/50 border border-[var(--border-subtle)] rounded-[var(--radius-card)] p-4 sm:p-6 shadow-sm">

@@ -104,16 +104,16 @@ interface TranscriptionConfigDialogProps {
 
 const DEFAULT_DIARIZE_MODEL = "nvidia_sortformer";
 
-type DiarizationMode = "local" | "pyannote" | "sherpa-onnx";
+type DiarizationMode = "local" | /* "pyannote" | */ "sherpa-onnx";
 
 const normalizeDiarizeModel = (model?: string): string => {
-    if (
-        model === "pyannote" ||
-        model === "pyannote/speaker-diarization-3.1" ||
-        model === "pyannote/speaker-diarization-community-1"
-    ) {
-        return "pyannote";
-    }
+    // if (
+    //     model === "pyannote" ||
+    //     model === "pyannote/speaker-diarization-3.1" ||
+    //     model === "pyannote/speaker-diarization-community-1"
+    // ) {
+    //     return "pyannote";
+    // }
     if (model === "nvidia_sortformer") {
         return "nvidia_sortformer";
     }
@@ -131,7 +131,7 @@ const getDiarizationMode = (params: WhisperXParams): DiarizationMode => {
     if (diarizeModel === "sherpa-onnx") {
         return "sherpa-onnx";
     }
-    return "pyannote";
+    return "sherpa-onnx"; // was "pyannote"
 };
 
 const applyDiarizationMode = (
@@ -153,9 +153,9 @@ const applyDiarizationMode = (
         updateParam("hf_token", undefined);
         return;
     }
-    // pyannote — backend resolves HF token from settings
-    updateParam("diarize_model", "pyannote");
-    updateParam("hf_token", undefined);
+    // // pyannote — backend resolves HF token from settings
+    // updateParam("diarize_model", "pyannote");
+    // updateParam("hf_token", undefined);
 };
 
 const DEFAULT_PARAMS: WhisperXParams = {
@@ -709,7 +709,7 @@ function WhisperConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
                                         <SelectContent className={selectContentClassName}>
                                             <SelectItem value="local" className={selectItemClassName}>NVIDIA Sortformer</SelectItem>
                                             <SelectItem value="sherpa-onnx" className={selectItemClassName}>sherpa-onnx</SelectItem>
-                                            <SelectItem value="pyannote" className={selectItemClassName}>Pyannote</SelectItem>
+                                            {/* <SelectItem value="pyannote" className={selectItemClassName}>Pyannote</SelectItem> */}
                                         </SelectContent>
                                     </Select>
                                 </FormField>
@@ -965,7 +965,7 @@ function ParakeetConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
                                         <SelectContent className={selectContentClassName}>
                                             <SelectItem value="local" className={selectItemClassName}>NVIDIA Sortformer</SelectItem>
                                             <SelectItem value="sherpa-onnx" className={selectItemClassName}>sherpa-onnx</SelectItem>
-                                            <SelectItem value="pyannote" className={selectItemClassName}>Pyannote</SelectItem>
+                                            {/* <SelectItem value="pyannote" className={selectItemClassName}>Pyannote</SelectItem> */}
                                         </SelectContent>
                                     </Select>
                                 </FormField>
@@ -1074,7 +1074,7 @@ function CanaryConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
                                         <SelectContent className={selectContentClassName}>
                                             <SelectItem value="local" className={selectItemClassName}>NVIDIA Sortformer</SelectItem>
                                             <SelectItem value="sherpa-onnx" className={selectItemClassName}>sherpa-onnx</SelectItem>
-                                            <SelectItem value="pyannote" className={selectItemClassName}>Pyannote</SelectItem>
+                                            {/* <SelectItem value="pyannote" className={selectItemClassName}>Pyannote</SelectItem> */}
                                         </SelectContent>
                                     </Select>
                                 </FormField>
@@ -1312,7 +1312,7 @@ function MLXOrCppConfig({ params, updateParam, isMultiTrack, family }: ConfigPro
                                         <SelectContent className={selectContentClassName}>
                                             <SelectItem value="local" className={selectItemClassName}>NVIDIA Sortformer</SelectItem>
                                             <SelectItem value="sherpa-onnx" className={selectItemClassName}>sherpa-onnx</SelectItem>
-                                            <SelectItem value="pyannote" className={selectItemClassName}>Pyannote</SelectItem>
+                                            {/* <SelectItem value="pyannote" className={selectItemClassName}>Pyannote</SelectItem> */}
                                         </SelectContent>
                                     </Select>
                                 </FormField>

@@ -225,11 +225,11 @@ func (h *Handler) BatchStartTranscriptions(c *gin.Context) {
 	// Normalize and validate diarization params (same as single-start path)
 	normalizedDiarizeModel, validDiarizeModel := normalizeDiarizeModel(req.Params.DiarizeModel)
 	if !validDiarizeModel {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid diarize_model. Must be 'pyannote' or 'nvidia_sortformer'"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid diarize_model. Must be 'nvidia_sortformer' or 'sherpa-onnx'"})
 		return
 	}
 	req.Params.DiarizeModel = normalizedDiarizeModel
-	h.fallbackDiarizationModelIfTokenMissing(&req.Params, "batch_start_transcriptions", h.config.HFToken)
+	// h.fallbackDiarizationModelIfTokenMissing(&req.Params, "batch_start_transcriptions", h.config.HFToken) // pyannote disabled
 
 	ctx := c.Request.Context()
 	results := make([]batchResult, 0, len(req.IDs))

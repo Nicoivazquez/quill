@@ -315,14 +315,14 @@ func SetupRoutes(handler *Handler, authService *auth.AuthService) *gin.Engine {
 			cloudProviders.DELETE("/:provider", handler.DeleteCloudProvider)
 		}
 
-		// Hugging Face token settings (require authentication)
-		settings := v1.Group("/settings")
-		settings.Use(middleware.AuthMiddleware(authService))
-		{
-			settings.GET("/hf-token", handler.GetHFTokenStatus)
-			settings.PUT("/hf-token", handler.UpsertHFToken)
-			settings.DELETE("/hf-token", handler.DeleteHFToken)
-		}
+		// // Hugging Face token settings — commented out, pyannote disabled
+		// settings := v1.Group("/settings")
+		// settings.Use(middleware.AuthMiddleware(authService))
+		// {
+		// 	settings.GET("/hf-token", handler.GetHFTokenStatus)
+		// 	settings.PUT("/hf-token", handler.UpsertHFToken)
+		// 	settings.DELETE("/hf-token", handler.DeleteHFToken)
+		// }
 
 		// LLM configuration routes (require authentication)
 		llm := v1.Group("/llm")
