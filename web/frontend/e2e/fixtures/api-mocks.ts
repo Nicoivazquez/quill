@@ -146,6 +146,23 @@ export const CONTACTS = [
 
 export const FOLDERS = ['Work', 'Work/Projects', 'Clients'];
 
+export const CONTACT_APPEARANCES = [
+  {
+    job_id: '1',
+    title: 'Team Standup March 10',
+    speaker_label: 'Speaker A',
+    confidence_score: 0.92,
+    match_source: 'auto',
+  },
+  {
+    job_id: '4',
+    title: 'Client Call Q1 Planning',
+    speaker_label: 'Speaker B',
+    confidence_score: 0.75,
+    match_source: 'suggestion_promoted',
+  },
+];
+
 export const CLOUD_PROVIDERS = [
   { provider: 'openai', has_key: true, is_active: true },
   { provider: 'assemblyai', has_key: false, is_active: false },
@@ -457,6 +474,11 @@ export async function installApiMocks(page: Page) {
   // Signature extract
   await page.route('**/api/v1/contacts/*/signature/extract', (route) =>
     route.fulfill({ json: { message: 'Extraction started' } }),
+  );
+
+  // Contact appearances (transcripts where this contact's voice was identified)
+  await page.route('**/api/v1/contacts/*/appearances', (route) =>
+    route.fulfill({ json: { appearances: CONTACT_APPEARANCES } }),
   );
 
   // Reindex

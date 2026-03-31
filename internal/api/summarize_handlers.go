@@ -10,6 +10,8 @@ import (
 
 	"quill/internal/llm"
 	"quill/internal/models"
+	"quill/internal/sse"
+	"quill/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -199,6 +201,168 @@ func (h *Handler) persistSummary(req SummarizeRequest, content string) {
 			h.ftsUpsertJob(job)
 		}
 	}
+}
+
+// AutoGenerateSummaryForJob attempts to auto-generate a summary for a completed transcription.
+// It is designed for background execution (e.g. queue completion hooks) and is best-effort.
+func (h *Handler) AutoGenerateSummaryForJob(ctx context.Context, jobID string) error {
+	job, err := h.jobRepo.FindByID(ctx, jobID)
+	if err != nil {
+		return err
+	}
+
+	if job.Status != models.StatusCompleted {
+		logger.Debug("Auto-summary skipped: job not completed", "job_id", jobID, "status", job.Status)
+		return nil
+	}
+	if job.Transcript == nil || strings.TrimSpace(*job.Transcript) == "" {
+		logger.Debug("Auto-summary skipped: no transcript content", "job_id", jobID)
+		return nil
+	}
+
+	// Check if any user has auto-summary enabled
+	if !h.isAnyAutoSummaryEnabled(ctx) {
+		logger.Debug("Auto-summary skipped: no user has auto-summary enabled", "job_id", jobID)
+		return nil
+	}
+
+	// Skip if a summary already exists for this transcription
+	existing, existErr := h.summaryRepo.GetLatestSummary(ctx, jobID)
+	if existErr == nil && existing != nil && existing.Content != "" {
+		logger.Debug("Auto-summary skipped: summary already exists", "job_id", jobID)
+		return nil
+	}
+
+	// Get the default summary template
+	template, err := h.summaryRepo.GetDefaultTemplate(ctx)
+	if err != nil || template == nil {
+		logger.Debug("Auto-summary skipped: no default summary template found", "job_id", jobID)
+		return nil
+	}
+
+	// Get LLM service
+	svc, provider, err := h.getLLMServiceForAutoTitle(ctx)
+	if err != nil {
+		errLower := strings.ToLower(err.Error())
+		if strings.Contains(errLower, "no active llm configuration") {
+			logger.Warn("Auto-summary skipped: no LLM configured", "job_id", jobID)
+			return nil
+		}
+		return err
+	}
+
+	// Extract plain text from transcript JSON
+	transcriptText := extractTranscriptText(job.Transcript)
+	if transcriptText == "" {
+		logger.Debug("Auto-summary skipped: could not extract transcript text", "job_id", jobID)
+		return nil
+	}
+
+	// Build the prompt using the template
+	combinedContent := "Transcript:\n" + transcriptText + "\n\nInstructions:\n" + template.Prompt
+	messages := []llm.ChatMessage{{Role: "user", Content: combinedContent}}
+
+	model := template.Model
+	if model == "" {
+		// Fall back to any available chat model
+		model = "gpt-4o-mini"
+	}
+
+	logger.Info("Auto-generating summary", "job_id", jobID, "provider", provider, "model", model)
+
+	// Use non-streaming completion for background generation
+	resp, err := svc.ChatCompletion(ctx, model, messages, 0.0)
+	if err != nil {
+		errLower := strings.ToLower(err.Error())
+		if strings.Contains(errLower, "connection refused") || strings.Contains(errLower, "no such host") {
+			h.emitNotification(sse.NotifyOllamaUnreachable, "warning",
+				"Could not reach LLM provider for auto-summary — is Ollama running?",
+				"open_settings_llm")
+		}
+		return err
+	}
+
+	if resp == nil || len(resp.Choices) == 0 {
+		return nil
+	}
+
+	content := resp.Choices[0].Message.Content
+	if strings.TrimSpace(content) == "" {
+		return nil
+	}
+
+	// Persist the summary
+	req := SummarizeRequest{
+		Model:           model,
+		Content:         combinedContent,
+		TranscriptionID: jobID,
+		TemplateID:      &template.ID,
+	}
+	h.persistSummary(req, content)
+
+	logger.Info("Auto-generated summary", "job_id", jobID, "model", model, "content_len", len(content))
+
+	// Notify the frontend
+	h.broadcaster.BroadcastGlobal("summary_generated", map[string]string{
+		"job_id": jobID,
+	})
+
+	return nil
+}
+
+func (h *Handler) isAnyAutoSummaryEnabled(ctx context.Context) bool {
+	users, _, err := h.userRepo.List(ctx, 0, 1000)
+	if err != nil {
+		return true
+	}
+	if len(users) == 0 {
+		return true
+	}
+	for _, user := range users {
+		if user.AutoSummaryEnabled {
+			return true
+		}
+	}
+	return false
+}
+
+// extractTranscriptText extracts plain text from a transcript field that may be JSON.
+func extractTranscriptText(transcript *string) string {
+	if transcript == nil {
+		return ""
+	}
+	raw := *transcript
+
+	// Try to parse as JSON and extract .text field
+	// The transcript is often stored as {"text": "...", "segments": [...]}
+	if strings.HasPrefix(strings.TrimSpace(raw), "{") {
+		// Simple extraction: find "text" field value
+		idx := strings.Index(raw, `"text"`)
+		if idx >= 0 {
+			rest := raw[idx+len(`"text"`):]
+			// Skip whitespace and colon
+			rest = strings.TrimLeft(rest, " \t\n\r:")
+			if strings.HasPrefix(rest, `"`) {
+				// Find the closing quote (handle escaped quotes)
+				rest = rest[1:] // skip opening quote
+				var result strings.Builder
+				for i := 0; i < len(rest); i++ {
+					if rest[i] == '\\' && i+1 < len(rest) {
+						result.WriteByte(rest[i+1])
+						i++
+						continue
+					}
+					if rest[i] == '"' {
+						return result.String()
+					}
+					result.WriteByte(rest[i])
+				}
+			}
+		}
+	}
+
+	// If not JSON or extraction failed, use raw text
+	return strings.TrimSpace(raw)
 }
 
 // GetSummaryForTranscription returns the latest summary for a transcription

@@ -111,10 +111,10 @@ curl -X POST http://localhost:8080/api/v1/transcription/job-uuid/speakers \
 When you save speaker mappings, Quill automatically:
 - Creates contacts for new names
 - Extracts voice snippets from the audio
-- Generates voice embeddings (TitaNet 256-dim)
+- Generates voice embeddings (TitaNet 192-dim)
 - Uses these to auto-identify speakers in future transcriptions
 
-Speakers with `match_source: "auto"` were auto-identified by voice signature (confidence 80%+). Don't rename these — they're already matched.
+Speakers with `match_source: "auto"` were auto-identified by voice signature (confidence 50%+). Don't rename these — they're already matched.
 
 ### 4. Organize into Folders
 
@@ -244,13 +244,28 @@ Quill pushes real-time updates via Server-Sent Events:
 curl -N http://localhost:8080/api/v1/events -H "X-API-Key: $KEY"
 ```
 
-Events include transcription progress, completion, speaker identification results, and errors.
+Events include transcription progress, completion, speaker identification results, and notifications.
+
+### 11. Check System Notifications
+
+Poll for active issues (LLM misconfiguration, Ollama down, missing chat models). Useful for API clients that don't consume SSE.
+
+```bash
+curl http://localhost:8080/api/v1/system/notifications -H "X-API-Key: $KEY"
+# Returns: {"notifications": [
+#   {"class": "ollama_unreachable", "level": "warning",
+#    "message": "Could not reach LLM provider — is Ollama running?",
+#    "action": "open_settings_llm", "since": "2026-03-30T12:00:00Z"}
+# ]}
+```
+
+Check this endpoint after any LLM-dependent operation (auto-titling, summarization, chat) fails or returns unexpected results. An empty `notifications` array means the system is healthy.
 
 ## Important Concepts
 
 - **Vault**: A self-contained folder with all recordings, transcripts, and contacts. Users can have multiple vaults.
 - **Bundle**: Each transcript is a directory containing audio, JSON, Markdown, notes, and metadata.
-- **Speaker confidence**: Scores 0.0-1.0. Auto-assigned at 80%+, suggested at 60-79%, unknown below 60%.
+- **Speaker confidence**: Scores 0.0-1.0. Auto-assigned at 50%+, suggested at 35-49%, unknown below 35%.
 - **Job statuses**: `uploaded` → `pending` → `processing` → `completed` or `failed`.
 
 ## Full API Reference

@@ -39,6 +39,18 @@ export interface ContactFilesResponse {
   signature_embedding_abs_path?: string | null;
 }
 
+export interface ContactAppearance {
+  job_id: string;
+  title: string;
+  speaker_label: string;
+  confidence_score: number;
+  match_source: string;
+}
+
+export interface ContactAppearancesResponse {
+  appearances: ContactAppearance[];
+}
+
 export interface ContactRequest {
   name: string;
   phone?: string | null;

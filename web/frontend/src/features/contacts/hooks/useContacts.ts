@@ -1,12 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/features/auth/hooks/useAuth";
-import type { Contact, ContactFilesResponse, ContactRequest, ContactsListResponse } from "@/features/contacts/types";
+import type { Contact, ContactAppearancesResponse, ContactFilesResponse, ContactRequest, ContactsListResponse } from "@/features/contacts/types";
 
 const contactsKeys = {
   all: ["contacts"] as const,
   list: (query: string) => ["contacts", "list", query] as const,
   detail: (id: number) => ["contacts", "detail", id] as const,
   files: (id: number) => ["contacts", "files", id] as const,
+  appearances: (id: number) => ["contacts", "appearances", id] as const,
 };
 
 async function parseError(response: Response, fallback: string): Promise<never> {
@@ -81,6 +82,24 @@ export function useContactFiles(contactID: number | null, enabled: boolean) {
         return parseError(response, "Failed to fetch contact files");
       }
       return (await response.json()) as ContactFilesResponse;
+    },
+  });
+}
+
+export function useContactAppearances(contactID: number | null) {
+  const { getAuthHeaders } = useAuth();
+
+  return useQuery({
+    enabled: !!contactID,
+    queryKey: contactID ? contactsKeys.appearances(contactID) : ["contacts", "appearances", "none"],
+    queryFn: async () => {
+      const response = await fetch(`/api/v1/contacts/${contactID}/appearances`, {
+        headers: getAuthHeaders(),
+      });
+      if (!response.ok) {
+        return parseError(response, "Failed to fetch appearances");
+      }
+      return (await response.json()) as ContactAppearancesResponse;
     },
   });
 }
@@ -328,6 +347,34 @@ export function useRescanContact(contactID: number | null) {
       queryClient.invalidateQueries({ queryKey: contactsKeys.all });
       if (contactID) {
         queryClient.invalidateQueries({ queryKey: contactsKeys.detail(contactID) });
+      }
+    },
+  });
+}
+
+export function usePullSnippet(contactID: number | null) {
+  const { getAuthHeaders } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      if (!contactID) {
+        throw new Error("No contact selected");
+      }
+      const response = await fetch(`/api/v1/contacts/${contactID}/snippet/pull`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+      });
+      if (!response.ok) {
+        return parseError(response, "Failed to pull voice snippet");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: contactsKeys.all });
+      if (contactID) {
+        queryClient.invalidateQueries({ queryKey: contactsKeys.detail(contactID) });
+        queryClient.invalidateQueries({ queryKey: contactsKeys.files(contactID) });
       }
     },
   });

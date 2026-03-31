@@ -21,6 +21,8 @@ import (
 	"quill/internal/webhook"
 	"quill/pkg/binaries"
 	"quill/pkg/logger"
+
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -49,28 +51,29 @@ const (
 // UnifiedTranscriptionService provides a unified interface for all transcription and diarization models
 type UnifiedTranscriptionService struct {
 	registry              *registry.ModelRegistry
-	pipeline              *pipeline.ProcessingPipeline
 	preprocessors         map[string]interfaces.Preprocessor
 	postprocessors        map[string]interfaces.Postprocessor
 	tempDirectory         string
 	outputDirectory       string
+	envPath               string                 // Python environment root (for VAD, etc.)
 	defaultModelIDs       map[string]string      // Default model IDs for each task type
 	multiTrackTranscriber *MultiTrackTranscriber // For termination support
 	jobRepo               repository.JobRepository
 	webhookService        *webhook.Service
 	broadcaster           *sse.Broadcaster
 	postMaterializeHook   func(job *models.TranscriptionJob) // Called after successful artifact materialization
+	markSelfWriteHook     func(metadataPath string)          // Called after writing metadata.json to prevent watcher re-import
 }
 
 // NewUnifiedTranscriptionService creates a new unified transcription service
-func NewUnifiedTranscriptionService(jobRepo repository.JobRepository, tempDir, outputDir string) *UnifiedTranscriptionService {
+func NewUnifiedTranscriptionService(jobRepo repository.JobRepository, tempDir, outputDir, envPath string) *UnifiedTranscriptionService {
 	return &UnifiedTranscriptionService{
 		registry:        registry.GetRegistry(),
-		pipeline:        pipeline.NewProcessingPipeline(),
 		preprocessors:   make(map[string]interfaces.Preprocessor),
 		postprocessors:  make(map[string]interfaces.Postprocessor),
 		tempDirectory:   tempDir,
 		outputDirectory: outputDir,
+		envPath:         envPath,
 		defaultModelIDs: map[string]string{
 			"transcription": ModelWhisperX,
 			"diarization":   ModelPyannote,
@@ -89,6 +92,13 @@ func (u *UnifiedTranscriptionService) SetBroadcaster(b *sse.Broadcaster) {
 // are successfully written to disk. Used for auto-publish to Obsidian.
 func (u *UnifiedTranscriptionService) SetPostMaterializeHook(fn func(job *models.TranscriptionJob)) {
 	u.postMaterializeHook = fn
+}
+
+// SetMarkSelfWriteHook registers a callback that marks a metadata.json write
+// so the BundleWatcher skips re-importing it. Without this, watcher-triggered
+// syncs can destructively overwrite summaries and notes.
+func (u *UnifiedTranscriptionService) SetMarkSelfWriteHook(fn func(metadataPath string)) {
+	u.markSelfWriteHook = fn
 }
 
 // Initialize prepares all registered models for use
@@ -256,6 +266,15 @@ func (u *UnifiedTranscriptionService) processSingleTrackJob(ctx context.Context,
 	var preprocessedInput interfaces.AudioInput
 	var tempFilesToCleanup []string
 
+	// Build a per-job pipeline to avoid accumulating preprocessors across jobs.
+	jobPipeline := pipeline.NewProcessingPipeline()
+	if job.Parameters.VadPreprocess && u.envPath != "" {
+		jobPipeline.RegisterPreprocessor(&pipeline.SileroVadPreprocessor{
+			Enabled: true,
+			EnvPath: u.envPath,
+		})
+	}
+
 	// Get model capabilities for preprocessing decisions
 	var capabilities interfaces.ModelCapabilities
 	if transcriptionModelID != "" {
@@ -269,7 +288,7 @@ func (u *UnifiedTranscriptionService) processSingleTrackJob(ctx context.Context,
 	}
 
 	// Apply preprocessing
-	preprocessedInput, err = u.pipeline.ProcessAudio(ctx, audioInput, capabilities)
+	preprocessedInput, err = jobPipeline.ProcessAudio(ctx, audioInput, capabilities)
 	if err != nil {
 		logger.Warn("Audio preprocessing failed, using original", "error", err)
 		preprocessedInput = audioInput
@@ -301,49 +320,146 @@ func (u *UnifiedTranscriptionService) processSingleTrackJob(ctx context.Context,
 	var transcriptResult *interfaces.TranscriptResult
 	var diarizationResult *interfaces.DiarizationResult
 
-	// Perform transcription using the preprocessed audio
-	if transcriptionModelID != "" {
-		logger.Info("Running transcription", "model_id", transcriptionModelID)
-		transcriptionAdapter, err := u.registry.GetTranscriptionAdapter(transcriptionModelID)
-		if err != nil {
-			return fmt.Errorf("failed to get transcription adapter: %w", err)
-		}
-		if !transcriptionAdapter.IsReady(ctx) {
-			logger.Info("Preparing transcription model environment on demand", "model_id", transcriptionModelID)
-			if err := transcriptionAdapter.PrepareEnvironment(ctx); err != nil {
-				return fmt.Errorf("failed to prepare transcription model %s: %w", transcriptionModelID, err)
+	// Determine whether transcription and diarization can run in parallel.
+	// Parallel execution is possible when diarization is a separate step
+	// (i.e., not built into the transcription adapter like WhisperX+PyAnnote).
+	needsSeparateDiarization := job.Parameters.Diarize && diarizationModelID != "" &&
+		!u.transcriptionIncludesDiarization(transcriptionModelID, job.Parameters)
+	canParallelize := transcriptionModelID != "" && needsSeparateDiarization
+
+	// Resolve the audio input for diarization (original audio when VAD is active).
+	diarizationInput := preprocessedInput
+	if needsSeparateDiarization {
+		if origPath, ok := preprocessedInput.Metadata["vad_original_audio"]; ok {
+			logger.Info("Using original audio for diarization (VAD was active)", "path", origPath)
+			diarizationInput = audioInput
+			if preprocessedInput.TempFilePath != "" && preprocessedInput.Metadata["vad_original_audio"] != "" {
+				diarizationInput.FilePath = origPath
 			}
-		}
-
-		// Convert parameters for this specific model
-		params := u.convertParametersForModel(job.Parameters, transcriptionModelID)
-
-		transcriptResult, err = transcriptionAdapter.Transcribe(ctx, preprocessedInput, params, procCtx)
-		if err != nil {
-			return fmt.Errorf("transcription failed: %w", err)
 		}
 	}
 
-	// Perform diarization if requested and not already done by transcription
-	if job.Parameters.Diarize && diarizationModelID != "" {
-		// Convert parameters for diarization model
-		diarizationParams := u.convertParametersForModel(job.Parameters, diarizationModelID)
+	if canParallelize {
+		// --- Parallel path: transcription and diarization run concurrently ---
+		logger.Info("Running transcription and diarization in parallel",
+			"transcription_model", transcriptionModelID,
+			"diarization_model", diarizationModelID)
 
-		if !u.transcriptionIncludesDiarization(transcriptionModelID, job.Parameters) {
-			logger.Info("Running separate diarization", "model_id", diarizationModelID)
-			diarizationAdapter, err := u.registry.GetDiarizationAdapter(diarizationModelID)
-			if err != nil {
-				return fmt.Errorf("failed to get diarization adapter: %w", err)
+		g, gCtx := errgroup.WithContext(ctx)
+
+		// Transcription goroutine
+		g.Go(func() error {
+			tAdapter, tErr := u.registry.GetTranscriptionAdapter(transcriptionModelID)
+			if tErr != nil {
+				return fmt.Errorf("failed to get transcription adapter: %w", tErr)
 			}
-			if !diarizationAdapter.IsReady(ctx) {
+			if !tAdapter.IsReady(gCtx) {
+				logger.Info("Preparing transcription model environment on demand", "model_id", transcriptionModelID)
+				if pErr := tAdapter.PrepareEnvironment(gCtx); pErr != nil {
+					return fmt.Errorf("failed to prepare transcription model %s: %w", transcriptionModelID, pErr)
+				}
+			}
+			params := u.convertParametersForModel(job.Parameters, transcriptionModelID)
+			result, tErr := tAdapter.Transcribe(gCtx, preprocessedInput, params, procCtx)
+			if tErr != nil {
+				return fmt.Errorf("transcription failed: %w", tErr)
+			}
+			// Remap timestamps if VAD was applied.
+			if manifestPath, ok := preprocessedInput.Metadata["vad_manifest_path"]; ok && result != nil {
+				manifest, mErr := pipeline.ParseVadManifest(manifestPath)
+				if mErr != nil {
+					logger.Warn("Failed to parse VAD manifest for timestamp remapping", "error", mErr)
+				} else {
+					result = pipeline.RemapTranscriptResult(result, manifest)
+					logger.Info("Remapped transcription timestamps to original timeline",
+						"segments", len(result.Segments))
+				}
+			}
+			transcriptResult = result
+			return nil
+		})
+
+		// Diarization goroutine
+		g.Go(func() error {
+			dAdapter, dErr := u.registry.GetDiarizationAdapter(diarizationModelID)
+			if dErr != nil {
+				return fmt.Errorf("failed to get diarization adapter: %w", dErr)
+			}
+			if !dAdapter.IsReady(gCtx) {
 				logger.Info("Preparing diarization model environment on demand", "model_id", diarizationModelID)
-				if err := diarizationAdapter.PrepareEnvironment(ctx); err != nil {
-					return fmt.Errorf("failed to prepare diarization model %s: %w", diarizationModelID, err)
+				if pErr := dAdapter.PrepareEnvironment(gCtx); pErr != nil {
+					return fmt.Errorf("failed to prepare diarization model %s: %w", diarizationModelID, pErr)
+				}
+			}
+			dParams := u.convertParametersForModel(job.Parameters, diarizationModelID)
+			result, dErr := dAdapter.Diarize(gCtx, diarizationInput, dParams, procCtx)
+			if dErr != nil {
+				return fmt.Errorf("diarization failed: %w", dErr)
+			}
+			diarizationResult = result
+			return nil
+		})
+
+		if err := g.Wait(); err != nil {
+			return err
+		}
+
+		// Merge diarization results with transcription
+		if transcriptResult != nil && diarizationResult != nil {
+			transcriptResult = u.mergeDiarizationWithTranscription(transcriptResult, diarizationResult)
+		}
+	} else {
+		// --- Sequential path: transcription first, then diarization ---
+
+		// Perform transcription
+		if transcriptionModelID != "" {
+			logger.Info("Running transcription", "model_id", transcriptionModelID)
+			transcriptionAdapter, tErr := u.registry.GetTranscriptionAdapter(transcriptionModelID)
+			if tErr != nil {
+				return fmt.Errorf("failed to get transcription adapter: %w", tErr)
+			}
+			if !transcriptionAdapter.IsReady(ctx) {
+				logger.Info("Preparing transcription model environment on demand", "model_id", transcriptionModelID)
+				if pErr := transcriptionAdapter.PrepareEnvironment(ctx); pErr != nil {
+					return fmt.Errorf("failed to prepare transcription model %s: %w", transcriptionModelID, pErr)
 				}
 			}
 
-			// Use the same preprocessed audio for diarization
-			diarizationResult, err = diarizationAdapter.Diarize(ctx, preprocessedInput, diarizationParams, procCtx)
+			params := u.convertParametersForModel(job.Parameters, transcriptionModelID)
+			transcriptResult, err = transcriptionAdapter.Transcribe(ctx, preprocessedInput, params, procCtx)
+			if err != nil {
+				return fmt.Errorf("transcription failed: %w", err)
+			}
+
+			// Remap timestamps if VAD preprocessing was applied.
+			if manifestPath, ok := preprocessedInput.Metadata["vad_manifest_path"]; ok && transcriptResult != nil {
+				manifest, mErr := pipeline.ParseVadManifest(manifestPath)
+				if mErr != nil {
+					logger.Warn("Failed to parse VAD manifest for timestamp remapping", "error", mErr)
+				} else {
+					transcriptResult = pipeline.RemapTranscriptResult(transcriptResult, manifest)
+					logger.Info("Remapped transcription timestamps to original timeline",
+						"segments", len(transcriptResult.Segments))
+				}
+			}
+		}
+
+		// Perform diarization if requested and not already done by transcription
+		if needsSeparateDiarization {
+			logger.Info("Running separate diarization", "model_id", diarizationModelID)
+			diarizationAdapter, dErr := u.registry.GetDiarizationAdapter(diarizationModelID)
+			if dErr != nil {
+				return fmt.Errorf("failed to get diarization adapter: %w", dErr)
+			}
+			if !diarizationAdapter.IsReady(ctx) {
+				logger.Info("Preparing diarization model environment on demand", "model_id", diarizationModelID)
+				if pErr := diarizationAdapter.PrepareEnvironment(ctx); pErr != nil {
+					return fmt.Errorf("failed to prepare diarization model %s: %w", diarizationModelID, pErr)
+				}
+			}
+
+			dParams := u.convertParametersForModel(job.Parameters, diarizationModelID)
+			diarizationResult, err = diarizationAdapter.Diarize(ctx, diarizationInput, dParams, procCtx)
 			if err != nil {
 				return fmt.Errorf("diarization failed: %w", err)
 			}
@@ -1067,20 +1183,41 @@ func renderMarkdownTranscript(job *models.TranscriptionJob, payload *markdownTra
 		return b.String()
 	}
 
+	// Compact view: group consecutive same-speaker segments, no timestamps.
+	var currentSpeaker string
+	var groupTexts []string
+
+	flushGroup := func() {
+		if len(groupTexts) == 0 {
+			return
+		}
+		if currentSpeaker != "" {
+			b.WriteString("**" + currentSpeaker + "**\n\n")
+		}
+		b.WriteString(strings.Join(groupTexts, " "))
+		b.WriteString("\n\n")
+		groupTexts = nil
+	}
+
 	for _, segment := range payload.Segments {
-		prefix := fmt.Sprintf("[%s - %s]", formatMMSS(segment.Start), formatMMSS(segment.End))
+		speaker := ""
 		if segment.Speaker != nil && strings.TrimSpace(*segment.Speaker) != "" {
-			speaker := strings.TrimSpace(*segment.Speaker)
+			speaker = strings.TrimSpace(*segment.Speaker)
 			if name, ok := speakerNames[speaker]; ok && name != "" {
 				speaker = name
 			}
-			prefix += " " + speaker + ":"
 		}
-		b.WriteString(prefix)
-		b.WriteString(" ")
-		b.WriteString(strings.TrimSpace(segment.Text))
-		b.WriteString("\n\n")
+
+		if speaker != currentSpeaker {
+			flushGroup()
+			currentSpeaker = speaker
+		}
+		if text := strings.TrimSpace(segment.Text); text != "" {
+			groupTexts = append(groupTexts, text)
+		}
 	}
+	flushGroup()
+
 	return b.String()
 }
 
@@ -1104,6 +1241,15 @@ func (u *UnifiedTranscriptionService) materializeTranscriptArtifacts(ctx context
 	} else {
 		targetDir = filepath.Join(u.outputDirectory, job.ID)
 	}
+
+	// Debug: log computed paths vs existing for re-transcription diagnosis
+	existingDir := ""
+	if job.ArtifactDir != nil {
+		existingDir = *job.ArtifactDir
+	}
+	logger.Debug("materialize: computed target dir",
+		"job_id", jobID, "target_dir", targetDir, "existing_dir", existingDir,
+		"audio_path", job.AudioPath, "title", job.Title)
 
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		return err
@@ -1173,6 +1319,11 @@ func (u *UnifiedTranscriptionService) materializeTranscriptArtifacts(ctx context
 	if metaErr := WriteMetadata(targetDir, meta); metaErr != nil {
 		logger.Warn("materialize: failed to write initial metadata.json",
 			"job_id", jobID, "dir", targetDir, "error", metaErr)
+	} else if u.markSelfWriteHook != nil {
+		// Mark the metadata.json as self-written so the BundleWatcher doesn't
+		// re-import it — updateFromMetadata destructively replaces summaries/notes,
+		// and at this point the metadata has nil for both.
+		u.markSelfWriteHook(MetadataPath(targetDir))
 	}
 
 	if err := u.jobRepo.Update(ctx, job); err != nil {

@@ -314,11 +314,11 @@ func TestRewriteTranscriptMarkdown_WithSpeakerNames(t *testing.T) {
 	}
 	md := string(content)
 
-	if !strings.Contains(md, "Nico:") {
-		t.Errorf("expected markdown to contain %q; got:\n%s", "Nico:", md)
+	if !strings.Contains(md, "**Nico**") {
+		t.Errorf("expected markdown to contain %q; got:\n%s", "**Nico**", md)
 	}
-	if !strings.Contains(md, "Alice:") {
-		t.Errorf("expected markdown to contain %q; got:\n%s", "Alice:", md)
+	if !strings.Contains(md, "**Alice**") {
+		t.Errorf("expected markdown to contain %q; got:\n%s", "**Alice**", md)
 	}
 	if strings.Contains(md, "speaker_00") {
 		t.Errorf("markdown should NOT contain raw speaker key %q; got:\n%s", "speaker_00", md)
@@ -347,8 +347,8 @@ func TestRewriteTranscriptMarkdown_FallsBackToOriginal(t *testing.T) {
 	}
 	md := string(content)
 
-	if !strings.Contains(md, "speaker_00:") {
-		t.Errorf("expected markdown to fall back to %q; got:\n%s", "speaker_00:", md)
+	if !strings.Contains(md, "**speaker_00**") {
+		t.Errorf("expected markdown to fall back to %q; got:\n%s", "**speaker_00**", md)
 	}
 }
 
@@ -434,11 +434,11 @@ func TestRewriteTranscriptFiles_Integration(t *testing.T) {
 	}
 	md := string(content)
 
-	if !strings.Contains(md, "Nico:") {
-		t.Errorf("markdown missing %q; got:\n%s", "Nico:", md)
+	if !strings.Contains(md, "**Nico**") {
+		t.Errorf("markdown missing %q; got:\n%s", "**Nico**", md)
 	}
-	if !strings.Contains(md, "Alice:") {
-		t.Errorf("markdown missing %q; got:\n%s", "Alice:", md)
+	if !strings.Contains(md, "**Alice**") {
+		t.Errorf("markdown missing %q; got:\n%s", "**Alice**", md)
 	}
 	if strings.Contains(md, "speaker_00") {
 		t.Errorf("markdown should not expose raw key %q; got:\n%s", "speaker_00", md)

@@ -40,3 +40,31 @@ func (h *Handler) RetryRuntimeWarmup(c *gin.Context) {
 		"status":  h.runtimeWarmup.Snapshot(),
 	})
 }
+
+// WarmModel triggers on-demand download of a specific model.
+// The warmup status/polling mechanism is reused so the frontend banner shows progress.
+func (h *Handler) WarmModel(c *gin.Context) {
+	if h.runtimeWarmup == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "runtime warmup is not configured"})
+		return
+	}
+
+	var req struct {
+		Backend string `json:"backend"`
+		Model   string `json:"model"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+	if req.Backend == "" || req.Model == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "backend and model are required"})
+		return
+	}
+
+	started := h.runtimeWarmup.WarmOnDemandModel(c.Request.Context(), req.Backend, req.Model)
+	c.JSON(http.StatusOK, gin.H{
+		"started": started,
+		"status":  h.runtimeWarmup.Snapshot(),
+	})
+}

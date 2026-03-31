@@ -74,8 +74,8 @@ func NewMLXWhisperAdapter(envPath string) *MLXWhisperAdapter {
 			Name:        "model",
 			Type:        "string",
 			Required:    false,
-			Default:     "large-v3-turbo",
-			Options:     []string{"small", "small.en", "medium", "medium.en", "large-v3", "large-v3-turbo"},
+			Default:     "large-v3-turbo-q4",
+			Options:     []string{"small", "small.en", "medium", "medium.en", "large-v3", "large-v3-turbo", "large-v3-turbo-q4"},
 			Description: "Whisper model size",
 			Group:       "basic",
 		},
@@ -126,7 +126,7 @@ func (m *MLXWhisperAdapter) GetSupportedModels() []string {
 	return []string{
 		"small", "small.en",
 		"medium", "medium.en",
-		"large-v3", "large-v3-turbo",
+		"large-v3", "large-v3-turbo", "large-v3-turbo-q4",
 	}
 }
 
@@ -170,7 +170,7 @@ func (m *MLXWhisperAdapter) PrepareEnvironment(ctx context.Context) error {
 // WarmModel ensures the requested model weights are cached locally.
 func (m *MLXWhisperAdapter) WarmModel(ctx context.Context, modelName string) error {
 	if strings.TrimSpace(modelName) == "" {
-		modelName = "large-v3-turbo"
+		modelName = "large-v3-turbo-q4"
 	}
 
 	if err := m.PrepareEnvironment(ctx); err != nil {
@@ -420,6 +420,8 @@ func mlxWhisperModelID(model string) string {
 		return "mlx-community/whisper-large-v3-mlx"
 	case "large-v3-turbo":
 		return "mlx-community/whisper-large-v3-turbo"
+	case "large-v3-turbo-q4":
+		return "mlx-community/whisper-large-v3-turbo-q4"
 	default:
 		return "mlx-community/whisper-" + model + "-mlx"
 	}
@@ -439,6 +441,8 @@ func mlxWhisperModelSize(model string) string {
 		return "~490 MB"
 	case strings.HasPrefix(model, "medium"):
 		return "~1.5 GB"
+	case model == "large-v3-turbo-q4":
+		return "~442 MB"
 	case model == "large-v3-turbo":
 		return "~1.6 GB"
 	case strings.HasPrefix(model, "large"):

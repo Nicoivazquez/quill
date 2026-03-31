@@ -135,7 +135,7 @@ func main() {
 
 	// Initialize unified transcription processor
 	logger.Startup("transcription", "Initializing transcription service")
-	unifiedProcessor := transcription.NewUnifiedJobProcessor(jobRepo, cfg.TempDir, cfg.TranscriptsDir)
+	unifiedProcessor := transcription.NewUnifiedJobProcessor(jobRepo, cfg.TempDir, cfg.TranscriptsDir, cfg.WhisperXEnv)
 	unifiedProcessor.GetUnifiedService().SetBroadcaster(broadcaster)
 	// Initialize FTS5 full-text search
 	logger.Startup("fts", "Initializing full-text search")
@@ -213,11 +213,24 @@ func main() {
 	}
 	defer bundleManager.Stop()
 
+	// Wire up self-write marking so materializeTranscriptArtifacts doesn't trigger
+	// destructive BundleWatcher re-imports (which delete summaries/notes).
+	unifiedProcessor.GetUnifiedService().SetMarkSelfWriteHook(func(metadataPath string) {
+		if svc := bundleManager.SyncService(); svc != nil {
+			if info, err := os.Stat(metadataPath); err == nil {
+				svc.MarkSelfWrite(metadataPath, info.ModTime().UnixNano())
+			}
+		}
+	})
+
 	runtimeWarmup := transcription.NewDesktopRuntimeWarmupManagerWithBackend(deferModelInit, cfg.WhisperModel, cfg.TranscriptionBackend)
 	defer runtimeWarmup.Stop()
 
 	// Initialize multi-track processor
 	multiTrackProcessor := processing.NewMultiTrackProcessor(database.DB, jobRepo)
+
+	// Initialize notification system (wraps broadcaster with per-class throttling).
+	notifier := sse.NewNotifier(broadcaster)
 
 	// Initialize API handlers
 	handler := api.NewHandler(
@@ -242,6 +255,7 @@ func main() {
 		quickTranscriptionService,
 		multiTrackProcessor,
 		broadcaster,
+		notifier,
 	)
 	handler.SetFolderWatchService(folderWatchService)
 	handler.SetContactManager(contactManager)
@@ -251,21 +265,28 @@ func main() {
 		handler.SetFTSManager(ftsManager)
 	}
 	taskQueue.SetOnJobCompleted(func(jobID string) {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-		defer cancel()
-
-		if err := handler.AutoGenerateTranscriptionTitleForJob(ctx, jobID); err != nil {
-			logger.Warn("Auto title generation after transcription completion failed", "job_id", jobID, "error", err)
-		}
-
-		// Run speaker auto-identification using voice signatures from contacts.
+		// Step 1: Identify speakers first so title and summary can use real names.
 		labelCtx, labelCancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer labelCancel()
 		if err := handler.AutoLabelSpeakersForJob(labelCtx, jobID); err != nil {
 			logger.Warn("Auto speaker identification after transcription completion failed", "job_id", jobID, "error", err)
 		}
 
-		// Re-publish to Obsidian now that title and speaker labels are applied.
+		// Step 2: Generate title (now has real speaker names if identified).
+		titleCtx, titleCancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer titleCancel()
+		if err := handler.AutoGenerateTranscriptionTitleForJob(titleCtx, jobID); err != nil {
+			logger.Warn("Auto title generation after transcription completion failed", "job_id", jobID, "error", err)
+		}
+
+		// Step 3: Generate summary (now has real speaker names if identified).
+		summaryCtx, summaryCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer summaryCancel()
+		if err := handler.AutoGenerateSummaryForJob(summaryCtx, jobID); err != nil {
+			logger.Warn("Auto summary generation after transcription completion failed", "job_id", jobID, "error", err)
+		}
+
+		// Step 4: Publish to Obsidian with final title, summary, and speaker labels.
 		if job, jobErr := jobRepo.FindByID(context.Background(), jobID); jobErr == nil {
 			api.AutoPublishToObsidian(job)
 		}

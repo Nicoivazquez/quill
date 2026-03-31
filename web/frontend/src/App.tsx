@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
+import { useGlobalEvents } from '@/features/transcription/hooks/useGlobalEvents'
 
 // Lazy load route components for better performance
 const Dashboard = lazy(() => import("@/features/transcription/components/Dashboard").then(module => ({ default: module.Dashboard })));
@@ -18,6 +19,9 @@ const PageLoader = () => (
 )
 
 function App() {
+  // Global SSE subscription for system notifications, speaker attention updates, etc.
+  useGlobalEvents();
+
   return (
     <Suspense fallback={<PageLoader />}>
       <Routes>

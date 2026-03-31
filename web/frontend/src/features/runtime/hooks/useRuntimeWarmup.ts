@@ -60,3 +60,27 @@ export function useRetryRuntimeWarmup() {
     },
   });
 }
+
+export function useWarmModel() {
+  const queryClient = useQueryClient();
+  const { getAuthHeaders } = useAuth();
+
+  return useMutation({
+    mutationFn: async ({ backend, model }: { backend: string; model: string }) => {
+      const response = await fetch("/api/v1/runtime/warmup/model", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ backend, model }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to start model download: ${response.status}`);
+      }
+
+      return response.json();
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+    },
+  });
+}

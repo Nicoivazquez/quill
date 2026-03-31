@@ -19,9 +19,17 @@ export interface AudioFile {
     obsidian_synced_at?: string;
 }
 
+export interface SpeakerAttentionSummary {
+    pending_suggestions: number;
+    auto_assigned: number;
+    total_mappings: number;
+    renamed: number;
+}
+
 export interface AudioFilesResponse {
     jobs: AudioFile[];
     pending_suggestions?: Record<string, number>;
+    speaker_attention?: Record<string, SpeakerAttentionSummary>;
     pagination: {
         page: number;
         limit: number;
@@ -39,6 +47,7 @@ interface AudioListParams {
     folder?: string | null; // null = all, "" = root only, "Work" = specific folder
     status?: string; // filter by job status (e.g., "completed", "failed")
     speaker?: string; // filter by speaker custom name
+    speakerStatus?: string; // filter by speaker attention ("needs_attention", "identified")
 }
 
 function getListRefetchInterval(data: AudioFilesResponse | undefined) {
@@ -74,6 +83,7 @@ export function useAudioListInfinite(params: Omit<AudioListParams, 'page'>) {
             }
             if (params.status) searchParams.set('status', params.status);
             if (params.speaker) searchParams.set('speaker', params.speaker);
+            if (params.speakerStatus) searchParams.set('speaker_status', params.speakerStatus);
 
             const response = await fetch(`/api/v1/transcription/list?${searchParams}`, {
                 headers: getAuthHeaders(),

@@ -159,6 +159,14 @@ func (m *MockJobRepository) UpdateBundlePaths(ctx context.Context, jobID string,
 	return args.Error(0)
 }
 
+func (m *MockJobRepository) FindByIDs(ctx context.Context, ids []string) ([]models.TranscriptionJob, error) {
+	args := m.Called(ctx, ids)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]models.TranscriptionJob), args.Error(1)
+}
+
 // MockTranscriptionAdapter is a mock implementation of TranscriptionAdapter
 type MockTranscriptionAdapter struct {
 	mock.Mock
@@ -493,7 +501,7 @@ func TestUnifiedTranscriptionService(t *testing.T) {
 
 	// Create unified service with mock repo
 	mockRepo := new(MockJobRepository)
-	service := NewUnifiedTranscriptionService(mockRepo, "data/temp", "data/transcripts")
+	service := NewUnifiedTranscriptionService(mockRepo, "data/temp", "data/transcripts", "")
 
 	// Test model discovery
 	models := service.GetSupportedModels()
@@ -513,7 +521,7 @@ func TestUnifiedTranscriptionService(t *testing.T) {
 
 func TestAudioInputCreation(t *testing.T) {
 	mockRepo := new(MockJobRepository)
-	service := NewUnifiedTranscriptionService(mockRepo, "data/temp", "data/transcripts")
+	service := NewUnifiedTranscriptionService(mockRepo, "data/temp", "data/transcripts", "")
 
 	// Test creating audio input from a hypothetical file
 	audioPath := "/tmp/test.wav"
@@ -527,7 +535,7 @@ func TestAudioInputCreation(t *testing.T) {
 
 func TestParameterConversion(t *testing.T) {
 	mockRepo := new(MockJobRepository)
-	service := NewUnifiedTranscriptionService(mockRepo, "data/temp", "data/transcripts")
+	service := NewUnifiedTranscriptionService(mockRepo, "data/temp", "data/transcripts", "")
 
 	// Test converting WhisperX parameters to generic map
 	params := models.WhisperXParams{
@@ -557,9 +565,148 @@ func TestParameterConversion(t *testing.T) {
 	}
 }
 
+func TestTranscriptionIncludesDiarization(t *testing.T) {
+	mockRepo := new(MockJobRepository)
+	service := NewUnifiedTranscriptionService(mockRepo, "data/temp", "data/transcripts", "")
+
+	tests := []struct {
+		name     string
+		modelID  string
+		params   models.WhisperXParams
+		expected bool
+	}{
+		{
+			name:    "WhisperX with PyAnnote diarization includes diarization",
+			modelID: ModelWhisperX,
+			params:  models.WhisperXParams{Diarize: true, DiarizeModel: ModelPyannote},
+			expected: true,
+		},
+		{
+			name:    "WhisperX with Sortformer does NOT include diarization",
+			modelID: ModelWhisperX,
+			params:  models.WhisperXParams{Diarize: true, DiarizeModel: DiarizeSortformer},
+			expected: false,
+		},
+		{
+			name:    "WhisperX without diarization enabled",
+			modelID: ModelWhisperX,
+			params:  models.WhisperXParams{Diarize: false},
+			expected: false,
+		},
+		{
+			name:    "MLX Whisper never includes diarization",
+			modelID: ModelMLXWhisper,
+			params:  models.WhisperXParams{Diarize: true, DiarizeModel: ModelPyannote},
+			expected: false,
+		},
+		{
+			name:    "Whisper.cpp never includes diarization",
+			modelID: ModelWhisperCpp,
+			params:  models.WhisperXParams{Diarize: true},
+			expected: false,
+		},
+		{
+			name:    "Parakeet never includes diarization",
+			modelID: ModelParakeet,
+			params:  models.WhisperXParams{Diarize: true},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := service.transcriptionIncludesDiarization(tt.modelID, tt.params)
+			if got != tt.expected {
+				t.Errorf("transcriptionIncludesDiarization(%q, %+v) = %v, want %v",
+					tt.modelID, tt.params, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestParallelizationDecision(t *testing.T) {
+	// Tests the canParallelize logic: transcriptionModelID != "" && needsSeparateDiarization
+	// where needsSeparateDiarization = params.Diarize && diarizationModelID != "" &&
+	//     !transcriptionIncludesDiarization(transcriptionModelID, params)
+
+	mockRepo := new(MockJobRepository)
+	service := NewUnifiedTranscriptionService(mockRepo, "data/temp", "data/transcripts", "")
+
+	tests := []struct {
+		name                string
+		transcriptionModel  string
+		diarizationModel    string
+		params              models.WhisperXParams
+		expectParallel      bool
+	}{
+		{
+			name:               "MLX Whisper + Sortformer → parallel",
+			transcriptionModel: ModelMLXWhisper,
+			diarizationModel:   DiarizeSortformer,
+			params:             models.WhisperXParams{Diarize: true, DiarizeModel: DiarizeSortformer},
+			expectParallel:     true,
+		},
+		{
+			name:               "MLX Whisper + PyAnnote → parallel",
+			transcriptionModel: ModelMLXWhisper,
+			diarizationModel:   ModelPyannote,
+			params:             models.WhisperXParams{Diarize: true, DiarizeModel: ModelPyannote},
+			expectParallel:     true,
+		},
+		{
+			name:               "WhisperX + Sortformer → parallel",
+			transcriptionModel: ModelWhisperX,
+			diarizationModel:   DiarizeSortformer,
+			params:             models.WhisperXParams{Diarize: true, DiarizeModel: DiarizeSortformer},
+			expectParallel:     true,
+		},
+		{
+			name:               "WhisperX + PyAnnote → sequential (built-in diarization)",
+			transcriptionModel: ModelWhisperX,
+			diarizationModel:   ModelPyannote,
+			params:             models.WhisperXParams{Diarize: true, DiarizeModel: ModelPyannote},
+			expectParallel:     false,
+		},
+		{
+			name:               "WhisperX no diarization → sequential",
+			transcriptionModel: ModelWhisperX,
+			diarizationModel:   "",
+			params:             models.WhisperXParams{Diarize: false},
+			expectParallel:     false,
+		},
+		{
+			name:               "Whisper.cpp + Sortformer → parallel",
+			transcriptionModel: ModelWhisperCpp,
+			diarizationModel:   DiarizeSortformer,
+			params:             models.WhisperXParams{Diarize: true, DiarizeModel: DiarizeSortformer},
+			expectParallel:     true,
+		},
+		{
+			name:               "No transcription model → sequential",
+			transcriptionModel: "",
+			diarizationModel:   DiarizeSortformer,
+			params:             models.WhisperXParams{Diarize: true, DiarizeModel: DiarizeSortformer},
+			expectParallel:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			needsSeparateDiarization := tt.params.Diarize && tt.diarizationModel != "" &&
+				!service.transcriptionIncludesDiarization(tt.transcriptionModel, tt.params)
+			canParallelize := tt.transcriptionModel != "" && needsSeparateDiarization
+
+			if canParallelize != tt.expectParallel {
+				t.Errorf("canParallelize = %v, want %v (needsSeparateDiarization=%v)",
+					canParallelize, tt.expectParallel, needsSeparateDiarization)
+			}
+		})
+	}
+}
+
 func TestConvertToWhisperXParamsWithSortformerDiarization(t *testing.T) {
 	mockRepo := new(MockJobRepository)
-	service := NewUnifiedTranscriptionService(mockRepo, "data/temp", "data/transcripts")
+	service := NewUnifiedTranscriptionService(mockRepo, "data/temp", "data/transcripts", "")
 
 	sortformerParams := models.WhisperXParams{
 		Model:        "small",

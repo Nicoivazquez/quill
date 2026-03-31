@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/accordion";
 import { Loader2, Check, XCircle } from "lucide-react";
 import { useAuth } from "@/features/auth/hooks/useAuth";
+import { useWarmModel } from "@/features/runtime/hooks/useRuntimeWarmup";
 import { FormField, Section, InfoBanner } from "@/components/transcription/FormHelpers";
 
 // ============================================================================
@@ -51,6 +52,7 @@ export interface WhisperXParams {
     interpolate_method: string;
     no_align: boolean;
     return_char_alignments: boolean;
+    vad_preprocess: boolean;
     vad_method: string;
     vad_onset: number;
     vad_offset: number;
@@ -128,11 +130,16 @@ const getDiarizationMode = (params: WhisperXParams): DiarizationMode => {
 
 const applyDiarizationMode = (
     updateParam: <K extends keyof WhisperXParams>(key: K, value: WhisperXParams[K]) => void,
-    mode: DiarizationMode
+    mode: DiarizationMode,
+    currentMaxSpeakers?: number
 ) => {
     if (mode === "local") {
         updateParam("diarize_model", "nvidia_sortformer");
         updateParam("hf_token", undefined);
+        // Clamp max_speakers to Sortformer's hard limit of 4
+        if (currentMaxSpeakers && currentMaxSpeakers > 4) {
+            updateParam("max_speakers", 4);
+        }
         return;
     }
     // pyannote — backend resolves HF token from settings
@@ -142,7 +149,7 @@ const applyDiarizationMode = (
 
 const DEFAULT_PARAMS: WhisperXParams = {
     model_family: "mlx_whisper",
-    model: "large-v3-turbo",
+    model: "large-v3-turbo-q4",
     model_cache_only: false,
     device: "cpu",
     device_index: 0,
@@ -155,6 +162,7 @@ const DEFAULT_PARAMS: WhisperXParams = {
     interpolate_method: "nearest",
     no_align: false,
     return_char_alignments: false,
+    vad_preprocess: true,
     vad_method: "pyannote",
     vad_onset: 0.5,
     vad_offset: 0.363,
@@ -183,8 +191,14 @@ const DEFAULT_PARAMS: WhisperXParams = {
     api_key: "",
 };
 
-const WHISPER_MODELS = [
-    "small", "small.en", "medium", "medium.en", "large-v3", "large-v3-turbo"
+const WHISPER_MODELS: { value: string; label: string; description: string }[] = [
+    { value: "small", label: "small", description: "~490 MB — Fast, lower accuracy" },
+    { value: "small.en", label: "small.en", description: "~490 MB — English-only, slightly better for English" },
+    { value: "medium", label: "medium", description: "~1.5 GB — Balanced speed and accuracy" },
+    { value: "medium.en", label: "medium.en", description: "~1.5 GB — English-only, good accuracy" },
+    { value: "large-v3", label: "large-v3", description: "~3.1 GB — Best accuracy, slowest" },
+    { value: "large-v3-turbo", label: "large-v3-turbo", description: "~1.6 GB — Near large-v3 accuracy, 4x faster" },
+    { value: "large-v3-turbo-q4", label: "large-v3-turbo-q4", description: "~442 MB — Quantized turbo, fastest large model. Minimal accuracy loss vs turbo." },
 ];
 
 const LANGUAGES = [
@@ -263,9 +277,10 @@ const PARAM_DESCRIPTIONS = {
     compute_type: "Float16 (faster), Float32 (accurate), Int8 (fastest).",
     batch_size: "Segments processed at once. Higher = faster but more memory.",
     diarize: "Identify and separate different speakers.",
-    diarize_model: "Local (NVIDIA Sortformer, no token needed) or Pyannote (high-accuracy, uses token from Settings).",
+    diarize_model: "Local (NVIDIA Sortformer, no token needed, up to 4 speakers) or Pyannote (high-accuracy, up to 20 speakers, requires HF token from Settings).",
     temperature: "0 = deterministic, higher = more creative.",
     beam_size: "Search beams. Higher = better quality but slower.",
+    vad_preprocess: "Strip silence before transcription using Silero VAD. Speeds up transcription on audio with pauses, with no accuracy loss.",
     vad_method: "Voice detection: Pyannote (accurate) or Silero (fast).",
     initial_prompt: "Context text to guide transcription style.",
     hf_token: "Configured in Settings \u2192 Transcription. Used automatically when Pyannote is selected.",
@@ -325,6 +340,7 @@ export const TranscriptionConfigDialog = memo(function TranscriptionConfigDialog
     const [validationStatus, setValidationStatus] = useState<'idle' | 'valid' | 'invalid'>('idle');
     const [validationMessage, setValidationMessage] = useState("");
     const { getAuthHeaders } = useAuth();
+    const warmModel = useWarmModel();
     const [availableModels, setAvailableModels] = useState<string[]>(["whisper-1"]);
 
     // Reset when dialog opens
@@ -373,6 +389,19 @@ export const TranscriptionConfigDialog = memo(function TranscriptionConfigDialog
     };
 
     const handleSubmit = () => {
+        // Trigger on-demand model download for local backends.
+        // The backend short-circuits if the model is already cached,
+        // so this is safe to call unconditionally.
+        const LOCAL_BACKENDS: Record<string, string> = {
+            whisper: "whisperx",
+            mlx_whisper: "mlx_whisper",
+            whisper_cpp: "whisper_cpp",
+        };
+        const backend = LOCAL_BACKENDS[params.model_family];
+        if (backend && params.model) {
+            warmModel.mutate({ backend, model: params.model });
+        }
+
         if (isProfileMode) {
             onStartTranscription({ ...params, profileName, profileDescription });
         } else {
@@ -576,14 +605,14 @@ function WhisperConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
 
     const handleDiarizationModeChange = (mode: DiarizationMode) => {
         setDiarizationMode(mode);
-        applyDiarizationMode(updateParam, mode);
+        applyDiarizationMode(updateParam, mode, params.max_speakers);
     };
 
     return (
         <div className="space-y-6">
             {/* Essential Settings */}
             <Section title="Model Settings">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-4">
                     <FormField label="Model Size" description={PARAM_DESCRIPTIONS.model}>
                         <Select value={params.model} onValueChange={(v) => updateParam('model', v)}>
                             <SelectTrigger className={selectTriggerClassName}>
@@ -591,48 +620,55 @@ function WhisperConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
                             </SelectTrigger>
                             <SelectContent className={selectContentClassName}>
                                 {WHISPER_MODELS.map((m) => (
-                                    <SelectItem key={m} value={m} className={selectItemClassName}>{m}</SelectItem>
+                                    <SelectItem key={m.value} value={m.value} className={selectItemClassName}>
+                                        <div className="flex flex-col">
+                                            <span>{m.label}</span>
+                                            <span className="text-xs text-[var(--text-tertiary)]">{m.description}</span>
+                                        </div>
+                                    </SelectItem>
                                 ))}
                             </SelectContent>
                         </Select>
                     </FormField>
 
-                    <FormField label="Language" description={PARAM_DESCRIPTIONS.language}>
-                        <Select value={params.language || "auto"} onValueChange={(v) => updateParam('language', v === "auto" ? undefined : v)}>
-                            <SelectTrigger className={selectTriggerClassName}>
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent className={selectContentClassName}>
-                                {LANGUAGES.map((l) => (
-                                    <SelectItem key={l.value} value={l.value} className={selectItemClassName}>{l.label}</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </FormField>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <FormField label="Language" description={PARAM_DESCRIPTIONS.language}>
+                            <Select value={params.language || "auto"} onValueChange={(v) => updateParam('language', v === "auto" ? undefined : v)}>
+                                <SelectTrigger className={selectTriggerClassName}>
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent className={selectContentClassName}>
+                                    {LANGUAGES.map((l) => (
+                                        <SelectItem key={l.value} value={l.value} className={selectItemClassName}>{l.label}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </FormField>
 
-                    <FormField label="Task" description={PARAM_DESCRIPTIONS.task}>
-                        <Select value={params.task} onValueChange={(v) => updateParam('task', v)}>
-                            <SelectTrigger className={selectTriggerClassName}>
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent className={selectContentClassName}>
-                                <SelectItem value="transcribe" className={selectItemClassName}>Transcribe</SelectItem>
-                                <SelectItem value="translate" className={selectItemClassName}>Translate to English</SelectItem>
-                            </SelectContent>
-                        </Select>
-                    </FormField>
+                        <FormField label="Task" description={PARAM_DESCRIPTIONS.task}>
+                            <Select value={params.task} onValueChange={(v) => updateParam('task', v)}>
+                                <SelectTrigger className={selectTriggerClassName}>
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent className={selectContentClassName}>
+                                    <SelectItem value="transcribe" className={selectItemClassName}>Transcribe</SelectItem>
+                                    <SelectItem value="translate" className={selectItemClassName}>Translate to English</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </FormField>
 
-                    <FormField label="Device" description={PARAM_DESCRIPTIONS.device}>
-                        <Select value={params.device} onValueChange={(v) => updateParam('device', v)}>
-                            <SelectTrigger className={selectTriggerClassName}>
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent className={selectContentClassName}>
-                                <SelectItem value="cpu" className={selectItemClassName}>CPU</SelectItem>
-                                <SelectItem value="cuda" className={selectItemClassName}>GPU (CUDA)</SelectItem>
-                            </SelectContent>
-                        </Select>
-                    </FormField>
+                        <FormField label="Device" description={PARAM_DESCRIPTIONS.device}>
+                            <Select value={params.device} onValueChange={(v) => updateParam('device', v)}>
+                                <SelectTrigger className={selectTriggerClassName}>
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent className={selectContentClassName}>
+                                    <SelectItem value="cpu" className={selectItemClassName}>CPU</SelectItem>
+                                    <SelectItem value="cuda" className={selectItemClassName}>GPU (CUDA)</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </FormField>
+                    </div>
                 </div>
             </Section>
 
@@ -684,14 +720,23 @@ function WhisperConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
                                         <Input
                                             type="number"
                                             min={1}
-                                            max={20}
+                                            max={diarizationMode === "local" ? 4 : 20}
                                             placeholder="Auto"
                                             value={params.max_speakers || ""}
-                                            onChange={(e) => updateParam('max_speakers', e.target.value ? parseInt(e.target.value) : undefined)}
+                                            onChange={(e) => {
+                                                const val = e.target.value ? parseInt(e.target.value) : undefined;
+                                                updateParam('max_speakers', val);
+                                            }}
                                             className={inputClassName}
                                         />
                                     </FormField>
                                 </div>
+
+                                {diarizationMode === "local" && params.max_speakers && params.max_speakers > 4 && (
+                                    <p className="text-xs text-amber-500">
+                                        Sortformer supports up to 4 speakers. For more, switch to Pyannote (requires a Hugging Face token in Settings).
+                                    </p>
+                                )}
 
                                 {diarizationMode === "pyannote" && (
                                     <>
@@ -727,8 +772,8 @@ function WhisperConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
 
                                 <p className="text-xs text-[var(--text-tertiary)]">
                                     {diarizationMode === "local"
-                                        ? "NVIDIA Sortformer runs locally without a Hugging Face token."
-                                        : "Uses your Hugging Face token from Settings \u2192 Transcription. Falls back to Sortformer if not configured."}
+                                        ? "NVIDIA Sortformer runs locally without a Hugging Face token. Supports up to 4 speakers."
+                                        : "Uses your Hugging Face token from Settings \u2192 Transcription. Supports up to 20 speakers. Falls back to Sortformer if not configured."}
                                 </p>
                             </div>
                         )}
@@ -813,6 +858,22 @@ function WhisperConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
                             </label>
                         </div>
 
+                        <div className="flex items-center justify-between gap-3">
+                            <div className="flex-1">
+                                <label htmlFor="vad_preprocess" className="text-sm text-[var(--text-primary)] cursor-pointer">
+                                    Silence removal (Silero VAD)
+                                </label>
+                                <p className="text-xs text-[var(--text-tertiary)] mt-0.5">
+                                    {PARAM_DESCRIPTIONS.vad_preprocess}
+                                </p>
+                            </div>
+                            <Switch
+                                id="vad_preprocess"
+                                checked={params.vad_preprocess}
+                                onCheckedChange={(v) => updateParam('vad_preprocess', v)}
+                            />
+                        </div>
+
                         {/* Alignment Settings */}
                         <div className="pt-2 border-t border-[var(--border-subtle)] space-y-4">
                             <div className="flex items-center gap-3">
@@ -849,7 +910,7 @@ function ParakeetConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
 
     const handleDiarizationModeChange = (mode: DiarizationMode) => {
         setDiarizationMode(mode);
-        applyDiarizationMode(updateParam, mode);
+        applyDiarizationMode(updateParam, mode, params.max_speakers);
     };
 
     return (
@@ -943,14 +1004,23 @@ function ParakeetConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
                                         <Input
                                             type="number"
                                             min={1}
-                                            max={20}
+                                            max={diarizationMode === "local" ? 4 : 20}
                                             placeholder="Auto"
                                             value={params.max_speakers || ""}
-                                            onChange={(e) => updateParam('max_speakers', e.target.value ? parseInt(e.target.value) : undefined)}
+                                            onChange={(e) => {
+                                                const val = e.target.value ? parseInt(e.target.value) : undefined;
+                                                updateParam('max_speakers', val);
+                                            }}
                                             className={inputClassName}
                                         />
                                     </FormField>
                                 </div>
+
+                                {diarizationMode === "local" && params.max_speakers && params.max_speakers > 4 && (
+                                    <p className="text-xs text-amber-500">
+                                        Sortformer supports up to 4 speakers. For more, switch to Pyannote (requires a Hugging Face token in Settings).
+                                    </p>
+                                )}
 
                                 {diarizationMode === "pyannote" && (
                                     <>
@@ -986,8 +1056,8 @@ function ParakeetConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
 
                                 <p className="text-xs text-[var(--text-tertiary)]">
                                     {diarizationMode === "local"
-                                        ? "NVIDIA Sortformer runs locally without a Hugging Face token."
-                                        : "Uses your Hugging Face token from Settings \u2192 Transcription. Falls back to Sortformer if not configured."}
+                                        ? "NVIDIA Sortformer runs locally without a Hugging Face token. Supports up to 4 speakers."
+                                        : "Uses your Hugging Face token from Settings \u2192 Transcription. Supports up to 20 speakers. Falls back to Sortformer if not configured."}
                                 </p>
                             </div>
                         )}
@@ -1003,7 +1073,7 @@ function CanaryConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
 
     const handleDiarizationModeChange = (mode: DiarizationMode) => {
         setDiarizationMode(mode);
-        applyDiarizationMode(updateParam, mode);
+        applyDiarizationMode(updateParam, mode, params.max_speakers);
     };
 
     return (
@@ -1071,14 +1141,23 @@ function CanaryConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
                                         <Input
                                             type="number"
                                             min={1}
-                                            max={20}
+                                            max={diarizationMode === "local" ? 4 : 20}
                                             placeholder="Auto"
                                             value={params.max_speakers || ""}
-                                            onChange={(e) => updateParam('max_speakers', e.target.value ? parseInt(e.target.value) : undefined)}
+                                            onChange={(e) => {
+                                                const val = e.target.value ? parseInt(e.target.value) : undefined;
+                                                updateParam('max_speakers', val);
+                                            }}
                                             className={inputClassName}
                                         />
                                     </FormField>
                                 </div>
+
+                                {diarizationMode === "local" && params.max_speakers && params.max_speakers > 4 && (
+                                    <p className="text-xs text-amber-500">
+                                        Sortformer supports up to 4 speakers. For more, switch to Pyannote (requires a Hugging Face token in Settings).
+                                    </p>
+                                )}
 
                                 {diarizationMode === "pyannote" && (
                                     <>
@@ -1114,8 +1193,8 @@ function CanaryConfig({ params, updateParam, isMultiTrack }: ConfigProps) {
 
                                 <p className="text-xs text-[var(--text-tertiary)]">
                                     {diarizationMode === "local"
-                                        ? "NVIDIA Sortformer runs locally without a Hugging Face token."
-                                        : "Uses your Hugging Face token from Settings \u2192 Transcription. Falls back to Sortformer if not configured."}
+                                        ? "NVIDIA Sortformer runs locally without a Hugging Face token. Supports up to 4 speakers."
+                                        : "Uses your Hugging Face token from Settings \u2192 Transcription. Supports up to 20 speakers. Falls back to Sortformer if not configured."}
                                 </p>
                             </div>
                         )}
@@ -1219,7 +1298,7 @@ function MLXOrCppConfig({ params, updateParam, isMultiTrack, family }: ConfigPro
 
     const handleDiarizationModeChange = (mode: DiarizationMode) => {
         setDiarizationMode(mode);
-        applyDiarizationMode(updateParam, mode);
+        applyDiarizationMode(updateParam, mode, params.max_speakers);
     };
 
     return (
@@ -1232,44 +1311,51 @@ function MLXOrCppConfig({ params, updateParam, isMultiTrack, family }: ConfigPro
             </InfoBanner>
 
             <Section title="Model Settings">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-4">
                     <FormField label="Model Size" description="Whisper model size. Larger models are more accurate but slower.">
-                        <Select value={params.model || "large-v3-turbo"} onValueChange={(v) => updateParam('model', v)}>
+                        <Select value={params.model || "large-v3-turbo-q4"} onValueChange={(v) => updateParam('model', v)}>
                             <SelectTrigger className={selectTriggerClassName}>
                                 <SelectValue />
                             </SelectTrigger>
                             <SelectContent className={selectContentClassName}>
                                 {WHISPER_MODELS.map((m) => (
-                                    <SelectItem key={m} value={m} className={selectItemClassName}>{m}</SelectItem>
+                                    <SelectItem key={m.value} value={m.value} className={selectItemClassName}>
+                                        <div className="flex flex-col">
+                                            <span>{m.label}</span>
+                                            <span className="text-xs text-[var(--text-tertiary)]">{m.description}</span>
+                                        </div>
+                                    </SelectItem>
                                 ))}
                             </SelectContent>
                         </Select>
                     </FormField>
 
-                    <FormField label="Language" description="Source language (auto-detect if unset)">
-                        <Select value={params.language || "auto"} onValueChange={(v) => updateParam('language', v === "auto" ? undefined : v)}>
-                            <SelectTrigger className={selectTriggerClassName}>
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent className={selectContentClassName}>
-                                {LANGUAGES.map((l) => (
-                                    <SelectItem key={l.value} value={l.value} className={selectItemClassName}>{l.label}</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </FormField>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <FormField label="Language" description="Source language (auto-detect if unset)">
+                            <Select value={params.language || "auto"} onValueChange={(v) => updateParam('language', v === "auto" ? undefined : v)}>
+                                <SelectTrigger className={selectTriggerClassName}>
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent className={selectContentClassName}>
+                                    {LANGUAGES.map((l) => (
+                                        <SelectItem key={l.value} value={l.value} className={selectItemClassName}>{l.label}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </FormField>
 
-                    <FormField label="Task" description="Transcribe in the original language or translate to English">
-                        <Select value={params.task} onValueChange={(v) => updateParam('task', v)}>
-                            <SelectTrigger className={selectTriggerClassName}>
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent className={selectContentClassName}>
-                                <SelectItem value="transcribe" className={selectItemClassName}>Transcribe</SelectItem>
-                                <SelectItem value="translate" className={selectItemClassName}>Translate to English</SelectItem>
-                            </SelectContent>
-                        </Select>
-                    </FormField>
+                        <FormField label="Task" description="Transcribe in the original language or translate to English">
+                            <Select value={params.task} onValueChange={(v) => updateParam('task', v)}>
+                                <SelectTrigger className={selectTriggerClassName}>
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent className={selectContentClassName}>
+                                    <SelectItem value="transcribe" className={selectItemClassName}>Transcribe</SelectItem>
+                                    <SelectItem value="translate" className={selectItemClassName}>Translate to English</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </FormField>
+                    </div>
                 </div>
             </Section>
 
@@ -1321,14 +1407,23 @@ function MLXOrCppConfig({ params, updateParam, isMultiTrack, family }: ConfigPro
                                         <Input
                                             type="number"
                                             min={1}
-                                            max={20}
+                                            max={diarizationMode === "local" ? 4 : 20}
                                             placeholder="Auto"
                                             value={params.max_speakers || ""}
-                                            onChange={(e) => updateParam('max_speakers', e.target.value ? parseInt(e.target.value) : undefined)}
+                                            onChange={(e) => {
+                                                const val = e.target.value ? parseInt(e.target.value) : undefined;
+                                                updateParam('max_speakers', val);
+                                            }}
                                             className={inputClassName}
                                         />
                                     </FormField>
                                 </div>
+
+                                {diarizationMode === "local" && params.max_speakers && params.max_speakers > 4 && (
+                                    <p className="text-xs text-amber-500">
+                                        Sortformer supports up to 4 speakers. For more, switch to Pyannote (requires a Hugging Face token in Settings).
+                                    </p>
+                                )}
 
                                 {diarizationMode === "pyannote" && (
                                     <>
@@ -1364,8 +1459,8 @@ function MLXOrCppConfig({ params, updateParam, isMultiTrack, family }: ConfigPro
 
                                 <p className="text-xs text-[var(--text-tertiary)]">
                                     {diarizationMode === "local"
-                                        ? "NVIDIA Sortformer runs locally without a Hugging Face token."
-                                        : "Uses your Hugging Face token from Settings \u2192 Transcription. Falls back to Sortformer if not configured."}
+                                        ? "NVIDIA Sortformer runs locally without a Hugging Face token. Supports up to 4 speakers."
+                                        : "Uses your Hugging Face token from Settings \u2192 Transcription. Supports up to 20 speakers. Falls back to Sortformer if not configured."}
                                 </p>
                             </div>
                         )}

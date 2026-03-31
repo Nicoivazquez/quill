@@ -68,6 +68,7 @@ type Handler struct {
 	runtimeWarmup       *transcription.RuntimeWarmupManager
 	ftsManager          *search.FTSManager
 	broadcaster         *sse.Broadcaster
+	notifier            *sse.Notifier
 }
 
 // NewHandler creates a new handler
@@ -93,6 +94,7 @@ func NewHandler(
 	quickTranscription *transcription.QuickTranscriptionService,
 	multiTrackProcessor *processing.MultiTrackProcessor,
 	broadcaster *sse.Broadcaster,
+	notifier *sse.Notifier,
 ) *Handler {
 	return &Handler{
 		config:              cfg,
@@ -116,6 +118,7 @@ func NewHandler(
 		quickTranscription:  quickTranscription,
 		multiTrackProcessor: multiTrackProcessor,
 		broadcaster:         broadcaster,
+		notifier:            notifier,
 	}
 }
 
@@ -142,6 +145,13 @@ func (h *Handler) SetRuntimeWarmupManager(runtimeWarmup *transcription.RuntimeWa
 // SetFTSManager wires full-text search indexing for transcription jobs.
 func (h *Handler) SetFTSManager(ftsManager *search.FTSManager) {
 	h.ftsManager = ftsManager
+}
+
+// emitNotification is a nil-safe helper that emits a user-facing notification.
+func (h *Handler) emitNotification(class, level, message, action string) {
+	if h.notifier != nil {
+		h.notifier.Notify(class, level, message, action)
+	}
 }
 
 // ftsUpsertJob is a best-effort helper that updates the FTS index for a job.
@@ -1065,8 +1075,9 @@ func (h *Handler) ListTranscriptionJobs(c *gin.Context) {
 		UpdatedAfter: updatedAfter,
 		VaultID:      activeVaultID,
 		Folder:       folderPtr,
-		Status:       c.Query("status"),
-		Speaker:      c.Query("speaker"),
+		Status:        c.Query("status"),
+		Speaker:       c.Query("speaker"),
+		SpeakerStatus: c.Query("speaker_status"),
 	}
 
 	// Use FTS5 for search when available — fall back to LIKE via SearchQuery
@@ -1097,15 +1108,20 @@ func (h *Handler) ListTranscriptionJobs(c *gin.Context) {
 
 	// Count pending speaker suggestions per job for badge display.
 	pendingSuggestions := make(map[string]int)
+	speakerAttention := make(map[string]repository.SpeakerAttentionSummary)
 	if len(jobIDs) > 0 {
 		if counts, countErr := h.speakerMappingRepo.CountPendingSuggestions(c.Request.Context(), jobIDs); countErr == nil {
 			pendingSuggestions = counts
 		}
+		if summaries, saErr := h.speakerMappingRepo.GetSpeakerAttentionSummary(c.Request.Context(), jobIDs); saErr == nil {
+			speakerAttention = summaries
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"jobs":                 jobs,
-		"pending_suggestions":  pendingSuggestions,
+		"jobs":                jobs,
+		"pending_suggestions": pendingSuggestions,
+		"speaker_attention":   speakerAttention,
 		"pagination": gin.H{
 			"page":  page,
 			"limit": limit,
@@ -1603,15 +1619,37 @@ func (h *Handler) AutoGenerateTranscriptionTitleForJob(ctx context.Context, jobI
 
 	title, modelName, err := h.generateAndPersistTranscriptionTitle(ctx, job, "")
 	if err != nil {
-		// No active LLM is a normal state; log so users know why it was skipped.
-		if strings.Contains(strings.ToLower(err.Error()), "no active llm configuration") {
+		errLower := strings.ToLower(err.Error())
+		if strings.Contains(errLower, "no active llm configuration") {
 			logger.Warn("Auto-title skipped: no LLM configured. Add an OpenAI or Ollama provider in Settings → LLM to enable auto-titling.",
 				"job_id", jobID)
+			h.emitNotification(sse.NotifyLLMNotConfigured, "warning",
+				"Auto-titling is disabled because no LLM provider is configured. Go to Settings → LLM to add one.",
+				"open_settings_llm")
 			return nil
+		}
+		if strings.Contains(errLower, "no available model") || strings.Contains(errLower, "embedding-only") {
+			h.emitNotification(sse.NotifyNoChatModel, "warning",
+				"No chat model found — only embedding models are available. Download a chat model (e.g. llama3) to enable auto-titling.",
+				"open_settings_llm")
+		} else if strings.Contains(errLower, "connection refused") || strings.Contains(errLower, "connect: connection") || strings.Contains(errLower, "no such host") {
+			h.emitNotification(sse.NotifyOllamaUnreachable, "warning",
+				"Could not reach LLM provider — is Ollama running? Check Settings → LLM.",
+				"open_settings_llm")
+		} else {
+			h.emitNotification(sse.NotifyLLMCallFailed, "error",
+				"LLM call failed during auto-titling. Check server logs for details.", "")
 		}
 		return err
 	}
 	logger.Info("Auto-generated transcription title", "job_id", jobID, "model", modelName, "title", title)
+
+	// Notify the frontend so the list view refreshes with the new title.
+	h.broadcaster.BroadcastGlobal("title_updated", map[string]string{
+		"job_id": jobID,
+		"title":  title,
+	})
+
 	return nil
 }
 
@@ -1690,7 +1728,7 @@ func (h *Handler) resolveAutoTitleModel(ctx context.Context, svc llm.Service, pr
 		return "", modelErr
 	}
 
-	if defaultModel != "" {
+	if defaultModel != "" && !isEmbeddingModel(defaultModel) {
 		for _, modelName := range availableModels {
 			normalized := strings.TrimSpace(modelName)
 			if normalized != "" && strings.EqualFold(normalized, defaultModel) {
@@ -1698,6 +1736,9 @@ func (h *Handler) resolveAutoTitleModel(ctx context.Context, svc llm.Service, pr
 			}
 		}
 		logger.Warn("Default model not available on active LLM provider, falling back to first available model",
+			"default_model", defaultModel)
+	} else if defaultModel != "" && isEmbeddingModel(defaultModel) {
+		logger.Warn("Default model is an embedding-only model, skipping for chat/generation",
 			"default_model", defaultModel)
 	}
 
@@ -1708,11 +1749,11 @@ func (h *Handler) resolveAutoTitleModel(ctx context.Context, svc llm.Service, pr
 		}
 	}
 
-	if defaultModel != "" {
+	if defaultModel != "" && !isEmbeddingModel(defaultModel) {
 		return defaultModel, nil
 	}
 
-	return "", fmt.Errorf("no available model found for title generation")
+	return "", fmt.Errorf("no available model found for title generation (embedding-only models are excluded)")
 }
 
 // isEmbeddingModel returns true for model names that are known embedding-only
@@ -1835,14 +1876,7 @@ func (h *Handler) generateAndPersistTranscriptionTitle(
 		return "", "", fmt.Errorf("transcript content is required")
 	}
 
-	msgs := []models.ChatMessage{
-		{
-			Role:    RoleUser,
-			Content: buildTranscriptTitleSource(*job.Transcript),
-		},
-	}
-
-	title, err := h.generateTitleFromLLM(ctx, svc, selectedModel, msgs)
+	title, err := h.generateTranscriptTitleFromLLM(ctx, svc, selectedModel, buildTranscriptTitleSource(*job.Transcript))
 	if err != nil {
 		return "", "", err
 	}
@@ -2083,6 +2117,61 @@ func looksLikeTimestamp(s string) bool {
 	return digits >= 8
 }
 
+// generateTranscriptTitleFromLLM generates a title optimised for audio transcripts
+// (conversations, phone calls, voice memos, interviews, podcasts, etc.) rather than
+// the chat-session prompt used by generateTitleFromLLM.
+func (h *Handler) generateTranscriptTitleFromLLM(ctx context.Context, svc llm.Service, model, transcript string) (string, error) {
+	prompt := `You are an expert at creating concise, descriptive titles for audio transcripts. These are everyday conversations — phone calls, voice memos, casual chats, interviews, brainstorms, podcasts, and similar recordings. They are NOT corporate meeting minutes.
+
+Generate a short title (4-8 words) that captures the main idea of the conversation.
+
+Rules:
+- Use Title Case (Every Important Word Capitalized)
+- Lead with the topic or subject, not a verb
+- If speakers are identifiable, you may reference them (e.g. "Sarah and Tom on Moving Plans")
+- Be specific: prefer "Weekend Camping Trip Plans" over "Planning Discussion"
+- No quotation marks, brackets, or trailing punctuation
+- No emojis or special characters
+- Never use generic labels like "Conversation", "Chat", "Discussion", "Audio Recording"
+
+Examples:
+- "Jake's Birthday Party Planning"
+- "Debugging the Login Page With Marcus"
+- "Mom's Recipe for Lemon Chicken"
+- "Apartment Hunting in Brooklyn"
+- "Post-Game Recap and Season Predictions"
+- "Sarah and Tom on Moving Plans"
+- "Q1 Revenue Review and Sales Targets"
+- "How Transformers Changed NLP"
+
+Return ONLY the title, nothing else.`
+
+	chatMsgs := []llm.ChatMessage{
+		{Role: "system", Content: prompt},
+		{Role: "user", Content: transcript},
+	}
+
+	timeoutCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	resp, err := svc.ChatCompletion(timeoutCtx, model, chatMsgs, 0.0)
+	if err != nil {
+		return "", err
+	}
+	if resp == nil || len(resp.Choices) == 0 || resp.Choices[0].Message.Content == "" {
+		return "", fmt.Errorf("empty response from LLM")
+	}
+
+	title := strings.TrimSpace(resp.Choices[0].Message.Content)
+	title = strings.Trim(title, "'\"`")
+	title = strings.ReplaceAll(title, "\n", " ")
+	title = strings.ReplaceAll(title, "\r", " ")
+	if len(title) > 60 {
+		title = title[:57] + "..."
+	}
+	return title, nil
+}
+
 func buildTranscriptTitleSource(transcript string) string {
 	trimmed := strings.TrimSpace(transcript)
 	if trimmed == "" {
@@ -2247,7 +2336,13 @@ func (h *Handler) GetAudioFile(c *gin.Context) {
 	}
 
 	if _, err := os.Stat(audioPath); os.IsNotExist(err) {
-		logger.Debug("audio file missing on disk", "path", audioPath)
+		artifactDir := ""
+		if job.ArtifactDir != nil {
+			artifactDir = *job.ArtifactDir
+		}
+		logger.Warn("audio file missing on disk",
+			"job_id", jobID, "path", audioPath, "artifact_dir", artifactDir,
+			"status", job.Status, "title", job.Title)
 		c.JSON(http.StatusNotFound, gin.H{"error": "Audio file not found on disk"})
 		return
 	}
@@ -3848,4 +3943,10 @@ func (h *Handler) UpdateUserSettings(c *gin.Context) {
 // @Router /api/v1/events [get]
 func (h *Handler) Events(c *gin.Context) {
 	h.broadcaster.ServeHTTP(c.Writer, c.Request)
+}
+
+// GlobalEvents handles SSE connections for global (list-level) events.
+// Unlike Events, no job_id is required — clients receive all BroadcastGlobal events.
+func (h *Handler) GlobalEvents(c *gin.Context) {
+	h.broadcaster.ServeGlobalHTTP(c.Writer, c.Request)
 }

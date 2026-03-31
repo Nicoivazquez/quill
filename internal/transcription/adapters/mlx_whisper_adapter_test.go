@@ -19,6 +19,7 @@ func TestMLXWhisperModelID(t *testing.T) {
 		{"medium.en", "mlx-community/whisper-medium.en-mlx"},
 		{"large-v3", "mlx-community/whisper-large-v3-mlx"},
 		{"large-v3-turbo", "mlx-community/whisper-large-v3-turbo"},
+		{"large-v3-turbo-q4", "mlx-community/whisper-large-v3-turbo-q4"},
 		// Unknown model falls back to convention
 		{"tiny", "mlx-community/whisper-tiny-mlx"},
 	}
@@ -44,6 +45,7 @@ func TestMLXWhisperModelSize(t *testing.T) {
 		{"medium.en", "~1.5 GB"},
 		{"large-v3", "~3.1 GB"},
 		{"large-v3-turbo", "~1.6 GB"},
+		{"large-v3-turbo-q4", "~442 MB"},
 		{"unknown", "unknown"},
 	}
 
@@ -82,7 +84,7 @@ func TestMLXWhisperGetSupportedModels(t *testing.T) {
 	adapter := NewMLXWhisperAdapter("/tmp/test-env")
 	models := adapter.GetSupportedModels()
 
-	expected := []string{"small", "small.en", "medium", "medium.en", "large-v3", "large-v3-turbo"}
+	expected := []string{"small", "small.en", "medium", "medium.en", "large-v3", "large-v3-turbo", "large-v3-turbo-q4"}
 	if len(models) != len(expected) {
 		t.Fatalf("expected %d models, got %d: %v", len(expected), len(models), models)
 	}
@@ -221,6 +223,49 @@ func TestMLXWhisperParseResult_MissingFile(t *testing.T) {
 	_, err := adapter.parseResult("/nonexistent/result.json")
 	if err == nil {
 		t.Fatal("expected error for missing file")
+	}
+}
+
+func TestMLXWhisperBuildTranscribeScript_Q4(t *testing.T) {
+	adapter := NewMLXWhisperAdapter("/tmp/test-env")
+
+	params := map[string]interface{}{
+		"model":           "large-v3-turbo-q4",
+		"word_timestamps": true,
+	}
+
+	script := adapter.buildTranscribeScript("/tmp/audio.wav", "/tmp/result.json", params)
+
+	if !strings.Contains(script, "mlx-community/whisper-large-v3-turbo-q4") {
+		t.Error("script should use quantized HuggingFace model ID for q4")
+	}
+}
+
+func TestMLXWhisperParameterSchema_IncludesQ4(t *testing.T) {
+	adapter := NewMLXWhisperAdapter("/tmp/test-env")
+	schema := adapter.GetParameterSchema()
+
+	var modelSchema *struct{ Options []string }
+	for _, s := range schema {
+		if s.Name == "model" {
+			opts := s.Options
+			modelSchema = &struct{ Options []string }{opts}
+			break
+		}
+	}
+	if modelSchema == nil {
+		t.Fatal("model parameter not found in schema")
+	}
+
+	found := false
+	for _, opt := range modelSchema.Options {
+		if opt == "large-v3-turbo-q4" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("large-v3-turbo-q4 not found in model options: %v", modelSchema.Options)
 	}
 }
 

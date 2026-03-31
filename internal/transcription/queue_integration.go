@@ -14,9 +14,9 @@ type UnifiedJobProcessor struct {
 }
 
 // NewUnifiedJobProcessor creates a new job processor using the unified service
-func NewUnifiedJobProcessor(jobRepo repository.JobRepository, tempDir, outputDir string) *UnifiedJobProcessor {
+func NewUnifiedJobProcessor(jobRepo repository.JobRepository, tempDir, outputDir, envPath string) *UnifiedJobProcessor {
 	return &UnifiedJobProcessor{
-		unifiedService: NewUnifiedTranscriptionService(jobRepo, tempDir, outputDir),
+		unifiedService: NewUnifiedTranscriptionService(jobRepo, tempDir, outputDir, envPath),
 	}
 }
 

@@ -51,7 +51,7 @@ func (suite *ListFilterSortTestSuite) SetupSuite() {
 	userService := service.NewUserService(userRepo, suite.helper.AuthService)
 	fileService := service.NewFileService()
 
-	unifiedProcessor := transcription.NewUnifiedJobProcessor(suite.jobRepo, suite.helper.Config.TempDir, suite.helper.Config.TranscriptsDir)
+	unifiedProcessor := transcription.NewUnifiedJobProcessor(suite.jobRepo, suite.helper.Config.TempDir, suite.helper.Config.TranscriptsDir, "")
 	quickTranscription, err := transcription.NewQuickTranscriptionService(suite.helper.Config, unifiedProcessor, suite.jobRepo)
 	assert.NoError(suite.T(), err)
 
@@ -81,6 +81,7 @@ func (suite *ListFilterSortTestSuite) SetupSuite() {
 		quickTranscription,
 		multiTrackProcessor,
 		broadcaster,
+		nil, // notifier
 	)
 
 	suite.router = api.SetupRoutes(suite.handler, suite.helper.AuthService)
@@ -137,6 +138,19 @@ func (suite *ListFilterSortTestSuite) createSpeakerMapping(jobID, originalSpeake
 		TranscriptionJobID: jobID,
 		OriginalSpeaker:    originalSpeaker,
 		CustomName:         customName,
+	}
+	err := suite.helper.DB.Create(mapping).Error
+	suite.Require().NoError(err)
+}
+
+// createSpeakerMappingWithContact creates a speaker mapping linked to a contact
+func (suite *ListFilterSortTestSuite) createSpeakerMappingWithContact(jobID, originalSpeaker, customName string, contactID uint) {
+	cid := contactID
+	mapping := &models.SpeakerMapping{
+		TranscriptionJobID: jobID,
+		OriginalSpeaker:    originalSpeaker,
+		CustomName:         customName,
+		ContactID:          &cid,
 	}
 	err := suite.helper.DB.Create(mapping).Error
 	suite.Require().NoError(err)
@@ -375,10 +389,13 @@ func (suite *ListFilterSortTestSuite) TestListDistinctSpeakers() {
 	jobA := suite.createJobWithStatus("Job A", models.StatusCompleted)
 	jobB := suite.createJobWithStatus("Job B", models.StatusCompleted)
 
-	suite.createSpeakerMapping(jobA.ID, "speaker_00", "Alice Smith")
-	suite.createSpeakerMapping(jobA.ID, "speaker_01", "Bob Jones")
-	suite.createSpeakerMapping(jobB.ID, "speaker_00", "Alice Smith") // duplicate
-	suite.createSpeakerMapping(jobB.ID, "speaker_01", "Charlie Brown")
+	// Only contact-linked speakers should appear in the distinct list
+	suite.createSpeakerMappingWithContact(jobA.ID, "speaker_00", "Alice Smith", 1)
+	suite.createSpeakerMappingWithContact(jobA.ID, "speaker_01", "Bob Jones", 2)
+	suite.createSpeakerMappingWithContact(jobB.ID, "speaker_00", "Alice Smith", 1) // duplicate
+	suite.createSpeakerMappingWithContact(jobB.ID, "speaker_01", "Charlie Brown", 3)
+	// Non-contact mapping should NOT appear
+	suite.createSpeakerMapping(jobB.ID, "speaker_02", "speaker_02")
 
 	w := suite.doRequest("/api/v1/transcription/speakers/distinct")
 	assert.Equal(suite.T(), http.StatusOK, w.Code)
@@ -388,7 +405,7 @@ func (suite *ListFilterSortTestSuite) TestListDistinctSpeakers() {
 	assert.NoError(suite.T(), err)
 
 	speakers := response["speakers"].([]interface{})
-	assert.Len(suite.T(), speakers, 3) // Alice, Bob, Charlie (deduped)
+	assert.Len(suite.T(), speakers, 3) // Alice, Bob, Charlie (deduped, contact-linked only)
 	// Sorted alphabetically
 	assert.Equal(suite.T(), "Alice Smith", speakers[0])
 	assert.Equal(suite.T(), "Bob Jones", speakers[1])
@@ -509,14 +526,17 @@ func (suite *ListFilterSortTestSuite) TestListDistinctSpeakersRepo() {
 	jobA := suite.createJobWithStatus("Job A", models.StatusCompleted)
 	jobB := suite.createJobWithStatus("Job B", models.StatusCompleted)
 
-	suite.createSpeakerMapping(jobA.ID, "speaker_00", "Alice")
-	suite.createSpeakerMapping(jobA.ID, "speaker_01", "Bob")
-	suite.createSpeakerMapping(jobB.ID, "speaker_00", "Alice") // duplicate
+	// Only contact-linked speakers should be returned
+	suite.createSpeakerMappingWithContact(jobA.ID, "speaker_00", "Alice", 1)
+	suite.createSpeakerMappingWithContact(jobA.ID, "speaker_01", "Bob", 2)
+	suite.createSpeakerMappingWithContact(jobB.ID, "speaker_00", "Alice", 1) // duplicate
+	// Non-contact mapping should be excluded
+	suite.createSpeakerMapping(jobB.ID, "speaker_01", "Charlie")
 
 	ctx := context.Background()
 	speakers, err := suite.jobRepo.ListDistinctSpeakers(ctx, nil)
 	assert.NoError(suite.T(), err)
-	assert.Len(suite.T(), speakers, 2) // Alice, Bob
+	assert.Len(suite.T(), speakers, 2) // Alice, Bob (Charlie excluded, no contact)
 	assert.Equal(suite.T(), "Alice", speakers[0])
 	assert.Equal(suite.T(), "Bob", speakers[1])
 }

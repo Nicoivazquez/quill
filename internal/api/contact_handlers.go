@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -656,18 +657,101 @@ func (h *Handler) RetroactiveScanForContact(c *gin.Context) {
 		return
 	}
 
+	// Use a detached context so the scan continues even if the client navigates away.
+	bgCtx := context.WithoutCancel(c.Request.Context())
+
 	// Inject LLM caller for voice+LLM fusion scoring if available.
-	if caller := h.buildSpeakerIDLLMCaller(c.Request.Context()); caller != nil {
+	if caller := h.buildSpeakerIDLLMCaller(bgCtx); caller != nil {
 		h.contactManager.SetRetroactiveScanLLMCaller(caller)
 	}
 
-	result, scanErr := h.contactManager.RetroactiveScanForContact(c.Request.Context(), contact.ID)
+	result, scanErr := h.contactManager.RetroactiveScanForContact(bgCtx, contact.ID)
 	if scanErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": scanErr.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, result)
+}
+
+// ContactAppearance is a single transcription in which a contact was identified.
+type ContactAppearance struct {
+	JobID          string  `json:"job_id"`
+	Title          string  `json:"title"`
+	SpeakerLabel   string  `json:"speaker_label"`
+	ConfidenceScore float64 `json:"confidence_score"`
+	MatchSource    string  `json:"match_source"`
+}
+
+// ListContactAppearances returns all transcriptions where the given contact
+// was identified as a speaker (via speaker mappings with a contact_id).
+func (h *Handler) ListContactAppearances(c *gin.Context) {
+	vault, err := getActiveVault()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No active vault configured"})
+		return
+	}
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid contact ID"})
+		return
+	}
+	// Verify the contact belongs to this vault.
+	if _, err := h.contactRepo.GetByIDInVault(c.Request.Context(), vault.ID, uint(id)); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Contact not found"})
+		return
+	}
+
+	// Find appearances by contact_id. Manual renames and the startup backfill
+	// both set contact_id, so this single query covers all linkage paths.
+	jobIDs, err := h.speakerMappingRepo.ListJobIDsByContactID(c.Request.Context(), uint(id))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to query appearances"})
+		return
+	}
+
+	if len(jobIDs) == 0 {
+		c.JSON(http.StatusOK, gin.H{"appearances": []ContactAppearance{}})
+		return
+	}
+
+	// Fetch job titles.
+	jobs, err := h.jobRepo.FindByIDs(c.Request.Context(), jobIDs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch transcriptions"})
+		return
+	}
+	jobTitles := make(map[string]string, len(jobs))
+	for _, j := range jobs {
+		title := j.ID
+		if j.Title != nil && *j.Title != "" {
+			title = *j.Title
+		}
+		jobTitles[j.ID] = title
+	}
+
+	// Fetch the speaker mappings for this contact to get labels & scores.
+	contactID := uint(id)
+	var appearances []ContactAppearance
+	for _, jobID := range jobIDs {
+		mappings, mapErr := h.speakerMappingRepo.ListByJob(c.Request.Context(), jobID)
+		if mapErr != nil {
+			continue
+		}
+		for _, m := range mappings {
+			if m.ContactID != nil && *m.ContactID == contactID {
+				appearances = append(appearances, ContactAppearance{
+					JobID:           jobID,
+					Title:           jobTitles[jobID],
+					SpeakerLabel:    m.CustomName,
+					ConfidenceScore: m.ConfidenceScore,
+					MatchSource:     m.MatchSource,
+				})
+			}
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"appearances": appearances})
 }
 
 func (h *Handler) GetContactFiles(c *gin.Context) {
@@ -775,6 +859,107 @@ func absFromOptional(fileService *contacts.FileService, value *string) string {
 		return ""
 	}
 	return abs
+}
+
+// PullContactSnippet extracts a fresh voice snippet from the latest transcript
+// where this contact is identified as a speaker. This replaces any existing
+// snippet and triggers re-extraction of the voice signature embedding.
+func (h *Handler) PullContactSnippet(c *gin.Context) {
+	vault, err := getActiveVault()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No active vault configured"})
+		return
+	}
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid contact ID"})
+		return
+	}
+	contact, err := h.contactRepo.GetByIDInVault(c.Request.Context(), vault.ID, uint(id))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Contact not found"})
+		return
+	}
+
+	// Find all transcriptions where this contact appears by contact_id.
+	// Manual renames and the startup backfill both set contact_id.
+	jobIDs, err := h.speakerMappingRepo.ListJobIDsByContactID(c.Request.Context(), contact.ID)
+	if err != nil {
+		jobIDs = nil
+	}
+	if len(jobIDs) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "No transcript appearances found for this contact"})
+		return
+	}
+
+	// Fetch all matching jobs and find the most recent completed one.
+	jobs, err := h.jobRepo.FindByIDs(c.Request.Context(), jobIDs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch transcriptions"})
+		return
+	}
+
+	// Sort by created_at descending, pick first completed job with a transcript.
+	sort.Slice(jobs, func(i, j int) bool {
+		return jobs[i].CreatedAt.After(jobs[j].CreatedAt)
+	})
+
+	var chosenJob *models.TranscriptionJob
+	var originalSpeaker string
+	for i := range jobs {
+		job := &jobs[i]
+		if job.Status != "completed" || job.Transcript == nil || strings.TrimSpace(*job.Transcript) == "" {
+			continue
+		}
+		// Find the speaker mapping for this contact in this job.
+		mappings, mapErr := h.speakerMappingRepo.ListByJob(c.Request.Context(), job.ID)
+		if mapErr != nil {
+			continue
+		}
+		for _, m := range mappings {
+			if m.ContactID != nil && *m.ContactID == contact.ID {
+				chosenJob = job
+				originalSpeaker = m.OriginalSpeaker
+				break
+			}
+		}
+		if chosenJob != nil {
+			break
+		}
+	}
+
+	if chosenJob == nil || originalSpeaker == "" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "No completed transcript with speaker mapping found"})
+		return
+	}
+
+	// Parse transcript to get clip windows.
+	transcript, err := parseTranscriptJSON(*chosenJob.Transcript)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse transcript"})
+		return
+	}
+	windowsBySpeaker := buildSpeakerClipWindows(transcript.Segments)
+	speakerKey := normalizeNameKey(originalSpeaker)
+	window, ok := windowsBySpeaker[speakerKey]
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "No speaker audio windows found in transcript"})
+		return
+	}
+
+	// Extract the snippet.
+	if err := h.extractSpeakerSnippetForContact(c.Request.Context(), chosenJob, vault, contact, window); err != nil {
+		logger.Warn("pull-snippet: extraction failed", "contact_id", contact.ID, "job_id", chosenJob.ID, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to extract snippet: %v", err)})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":    "Voice snippet extracted and signature processing queued",
+		"job_id":     chosenJob.ID,
+		"speaker":    originalSpeaker,
+		"contact_id": contact.ID,
+	})
 }
 
 func (h *Handler) syncContactManager(ctx context.Context, vaultID uint, vaultPath string) {

@@ -290,6 +290,87 @@ func (m *RuntimeWarmupManager) Retry(ctx context.Context) bool {
 	return m.Start(ctx)
 }
 
+// WarmOnDemandModel triggers a background download for a specific model.
+// It reuses the warmup status/polling mechanism so the frontend banner appears automatically.
+// Returns false if a warmup is already running.
+func (m *RuntimeWarmupManager) WarmOnDemandModel(ctx context.Context, backend, modelName string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.running {
+		return false
+	}
+
+	steps := buildModelOnlyWarmupSteps(backend, modelName)
+	if len(steps) == 0 {
+		return false
+	}
+
+	m.stepDefs = steps
+	m.enabled = true
+	m.resetForRunLocked()
+	runCtx, cancel := context.WithCancel(ctx)
+	m.cancel = cancel
+	m.running = true
+	m.wg.Add(1)
+	go m.run(runCtx)
+	return true
+}
+
+// buildModelOnlyWarmupSteps returns a single step that downloads the model for the given backend.
+// Unlike buildTranscriptionWarmupSteps, it skips the runtime installation step (assumed already done).
+func buildModelOnlyWarmupSteps(backend, modelName string) []runtimeWarmupStepDefinition {
+	switch backend {
+	case ModelMLXWhisper:
+		return []runtimeWarmupStepDefinition{
+			{
+				ID:       "mlx-whisper-model-ondemand",
+				Title:    fmt.Sprintf("Downloading MLX Whisper model (%s)", modelName),
+				Required: true,
+				Run: func(ctx context.Context) error {
+					adapter, err := resolveSimpleWarmable(ModelMLXWhisper)
+					if err != nil {
+						return err
+					}
+					return adapter.WarmModel(ctx, modelName)
+				},
+			},
+		}
+	case ModelWhisperCpp:
+		return []runtimeWarmupStepDefinition{
+			{
+				ID:       "whisper-cpp-model-ondemand",
+				Title:    fmt.Sprintf("Downloading whisper.cpp model (%s)", modelName),
+				Required: true,
+				Run: func(ctx context.Context) error {
+					adapter, err := resolveSimpleWarmable(ModelWhisperCpp)
+					if err != nil {
+						return err
+					}
+					return adapter.WarmModel(ctx, modelName)
+				},
+			},
+		}
+	case ModelWhisperX:
+		return []runtimeWarmupStepDefinition{
+			{
+				ID:       "whisperx-model-ondemand",
+				Title:    fmt.Sprintf("Downloading WhisperX model (%s)", modelName),
+				Required: true,
+				Run: func(ctx context.Context) error {
+					adapter, err := resolveWhisperWarmable()
+					if err != nil {
+						return err
+					}
+					return adapter.WarmModel(ctx, modelName, "cpu", "float32")
+				},
+			},
+		}
+	default:
+		return nil
+	}
+}
+
 func (m *RuntimeWarmupManager) Stop() {
 	m.mu.Lock()
 	cancel := m.cancel

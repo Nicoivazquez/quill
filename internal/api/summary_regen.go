@@ -10,6 +10,7 @@ import (
 
 	"quill/internal/llm"
 	"quill/internal/models"
+	"quill/internal/sse"
 	"quill/pkg/logger"
 )
 
@@ -111,6 +112,16 @@ func (h *Handler) regenerateSpeakerSummaries(job *models.TranscriptionJob, mappi
 		svc, _, err := h.getLLMService(ctx)
 		if err != nil {
 			logger.Warn("summary_regen: no LLM service available", "job_id", jobID, "error", err)
+			h.emitNotification(sse.NotifyLLMNotConfigured, "warning",
+				"Summary regeneration skipped because no LLM provider is configured.",
+				"open_settings_llm")
+			return
+		}
+
+		// 5. Format transcript with updated speaker labels (once for all summaries).
+		transcriptText, err := formatTranscriptWithSpeakers(*job.TranscriptJSONPath, mappingMap)
+		if err != nil {
+			logger.Warn("summary_regen: format transcript failed", "job_id", jobID, "error", err)
 			return
 		}
 
@@ -120,7 +131,7 @@ func (h *Handler) regenerateSpeakerSummaries(job *models.TranscriptionJob, mappi
 				continue
 			}
 
-			// 5. Look up the template to check include_speaker_info.
+			// 6. Look up the template to check include_speaker_info.
 			tmpl, err := h.summaryRepo.FindByID(ctx, *summary.TemplateID)
 			if err != nil {
 				logger.Warn("summary_regen: template not found", "template_id", *summary.TemplateID, "error", err)
@@ -128,13 +139,6 @@ func (h *Handler) regenerateSpeakerSummaries(job *models.TranscriptionJob, mappi
 			}
 			if !tmpl.IncludeSpeakerInfo {
 				continue
-			}
-
-			// 6. Format transcript with updated speaker labels.
-			transcriptText, err := formatTranscriptWithSpeakers(*job.TranscriptJSONPath, mappingMap)
-			if err != nil {
-				logger.Warn("summary_regen: format transcript failed", "job_id", jobID, "error", err)
-				return // If we can't read the transcript, no point continuing
 			}
 
 			// 7. Build the prompt (same format as frontend).
@@ -178,7 +182,9 @@ func (h *Handler) regenerateSpeakerSummaries(job *models.TranscriptionJob, mappi
 			// Update cached summary on the job record with the latest.
 			latestSummary, err := h.summaryRepo.GetLatestSummary(ctx, jobID)
 			if err == nil && latestSummary != nil {
-				_ = h.jobRepo.UpdateSummary(ctx, jobID, latestSummary.Content)
+				if err := h.jobRepo.UpdateSummary(ctx, jobID, latestSummary.Content); err != nil {
+					logger.Warn("summary_regen: failed to update cached summary", "job_id", jobID, "error", err)
+				}
 			}
 			h.syncMetadataToBundle(ctx, jobID)
 			logger.Info("summary_regen: complete", "job_id", jobID, "regenerated", regenCount)

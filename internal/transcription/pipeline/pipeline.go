@@ -143,27 +143,6 @@ func (a *AudioFormatPreprocessor) Process(ctx context.Context, input interfaces.
 	return convertedInput, nil
 }
 
-// VoiceActivityDetectionPreprocessor applies VAD preprocessing
-type VoiceActivityDetectionPreprocessor struct{}
-
-// AppliesTo checks if this preprocessor should be used
-func (v *VoiceActivityDetectionPreprocessor) AppliesTo(capabilities interfaces.ModelCapabilities) bool {
-	// Apply to models that benefit from VAD preprocessing
-	return capabilities.Features["vad"]
-}
-
-// GetRequiredFormats returns the output formats this preprocessor can produce
-func (v *VoiceActivityDetectionPreprocessor) GetRequiredFormats() []string {
-	return []string{"wav", "mp3", "flac"}
-}
-
-// Process applies voice activity detection preprocessing
-func (v *VoiceActivityDetectionPreprocessor) Process(ctx context.Context, input interfaces.AudioInput) (interfaces.AudioInput, error) {
-	// For now, this is a placeholder
-	// In a real implementation, this would apply VAD to remove silence
-	logger.Info("VAD preprocessing (placeholder)", "file", input.FilePath)
-	return input, nil
-}
 
 // NoiseReductionPreprocessor applies noise reduction
 type NoiseReductionPreprocessor struct{}

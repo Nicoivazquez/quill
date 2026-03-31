@@ -13,6 +13,7 @@ Auth required unless noted. Use JWT (cookie) or API key (`X-API-Key` header).
 | GET | `/health` | No | Health check |
 | GET | `/api/v1/setup/state` | No | Get setup state, active vault, config |
 | POST | `/api/v1/setup/complete` | No | Complete initial setup, create first vault |
+| GET | `/api/v1/system/notifications` | Yes | Get active system notifications (LLM issues, provider errors). Returns `{notifications: [...]}`. |
 
 ## Authentication
 
@@ -88,7 +89,7 @@ Auth required unless noted. Use JWT (cookie) or API key (`X-API-Key` header).
 | `custom_name` | string | Human-readable name |
 | `confidence_score` | float | 0.0-1.0, how confident the voice match is |
 | `match_source` | string | `auto` (voice-matched), `manual` (user-set), `suggestion_promoted` (user accepted suggestion) |
-| `match_tier` | string | `auto` (>=0.80), `suggest` (0.60-0.79), `unknown` (<0.60) |
+| `match_tier` | string | `auto` (>=0.50), `suggest` (0.35-0.49), `unknown` (<0.35) |
 
 ## Transcription - Notes
 
@@ -131,7 +132,7 @@ Auth required unless noted. Use JWT (cookie) or API key (`X-API-Key` header).
 | GET | `/contacts/:id/snippet` | Get audio snippet file. |
 | POST | `/contacts/:id/snippet` | Upload audio snippet (multipart, field: `file`). |
 | DELETE | `/contacts/:id/snippet` | Delete snippet. |
-| POST | `/contacts/:id/signature` | Upload voice signature (256-dim embedding). |
+| POST | `/contacts/:id/signature` | Upload voice signature (192-dim embedding). |
 | DELETE | `/contacts/:id/signature` | Delete voice signature. |
 | POST | `/contacts/:id/signature/extract` | Extract voice signature from existing snippet. |
 | POST | `/contacts/reindex` | Reindex all contact embeddings from snippets. |
@@ -263,4 +264,5 @@ Auth required unless noted. Use JWT (cookie) or API key (`X-API-Key` header).
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/events` | SSE stream for real-time updates (transcription progress, speaker ID results, errors). |
+| GET | `/events` | SSE stream for job-scoped updates (transcription progress, speaker ID results). |
+| GET | `/events/global` | SSE stream for global events (system notifications, errors). |
