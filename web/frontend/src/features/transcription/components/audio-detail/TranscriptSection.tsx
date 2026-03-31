@@ -1,4 +1,4 @@
-import { useRef, useEffect, useMemo } from "react";
+import { useRef, useState, useEffect, useMemo, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { TranscriptView } from "@/components/transcript/TranscriptView";
@@ -16,6 +16,8 @@ import { computeWordOffsets } from "@/features/transcription/hooks/useKaraokeHig
 import type { Transcript } from "@/features/transcription/hooks/useAudioDetail";
 import type { TranscriptMode } from "@/components/transcript/TranscriptView";
 import { cn } from "@/lib/utils";
+import { useTranscriptSearch } from "@/features/transcription/hooks/useTranscriptSearch";
+import { TranscriptSearchBar } from "@/components/transcript/TranscriptSearchBar";
 
 interface TranscriptSectionProps {
     audioId: string;
@@ -35,6 +37,8 @@ interface TranscriptSectionProps {
     downloadDialogOpen: boolean;
     setDownloadDialogOpen: (open: boolean) => void;
     downloadFormat: 'txt' | 'json';
+    searchOpen: boolean;
+    setSearchOpen: (open: boolean) => void;
 }
 
 export function TranscriptSection({
@@ -54,6 +58,8 @@ export function TranscriptSection({
     downloadDialogOpen,
     setDownloadDialogOpen,
     downloadFormat,
+    searchOpen,
+    setSearchOpen,
     className
 }: TranscriptSectionProps & { className?: string }) {
     const isMobile = useIsMobile();
@@ -69,6 +75,29 @@ export function TranscriptSection({
     // Refs
     const transcriptRef = useRef<HTMLDivElement>(null);
     const highlightedWordRef = useRef<HTMLSpanElement>(null);
+
+    // Search
+    const [searchQuery, setSearchQuery] = useState("");
+    const { matchCount, activeMatchIndex, goToNext, goToPrevious, clearHighlights } =
+        useTranscriptSearch(searchQuery, transcriptRef, transcriptMode);
+
+    const handleCloseSearch = useCallback(() => {
+        setSearchOpen(false);
+        setSearchQuery("");
+        clearHighlights();
+    }, [setSearchOpen, clearHighlights]);
+
+    // Cmd/Ctrl+F to open search
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+                e.preventDefault();
+                setSearchOpen(true);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [setSearchOpen]);
 
     // Compute offsets for selection logic
     const words = useMemo(() => transcript?.word_segments || [], [transcript?.word_segments]);
@@ -176,6 +205,17 @@ export function TranscriptSection({
                     userSelect: 'text'
                 }}
             >
+                {searchOpen && (
+                    <TranscriptSearchBar
+                        query={searchQuery}
+                        onQueryChange={setSearchQuery}
+                        matchCount={matchCount}
+                        activeMatchIndex={activeMatchIndex}
+                        onNext={goToNext}
+                        onPrevious={goToPrevious}
+                        onClose={handleCloseSearch}
+                    />
+                )}
                 <div className="w-full text-[var(--text-secondary)] leading-relaxed">
                     <div
                         ref={transcriptRef}
