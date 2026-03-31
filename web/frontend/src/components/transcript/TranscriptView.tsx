@@ -349,7 +349,7 @@ export const TranscriptView = forwardRef<HTMLDivElement, TranscriptViewProps>(({
                             </span>
                             {segment.speaker && (
                                 <span
-                                    className="font-medium text-carbon-700 dark:text-carbon-300 truncate max-w-full"
+                                    className="font-medium text-violet-700 dark:text-violet-400 truncate max-w-full"
                                     title={getDisplaySpeakerName(segment.speaker)}
                                 >
                                     {getDisplaySpeakerName(segment.speaker)}
@@ -426,7 +426,7 @@ export const TranscriptView = forwardRef<HTMLDivElement, TranscriptViewProps>(({
                 {compactedGroups.map((group, gi) => (
                     <div key={gi} className="space-y-1">
                         {group.speaker && (
-                            <div className="flex items-center gap-2 text-sm font-medium text-carbon-600 dark:text-carbon-400 select-none">
+                            <div className="flex items-center gap-2 text-sm font-medium text-violet-700 dark:text-violet-400 select-none">
                                 <span>{getDisplaySpeakerName(group.speaker)}</span>
                                 <span className="font-mono text-[10px] text-carbon-400 dark:text-carbon-500">
                                     {formatSegmentTime(group.startTime)}
