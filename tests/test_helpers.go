@@ -402,6 +402,11 @@ func (m *MockJobRepository) BulkUpdateFolder(ctx context.Context, oldFolder stri
 	return args.Get(0).(int64), args.Error(1)
 }
 
+func (m *MockJobRepository) BulkUpdateFolderPrefix(ctx context.Context, oldPrefix, newPrefix string, vaultID *uint) (int64, error) {
+	args := m.Called(ctx, oldPrefix, newPrefix, vaultID)
+	return args.Get(0).(int64), args.Error(1)
+}
+
 // NewMockOpenAIServer creates a new mock OpenAI server for testing
 func NewMockOpenAIServer() *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

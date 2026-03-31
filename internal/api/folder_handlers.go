@@ -135,8 +135,8 @@ func (h *Handler) RenameFolder(c *gin.Context) {
 		activeVaultID = &vault.ID
 	}
 
-	newFolder := newName
-	affected, dbErr := h.jobRepo.BulkUpdateFolder(c.Request.Context(), oldName, &newFolder, activeVaultID)
+	// Use prefix-based update so subfolders cascade (e.g., "Work/Meetings" → "Projects/Meetings")
+	affected, dbErr := h.jobRepo.BulkUpdateFolderPrefix(c.Request.Context(), oldName, newName, activeVaultID)
 	if dbErr != nil {
 		// Rollback disk rename
 		_ = transcription.RenameFolderOnDisk(transcriptsDir, newName, oldName)
@@ -172,6 +172,74 @@ func (h *Handler) DeleteFolder(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"deleted": folder})
+}
+
+// MoveFolder moves a folder into another parent folder (or to root).
+func (h *Handler) MoveFolder(c *gin.Context) {
+	var body struct {
+		Folder     string `json:"folder" binding:"required"`
+		DestParent string `json:"dest_parent"` // empty string = move to root
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "folder is required"})
+		return
+	}
+
+	folder := strings.TrimSpace(body.Folder)
+	destParent := strings.TrimSpace(body.DestParent)
+	if folder == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "folder name cannot be empty"})
+		return
+	}
+
+	transcriptsDir, err := transcriptsDirForVault()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no active vault"})
+		return
+	}
+
+	// Compute what the new folder path will be
+	folderName := filepath.Base(folder)
+	var newFolderPath string
+	if destParent == "" {
+		newFolderPath = folderName
+	} else {
+		newFolderPath = filepath.Join(destParent, folderName)
+	}
+
+	// Compute original parent for rollback (filepath.Dir returns "." for root-level, we need "")
+	var originalParent string
+	if idx := strings.LastIndex(folder, "/"); idx >= 0 {
+		originalParent = folder[:idx]
+	}
+
+	// Move on disk
+	if err := transcription.MoveFolderOnDisk(transcriptsDir, folder, destParent); err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Update DB records with prefix-based cascading
+	var activeVaultID *uint
+	if vault, vaultErr := getActiveVault(); vaultErr == nil {
+		activeVaultID = &vault.ID
+	}
+
+	affected, dbErr := h.jobRepo.BulkUpdateFolderPrefix(c.Request.Context(), folder, newFolderPath, activeVaultID)
+	if dbErr != nil {
+		// Rollback: move folder back to its original parent
+		if rollbackErr := transcription.MoveFolderOnDisk(transcriptsDir, newFolderPath, originalParent); rollbackErr != nil {
+			logger.Warn("MoveFolder: disk rollback failed after DB error: src=%q err=%v", newFolderPath, rollbackErr)
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update database"})
+		return
+	}
+
+	// Update artifact dir paths
+	h.updateArtifactDirsForFolderRename(c, folder, newFolderPath, transcriptsDir)
+
+	logger.Info("Moved folder %q -> %q, affected %d transcripts", folder, newFolderPath, affected)
+	c.JSON(http.StatusOK, gin.H{"folder": newFolderPath, "affected": affected})
 }
 
 // MoveTranscriptToFolder moves a transcript to a folder.
@@ -285,10 +353,10 @@ func (h *Handler) updateArtifactDirsForFolderRename(c *gin.Context, oldFolder, n
 	}
 
 	jobs, _, err := h.jobRepo.ListWithParams(c.Request.Context(), repository.ListParams{
-		Offset:  0,
-		Limit:   1000,
-		VaultID: activeVaultID,
-		Folder:  &newFolder,
+		Offset:       0,
+		Limit:        1000,
+		VaultID:      activeVaultID,
+		FolderPrefix: newFolder,
 	})
 	if err != nil {
 		logger.Warn("Failed to list jobs for artifact dir update: %v", err)

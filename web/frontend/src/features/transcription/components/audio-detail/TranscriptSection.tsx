@@ -217,6 +217,8 @@ export function TranscriptSection({
                 initialSpeakers={getDetectedSpeakers()}
                 onSpeakerMappingsUpdate={() => {
                     queryClient.invalidateQueries({ queryKey: ["speakerMappings", audioId] });
+                    queryClient.invalidateQueries({ queryKey: ["contacts", "appearances"] });
+                    queryClient.invalidateQueries({ queryKey: ["contacts"] });
                 }}
             />
             {/* Portals */}

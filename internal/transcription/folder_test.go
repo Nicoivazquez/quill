@@ -3,6 +3,7 @@ package transcription
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -451,5 +452,176 @@ func TestFindTranscriptsRoot_NotFound(t *testing.T) {
 	got := findTranscriptsRoot("/tmp/some/random/dir")
 	if got != "" {
 		t.Errorf("expected empty string for non-Transcripts path, got %q", got)
+	}
+}
+
+// ---------- MoveFolderOnDisk tests ----------
+
+func TestMoveFolderOnDisk_MoveIntoParent(t *testing.T) {
+	transcriptsDir := setupTranscripts(t)
+	// Create two folders: "Work" and "Archive"
+	for _, f := range []string{"Work", "Archive"} {
+		if err := os.MkdirAll(filepath.Join(transcriptsDir, f), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Put a bundle inside Work
+	setupBundle(t, filepath.Join(transcriptsDir, "Work"), "rec-abc12345")
+
+	err := MoveFolderOnDisk(transcriptsDir, "Work", "Archive")
+	if err != nil {
+		t.Fatalf("MoveFolderOnDisk error: %v", err)
+	}
+
+	// Work should now be at Archive/Work
+	newPath := filepath.Join(transcriptsDir, "Archive", "Work")
+	if _, err := os.Stat(newPath); err != nil {
+		t.Errorf("moved folder not found at %s: %v", newPath, err)
+	}
+	// Bundle should exist in new location
+	if _, err := os.Stat(filepath.Join(newPath, "rec-abc12345", "audio.mp3")); err != nil {
+		t.Errorf("bundle not found in moved folder: %v", err)
+	}
+	// Original should not exist
+	if _, err := os.Stat(filepath.Join(transcriptsDir, "Work")); !os.IsNotExist(err) {
+		t.Error("original folder should not exist after move")
+	}
+}
+
+func TestMoveFolderOnDisk_MoveToRoot(t *testing.T) {
+	transcriptsDir := setupTranscripts(t)
+	// Create nested folder Work/Meetings
+	if err := os.MkdirAll(filepath.Join(transcriptsDir, "Work", "Meetings"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	setupBundle(t, filepath.Join(transcriptsDir, "Work", "Meetings"), "rec-abc12345")
+
+	// Move Meetings to root (out of Work)
+	err := MoveFolderOnDisk(transcriptsDir, "Work/Meetings", "")
+	if err != nil {
+		t.Fatalf("MoveFolderOnDisk to root error: %v", err)
+	}
+
+	// Meetings should now be at root
+	if _, err := os.Stat(filepath.Join(transcriptsDir, "Meetings")); err != nil {
+		t.Errorf("folder not found at root: %v", err)
+	}
+	// Should not exist at old location
+	if _, err := os.Stat(filepath.Join(transcriptsDir, "Work", "Meetings")); !os.IsNotExist(err) {
+		t.Error("folder should not exist at old location")
+	}
+}
+
+func TestMoveFolderOnDisk_CircularMovePrevented(t *testing.T) {
+	transcriptsDir := setupTranscripts(t)
+	if err := os.MkdirAll(filepath.Join(transcriptsDir, "Work", "Meetings"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Moving Work into Work/Meetings is circular — should fail
+	err := MoveFolderOnDisk(transcriptsDir, "Work", "Work/Meetings")
+	if err == nil {
+		t.Fatal("expected error for circular move, got nil")
+	}
+	if !strings.Contains(err.Error(), "circular") && !strings.Contains(err.Error(), "into itself") {
+		t.Errorf("expected circular move error, got: %v", err)
+	}
+}
+
+func TestMoveFolderOnDisk_DestinationConflict(t *testing.T) {
+	transcriptsDir := setupTranscripts(t)
+	// Create Archive/Work and Work — moving Work into Archive should conflict
+	for _, f := range []string{"Work", "Archive/Work"} {
+		if err := os.MkdirAll(filepath.Join(transcriptsDir, f), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	err := MoveFolderOnDisk(transcriptsDir, "Work", "Archive")
+	if err == nil {
+		t.Fatal("expected error for destination conflict, got nil")
+	}
+}
+
+func TestMoveFolderOnDisk_NonExistent(t *testing.T) {
+	transcriptsDir := setupTranscripts(t)
+
+	err := MoveFolderOnDisk(transcriptsDir, "DoesNotExist", "Archive")
+	if err == nil {
+		t.Fatal("expected error for nonexistent folder, got nil")
+	}
+}
+
+func TestMoveFolderOnDisk_PathTraversal(t *testing.T) {
+	transcriptsDir := setupTranscripts(t)
+	if err := os.MkdirAll(filepath.Join(transcriptsDir, "Legit"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Source traversal
+	err := MoveFolderOnDisk(transcriptsDir, "../../../etc", "Legit")
+	if err == nil {
+		t.Fatal("expected error for source path traversal")
+	}
+
+	// Destination traversal
+	err = MoveFolderOnDisk(transcriptsDir, "Legit", "../../../escape")
+	if err == nil {
+		t.Fatal("expected error for destination path traversal")
+	}
+}
+
+func TestMoveFolderOnDisk_NoOpSameLocation(t *testing.T) {
+	transcriptsDir := setupTranscripts(t)
+	if err := os.MkdirAll(filepath.Join(transcriptsDir, "Archive", "Work"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Work is already inside Archive — moving it to Archive is a no-op
+	err := MoveFolderOnDisk(transcriptsDir, "Archive/Work", "Archive")
+	if err != nil {
+		t.Fatalf("expected no-op, got error: %v", err)
+	}
+	// Should still exist
+	if _, err := os.Stat(filepath.Join(transcriptsDir, "Archive", "Work")); err != nil {
+		t.Errorf("folder should still exist: %v", err)
+	}
+}
+
+func TestMoveFolderOnDisk_WithNestedSubfolders(t *testing.T) {
+	transcriptsDir := setupTranscripts(t)
+	// Create Work/Meetings/Daily with bundles at each level
+	if err := os.MkdirAll(filepath.Join(transcriptsDir, "Work", "Meetings", "Daily"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	setupBundle(t, filepath.Join(transcriptsDir, "Work", "Meetings"), "rec-a")
+	setupBundle(t, filepath.Join(transcriptsDir, "Work", "Meetings", "Daily"), "rec-b")
+	if err := os.MkdirAll(filepath.Join(transcriptsDir, "Archive"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Move entire Work into Archive
+	err := MoveFolderOnDisk(transcriptsDir, "Work", "Archive")
+	if err != nil {
+		t.Fatalf("MoveFolderOnDisk error: %v", err)
+	}
+
+	// Full subtree should be at Archive/Work/...
+	checks := []string{
+		"Archive/Work",
+		"Archive/Work/Meetings",
+		"Archive/Work/Meetings/Daily",
+	}
+	for _, p := range checks {
+		if _, err := os.Stat(filepath.Join(transcriptsDir, p)); err != nil {
+			t.Errorf("expected %s to exist: %v", p, err)
+		}
+	}
+	// Bundles should be intact
+	if _, err := os.Stat(filepath.Join(transcriptsDir, "Archive", "Work", "Meetings", "rec-a", "audio.mp3")); err != nil {
+		t.Errorf("bundle rec-a not found: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(transcriptsDir, "Archive", "Work", "Meetings", "Daily", "rec-b", "audio.mp3")); err != nil {
+		t.Errorf("bundle rec-b not found: %v", err)
 	}
 }

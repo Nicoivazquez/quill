@@ -972,6 +972,15 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 								onSwipeStateChange={handleSwipeStateChange}
 							>
 								<div
+									draggable
+									onDragStart={(e) => {
+										const selectedIds = Object.keys(rowSelection);
+										const ids = selectedIds.length > 0 && selectedIds.includes(file.id)
+											? selectedIds
+											: [file.id];
+										e.dataTransfer.setData("application/x-quill-files", JSON.stringify(ids));
+										e.dataTransfer.effectAllowed = "move";
+									}}
 									className={cn(
 										"group relative flex justify-between items-center p-4",
 										"bg-[var(--bg-elevated)] rounded-[var(--radius-btn)] border border-[var(--border-subtle)]",

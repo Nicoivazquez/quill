@@ -90,6 +90,30 @@ export function useDeleteFolder() {
     });
 }
 
+export function useMoveFolder() {
+    const { getAuthHeaders } = useAuth();
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async ({ folder, destParent }: { folder: string; destParent: string }) => {
+            const response = await fetch('/api/v1/transcription/folders/move', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+                body: JSON.stringify({ folder, dest_parent: destParent }),
+            });
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.error || 'Failed to move folder');
+            }
+            return response.json();
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: FOLDERS_QUERY_KEY });
+            queryClient.invalidateQueries({ queryKey: ['audioFiles'] });
+        },
+    });
+}
+
 export function useMoveToFolder() {
     const { getAuthHeaders } = useAuth();
     const queryClient = useQueryClient();
