@@ -1,13 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { motion, useAnimation, type PanInfo } from "framer-motion";
 import { Trash2, Wand2, StopCircle } from "lucide-react";
-import { WandAdvancedIcon } from "@/components/icons/WandAdvancedIcon";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 interface SwipeableItemProps {
     children: ReactNode;
     onTranscribe: () => void;
-    onTranscribeAdvanced: () => void;
     onDelete: () => void;
     onStop?: () => void;
     isProcessing?: boolean;
@@ -32,7 +30,6 @@ const LONG_PRESS_CANCEL_DISTANCE = 8;
 export function SwipeableItem({
     children,
     onTranscribe,
-    onTranscribeAdvanced,
     onDelete,
     onStop,
     isProcessing = false,
@@ -51,8 +48,8 @@ export function SwipeableItem({
     const hasMovedRef = useRef(false);
     const suppressClickUntilRef = useRef(0);
 
-    // Width of the action buttons area (3 buttons × 44px + gaps + padding)
-    const OPEN_WIDTH = -160;
+    // Width of the action buttons area (2 buttons × 44px + gaps + padding)
+    const OPEN_WIDTH = -110;
 
     const handleDragStart = (_event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
         isDraggingRef.current = true;
@@ -168,7 +165,7 @@ export function SwipeableItem({
             data-has-moved={hasMoved()}
         >
             {/* --- LAYER 0: The Action Buttons (Hidden underneath, mobile only) --- */}
-            <div className="absolute inset-y-0 right-0 w-[170px] flex items-center justify-end pr-2 gap-2 rounded-2xl z-0 md:hidden">
+            <div className="absolute inset-y-0 right-0 w-[120px] flex items-center justify-end pr-2 gap-2 rounded-2xl z-0 md:hidden">
                 {/* Transcribe (Primary) */}
                 <button
                     onClick={() => handleAction(onTranscribe)}
@@ -176,15 +173,6 @@ export function SwipeableItem({
                     aria-label="Transcribe"
                 >
                     <Wand2 size={18} />
-                </button>
-
-                {/* Transcribe Advanced (Secondary) */}
-                <button
-                    onClick={() => handleAction(onTranscribeAdvanced)}
-                    className="w-11 h-11 flex items-center justify-center rounded-full bg-gray-100 text-gray-600 shadow-sm active:scale-95 transition-transform cursor-pointer"
-                    aria-label="Transcribe Advanced"
-                >
-                    <WandAdvancedIcon className="h-[18px] w-[18px]" />
                 </button>
 
                 {/* Delete or Stop (Destructive - furthest right) */}

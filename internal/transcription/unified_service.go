@@ -1230,26 +1230,35 @@ func (u *UnifiedTranscriptionService) materializeTranscriptArtifacts(ctx context
 	var activeVault models.Vault
 	vaultErr := database.DB.WithContext(ctx).Where("is_active = ?", true).First(&activeVault).Error
 
+	// Re-transcription: reuse the existing bundle directory if it exists on disk.
+	// This prevents creating duplicate " 2" directories via BundleTargetDir.
 	var targetDir string
-	if vaultErr == nil {
-		title := "transcript"
-		if job.Title != nil && strings.TrimSpace(*job.Title) != "" {
-			title = *job.Title
+	if job.ArtifactDir != nil && *job.ArtifactDir != "" {
+		if _, statErr := os.Stat(*job.ArtifactDir); statErr == nil {
+			targetDir = *job.ArtifactDir
+			logger.Info("materialize: re-transcription — reusing existing bundle dir",
+				"job_id", jobID, "dir", targetDir)
+			if vaultErr == nil {
+				job.VaultID = &activeVault.ID
+			}
 		}
-		targetDir = BundleTargetDir(activeVault.Path, title, job.ID)
-		job.VaultID = &activeVault.ID
-	} else {
-		targetDir = filepath.Join(u.outputDirectory, job.ID)
 	}
 
-	// Debug: log computed paths vs existing for re-transcription diagnosis
-	existingDir := ""
-	if job.ArtifactDir != nil {
-		existingDir = *job.ArtifactDir
+	// First transcription (or existing dir was deleted): compute a new bundle dir.
+	if targetDir == "" {
+		if vaultErr == nil {
+			title := "transcript"
+			if job.Title != nil && strings.TrimSpace(*job.Title) != "" {
+				title = *job.Title
+			}
+			targetDir = BundleTargetDir(activeVault.Path, title, job.ID)
+			job.VaultID = &activeVault.ID
+		} else {
+			targetDir = filepath.Join(u.outputDirectory, job.ID)
+		}
+		logger.Debug("materialize: new bundle dir",
+			"job_id", jobID, "target_dir", targetDir)
 	}
-	logger.Debug("materialize: computed target dir",
-		"job_id", jobID, "target_dir", targetDir, "existing_dir", existingDir,
-		"audio_path", job.AudioPath, "title", job.Title)
 
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		return err

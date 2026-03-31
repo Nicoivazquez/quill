@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useParams, useNavigate } from "react-router-dom";
-import { MoreVertical, Edit2, Activity, FileText, Bot, Check, Loader2, List, AlignLeft, ArrowDownCircle, StickyNote, MessageCircle, FileImage, FileJson, FileDown, Clock, AlertCircle, Users, Layers, Trash2, Wand2 } from "lucide-react";
+import { MoreVertical, Edit2, Activity, FileText, Bot, Check, Loader2, List, AlignLeft, ArrowDownCircle, StickyNote, MessageCircle, FileImage, FileJson, FileDown, Clock, AlertCircle, Users, Layers, Trash2 } from "lucide-react";
 import { Header } from "@/components/Header";
 import { useQueryClient } from "@tanstack/react-query";
 

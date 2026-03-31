@@ -326,15 +326,15 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
     setError(null);
 
     try {
-      // Convert mappings to API format, excluding locked speakers and empty names
+      // Convert mappings to API format, including promoted speakers so the
+      // backend's DELETE ALL + INSERT cycle preserves their metadata.
       const mappingsArray = Object.entries(speakerMappings)
-        .filter(([original_speaker, custom_name]) => !isLockedSpeaker(original_speaker) && custom_name.trim() !== '')
+        .filter(([, custom_name]) => custom_name.trim() !== '')
         .map(([original_speaker, custom_name]) => ({
           original_speaker,
           custom_name,
         }));
 
-      // If all speakers were promoted, just close — no bulk POST needed
       if (mappingsArray.length === 0) {
         onOpenChange(false);
         return;
@@ -430,12 +430,6 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
 
   const speakers = Object.keys(speakerMappings).sort();
 
-  // A speaker is "locked" only if it was just promoted in the current dialog session.
-  // Auto-identified speakers are now editable so users can correct misidentifications.
-  const isLockedSpeaker = useCallback((speaker: string) => {
-    return promotedSpeakers.has(speaker);
-  }, [promotedSpeakers]);
-
   // Categorize speakers into three groups
   const { autoAssigned, suggested, unassigned } = useMemo(() => {
     const auto: string[] = [];
@@ -445,7 +439,12 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
     for (const speaker of speakers) {
       const detail = mappingDetails.get(speaker);
       const isRawMapping = !detail?.match_tier || detail?.match_tier === 'none';
-      if ((!isRawMapping && (detail?.match_source === 'auto' || detail?.match_source === 'retroactive' || detail?.match_source === 'suggestion_promoted')) || promotedSpeakers.has(speaker)) {
+
+      // Pending suggestions must go to the suggest section for accept/deny,
+      // even if match_source is 'auto' or 'retroactive'.
+      if (detail?.review_status === 'pending' && voiceSuggestions.has(speaker)) {
+        suggest.push(speaker);
+      } else if ((!isRawMapping && (detail?.match_source === 'auto' || detail?.match_source === 'retroactive' || detail?.match_source === 'suggestion_promoted')) || promotedSpeakers.has(speaker)) {
         auto.push(speaker);
       } else if (voiceSuggestions.has(speaker)) {
         suggest.push(speaker);
@@ -462,7 +461,9 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
       setActiveSpeaker(null);
       setHighlightedSuggestionIndex(0);
       setPromotedSpeakers(new Set());
-      setMappingDetails(new Map());
+      // Don't clear mappingDetails here — it causes a yellow flash during the
+      // close animation because speakers briefly shift to the suggestion category
+      // when details are empty. fetchSpeakerMappings resets it on next open.
       setRetranscribeOpen(false);
       setRetranscribeNumSpeakers("");
       setRetranscribeDiarizeMode("local");

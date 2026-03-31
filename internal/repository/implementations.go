@@ -923,7 +923,7 @@ func (r *speakerMappingRepository) GetSpeakerAttentionSummary(ctx context.Contex
 			COUNT(*) as total,
 			SUM(CASE WHEN review_status = 'pending' THEN 1 ELSE 0 END) as pending,
 			SUM(CASE WHEN match_tier = 'auto' THEN 1 ELSE 0 END) as auto,
-			SUM(CASE WHEN custom_name != '' AND custom_name != original_speaker AND (review_status IS NULL OR review_status = '' OR review_status != 'pending') THEN 1 ELSE 0 END) as renamed`).
+			SUM(CASE WHEN custom_name != '' AND custom_name != original_speaker AND COALESCE(review_status, '') NOT IN ('pending', 'dismissed') THEN 1 ELSE 0 END) as renamed`).
 		Where("transcription_job_id IN ?", jobIDs).
 		Group("transcription_job_id").
 		Scan(&rows).Error

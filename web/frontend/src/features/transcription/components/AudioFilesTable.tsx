@@ -15,7 +15,6 @@ import {
 	Type,
 	Feather,
 } from "lucide-react";
-import { WandAdvancedIcon } from "@/components/icons/WandAdvancedIcon";
 import { InkDropFilled, InkDropEmpty } from "@/components/icons/InkDropIcon";
 
 import {
@@ -42,7 +41,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { TranscriptionConfigDialog, type WhisperXParams } from "@/components/TranscriptionConfigDialog";
+import { type WhisperXParams } from "@/components/TranscriptionConfigDialog";
 import { TranscribeDDialog } from "@/components/TranscribeDDialog";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/features/auth/hooks/useAuth";
@@ -328,7 +327,6 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 	// loading state removed
 	// totalItems derived from query
 	// pageCount derived from query
-	const [configDialogOpen, setConfigDialogOpen] = useState(false);
 	const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
 	const [transcriptionLoading, setTranscriptionLoading] = useState(false);
 	const [killingJobs, setKillingJobs] = useState<Set<string>>(new Set());
@@ -399,65 +397,11 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 	// Fetch queue positions removed
 
 
-	// Handle transcribe action - opens configuration dialog
-	const handleTranscribeClick = useCallback((jobId: string) => {
-		setSelectedJobId(jobId);
-		setConfigDialogOpen(true);
-	}, []);
-
 	// Handle transcribe-D action - opens profile selection dialog
 	const handleTranscribeDClick = useCallback((jobId: string) => {
 		setSelectedJobId(jobId);
 		setTranscribeDDialogOpen(true);
 	}, []);
-
-	// Handle actual transcription start with parameters
-	const handleStartTranscription = useCallback(async (params: WhisperXParams) => {
-		if (!selectedJobId) return;
-
-		// Validate multi-track compatibility
-		const selectedJob = data.find(job => job.id === selectedJobId);
-		if (selectedJob?.is_multi_track && !params.is_multi_track_enabled) {
-			alert("Multi-track audio requires a profile with multi-track transcription enabled. Please select or create a profile with multi-track support.");
-			return;
-		}
-
-		if (!selectedJob?.is_multi_track && params.is_multi_track_enabled) {
-			alert("Multi-track transcription cannot be used with single-track audio files.");
-			return;
-		}
-
-		try {
-			setTranscriptionLoading(true);
-
-			const response = await fetch(`/api/v1/transcription/${selectedJobId}/start`, {
-				method: "POST",
-				headers: {
-					...getAuthHeaders(),
-					"Content-Type": "application/json",
-				},
-				body: JSON.stringify(params),
-			});
-
-			if (response.ok) {
-				// Close dialog and refresh
-				setConfigDialogOpen(false);
-				setSelectedJobId(null);
-				// Refresh the list immediately to show the new processing status
-				// This also triggers SSE connection if it wasn't active
-				refetch();
-				if (onTranscribe) {
-					onTranscribe(selectedJobId);
-				}
-			} else {
-				alert("Failed to start transcription");
-			}
-		} catch {
-			alert("Error starting transcription");
-		} finally {
-			setTranscriptionLoading(false);
-		}
-	}, [selectedJobId, refetch, onTranscribe, data, getAuthHeaders]);
 
 	// Handle actual transcription start with profile parameters
 	const handleStartTranscriptionWithProfile = useCallback(async (params: WhisperXParams) => {
@@ -592,7 +536,7 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 		try {
 			await batchStart.mutateAsync({ ids, params });
 			setRowSelection({});
-			setConfigDialogOpen(false);
+			setTranscribeDDialogOpen(false);
 			setTranscribeDDialogOpen(false);
 		} catch (error) {
 			console.error("Bulk transcribe error:", error);
@@ -715,14 +659,6 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 	}, [rowSelection, data, handleGenerateTitle, toast]);
 
 	// Modified handlers to support bulk actions
-	const onStartTranscribe = (params: WhisperXParams) => {
-		if (Object.keys(rowSelection).length > 0) {
-			handleBulkTranscribe(params);
-		} else {
-			handleStartTranscription(params);
-		}
-	};
-
 	const onStartTranscribeWithProfile = (params: WhisperXParams) => {
 		if (Object.keys(rowSelection).length > 0) {
 			handleBulkTranscribe(params);
@@ -962,7 +898,6 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 							<SwipeableItem
 								key={file.id}
 								onTranscribe={() => handleTranscribeDClick(file.id)}
-								onTranscribeAdvanced={() => handleTranscribeClick(file.id)}
 								onDelete={() => handleDeleteClick(file)}
 								onStop={() => handleStopClick(file)}
 								isProcessing={file.status === "processing" || file.status === "pending"}
@@ -1253,24 +1188,6 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 							<TooltipContent>Transcribe Selected</TooltipContent>
 						</Tooltip>
 
-						{/* Bulk Advanced Transcribe */}
-						<Tooltip>
-							<TooltipTrigger asChild>
-								<Button
-									variant="ghost"
-									size="icon"
-									onClick={() => setConfigDialogOpen(true)}
-									disabled={bulkActionLoading}
-									className="h-9 w-9 rounded-full hover:bg-[var(--brand-light)] hover:text-[var(--brand-solid)] transition-colors"
-								>
-									<WandAdvancedIcon className="h-4 w-4" />
-								</Button>
-							</TooltipTrigger>
-							<TooltipContent>Transcribe (Advanced)</TooltipContent>
-						</Tooltip>
-
-						<div className="h-4 w-px bg-[var(--border-subtle)] mx-1" />
-
 						{/* Bulk Move to Folder */}
 						<DropdownMenu>
 							<Tooltip>
@@ -1400,13 +1317,6 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 					</AlertDialogFooter>
 				</AlertDialogContent>
 			</AlertDialog>
-			{/* Keeping existing dialogs */}
-			<TranscriptionConfigDialog
-				open={configDialogOpen}
-				onOpenChange={setConfigDialogOpen}
-				onStartTranscription={onStartTranscribe}
-				loading={transcriptionLoading}
-			/>
 			<TranscribeDDialog
 				open={transcribeDDialogOpen}
 				onOpenChange={setTranscribeDDialogOpen}

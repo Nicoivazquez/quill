@@ -2012,3 +2012,178 @@ func TestUpdateSpeakerMappings_AutoLinksContactID_CaseInsensitive(t *testing.T) 
 		t.Errorf("contact_id: got %d, want %d", *mapping.ContactID, contact.ID)
 	}
 }
+
+// --- Bug fix: UpdateMappings must preserve promoted speakers ---
+
+// TestUpdateSpeakerMappings_PreservesPromotedSpeaker verifies that calling
+// UpdateSpeakerMappings with a promoted speaker included in the payload
+// preserves its match_source, match_tier, review_status, and confidence.
+// This reproduces the bug where the frontend excluded promoted speakers from
+// the save payload, causing DELETE ALL + INSERT to destroy them.
+func TestUpdateSpeakerMappings_PreservesPromotedSpeaker(t *testing.T) {
+	h, db, cleanup := setupSpeakerMappingHarness(t)
+	defer cleanup()
+
+	job := &models.TranscriptionJob{ID: "job-preserve-promoted", AudioPath: "/tmp/a.wav", Status: models.StatusCompleted}
+	db.Create(job)
+
+	// Pre-seed: speaker_0 was auto-assigned, speaker_1 was promoted from suggestion.
+	contactID := uint(10)
+	db.Create(&models.SpeakerMapping{
+		TranscriptionJobID: "job-preserve-promoted",
+		OriginalSpeaker:    "speaker_0",
+		CustomName:         "Alice",
+		ConfidenceScore:    0.85,
+		MatchSource:        "auto",
+		MatchTier:          "auto",
+	})
+	db.Create(&models.SpeakerMapping{
+		TranscriptionJobID: "job-preserve-promoted",
+		OriginalSpeaker:    "speaker_1",
+		CustomName:         "Colin B",
+		ConfidenceScore:    0.42,
+		MatchSource:        "suggestion_promoted",
+		MatchTier:          "suggest",
+		ReviewStatus:       "accepted",
+		ContactID:          &contactID,
+	})
+	db.Create(&models.SpeakerMapping{
+		TranscriptionJobID: "job-preserve-promoted",
+		OriginalSpeaker:    "speaker_2",
+		CustomName:         "speaker_2",
+		MatchSource:        "auto",
+		MatchTier:          "none",
+	})
+
+	// Simulate the frontend sending ALL speakers in the save payload,
+	// including the promoted one with the same custom_name.
+	reqBody := SpeakerMappingsUpdateRequest{
+		Mappings: []SpeakerMappingRequest{
+			{OriginalSpeaker: "speaker_0", CustomName: "Alice"},
+			{OriginalSpeaker: "speaker_1", CustomName: "Colin B"}, // promoted — must preserve metadata
+			{OriginalSpeaker: "speaker_2", CustomName: "speaker_2"},
+		},
+	}
+	body, _ := json.Marshal(reqBody)
+
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: "job-preserve-promoted"}}
+	c.Request, _ = http.NewRequest("POST", "/api/v1/transcription/job-preserve-promoted/speakers", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.UpdateSpeakerMappings(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: got %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	// Verify all 3 mappings survive.
+	var mappings []models.SpeakerMapping
+	db.Where("transcription_job_id = ?", "job-preserve-promoted").Order("original_speaker ASC").Find(&mappings)
+
+	if len(mappings) != 3 {
+		t.Fatalf("expected 3 mappings, got %d", len(mappings))
+	}
+
+	// speaker_1 (promoted) must retain its metadata.
+	promoted := mappings[1]
+	if promoted.OriginalSpeaker != "speaker_1" {
+		t.Fatalf("expected speaker_1 at index 1, got %s", promoted.OriginalSpeaker)
+	}
+	if promoted.MatchSource != "suggestion_promoted" {
+		t.Errorf("promoted MatchSource: got %q, want %q", promoted.MatchSource, "suggestion_promoted")
+	}
+	if promoted.MatchTier != "suggest" {
+		t.Errorf("promoted MatchTier: got %q, want %q", promoted.MatchTier, "suggest")
+	}
+	if promoted.ReviewStatus != "accepted" {
+		t.Errorf("promoted ReviewStatus: got %q, want %q", promoted.ReviewStatus, "accepted")
+	}
+	if promoted.ConfidenceScore != 0.42 {
+		t.Errorf("promoted ConfidenceScore: got %f, want 0.42", promoted.ConfidenceScore)
+	}
+	if promoted.ContactID == nil || *promoted.ContactID != contactID {
+		t.Errorf("promoted ContactID: got %v, want %d", promoted.ContactID, contactID)
+	}
+}
+
+// --- Bug fix: GetSpeakerAttentionSummary must not count dismissed as renamed ---
+
+// TestGetSpeakerAttentionSummary_DismissedNotCountedAsRenamed verifies that
+// a dismissed suggestion (review_status="dismissed") with custom_name set to the
+// contact name is NOT counted in the "renamed" total. It should be treated as
+// unidentified so the gray badge appears in the UI.
+func TestGetSpeakerAttentionSummary_DismissedNotCountedAsRenamed(t *testing.T) {
+	h, db, cleanup := setupSpeakerMappingHarness(t)
+	defer cleanup()
+	_ = h // we only need the repo, but use the harness for consistent setup
+
+	job := &models.TranscriptionJob{ID: "job-attention-dismissed", AudioPath: "/tmp/a.wav", Status: models.StatusCompleted}
+	db.Create(job)
+
+	// speaker_0: auto-assigned (renamed ✓)
+	db.Create(&models.SpeakerMapping{
+		TranscriptionJobID: "job-attention-dismissed",
+		OriginalSpeaker:    "speaker_0",
+		CustomName:         "Alice",
+		MatchSource:        "auto",
+		MatchTier:          "auto",
+		ReviewStatus:       "",
+	})
+
+	// speaker_1: suggestion that was promoted/accepted (renamed ✓)
+	db.Create(&models.SpeakerMapping{
+		TranscriptionJobID: "job-attention-dismissed",
+		OriginalSpeaker:    "speaker_1",
+		CustomName:         "Bob",
+		MatchSource:        "suggestion_promoted",
+		MatchTier:          "suggest",
+		ReviewStatus:       "accepted",
+	})
+
+	// speaker_2: suggestion that was DISMISSED (should NOT be renamed)
+	db.Create(&models.SpeakerMapping{
+		TranscriptionJobID: "job-attention-dismissed",
+		OriginalSpeaker:    "speaker_2",
+		CustomName:         "Carol", // custom_name still set from suggestion
+		MatchSource:        "auto",
+		MatchTier:          "suggest",
+		ReviewStatus:       "dismissed",
+	})
+
+	repo := repository.NewSpeakerMappingRepository(db)
+	summaries, err := repo.GetSpeakerAttentionSummary(context.Background(), []string{"job-attention-dismissed"})
+	if err != nil {
+		t.Fatalf("GetSpeakerAttentionSummary: %v", err)
+	}
+
+	summary, ok := summaries["job-attention-dismissed"]
+	if !ok {
+		t.Fatal("no summary returned for job-attention-dismissed")
+	}
+
+	if summary.TotalMappings != 3 {
+		t.Errorf("TotalMappings: got %d, want 3", summary.TotalMappings)
+	}
+
+	// Renamed should be 2 (Alice + Bob), NOT 3.
+	// Carol was dismissed — she should not count as renamed.
+	if summary.Renamed != 2 {
+		t.Errorf("Renamed: got %d, want 2 (dismissed speaker should not be counted)", summary.Renamed)
+	}
+
+	// PendingSuggestions should be 0 (no pending left).
+	if summary.PendingSuggestions != 0 {
+		t.Errorf("PendingSuggestions: got %d, want 0", summary.PendingSuggestions)
+	}
+
+	// Frontend calculates: unidentifiedCount = total - renamed - pending = 3 - 2 - 0 = 1
+	// This is the gray badge count. If renamed incorrectly includes dismissed,
+	// it would be 3 - 3 - 0 = 0, hiding the gray badge.
+	unidentifiedCount := summary.TotalMappings - summary.Renamed - summary.PendingSuggestions
+	if unidentifiedCount != 1 {
+		t.Errorf("unidentifiedCount (total-renamed-pending): got %d, want 1", unidentifiedCount)
+	}
+}
