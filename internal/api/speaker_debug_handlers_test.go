@@ -152,8 +152,8 @@ func TestSpeakerDebug_ReturnsMappingStats(t *testing.T) {
 
 	// Seed some jobs
 	jobs := []models.TranscriptionJob{
-		{ID: "dbg-job-1", AudioPath: "/tmp/a.wav", Status: models.StatusCompleted},
-		{ID: "dbg-job-2", AudioPath: "/tmp/b.wav", Status: models.StatusCompleted},
+		{ID: "dbg-job-1", AudioPath: "/tmp/a.wav", Status: models.StatusCompleted, VaultID: &vault.ID},
+		{ID: "dbg-job-2", AudioPath: "/tmp/b.wav", Status: models.StatusCompleted, VaultID: &vault.ID},
 	}
 	for _, j := range jobs {
 		if err := db.Create(&j).Error; err != nil {

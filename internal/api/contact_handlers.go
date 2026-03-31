@@ -730,25 +730,21 @@ func (h *Handler) ListContactAppearances(c *gin.Context) {
 		jobTitles[j.ID] = title
 	}
 
-	// Fetch the speaker mappings for this contact to get labels & scores.
-	contactID := uint(id)
+	// Fetch all speaker mappings for this contact in a single query.
+	contactMappings, err := h.speakerMappingRepo.ListByContactID(c.Request.Context(), uint(id))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch speaker mappings"})
+		return
+	}
 	var appearances []ContactAppearance
-	for _, jobID := range jobIDs {
-		mappings, mapErr := h.speakerMappingRepo.ListByJob(c.Request.Context(), jobID)
-		if mapErr != nil {
-			continue
-		}
-		for _, m := range mappings {
-			if m.ContactID != nil && *m.ContactID == contactID {
-				appearances = append(appearances, ContactAppearance{
-					JobID:           jobID,
-					Title:           jobTitles[jobID],
-					SpeakerLabel:    m.CustomName,
-					ConfidenceScore: m.ConfidenceScore,
-					MatchSource:     m.MatchSource,
-				})
-			}
-		}
+	for _, m := range contactMappings {
+		appearances = append(appearances, ContactAppearance{
+			JobID:           m.TranscriptionJobID,
+			Title:           jobTitles[m.TranscriptionJobID],
+			SpeakerLabel:    m.CustomName,
+			ConfidenceScore: m.ConfidenceScore,
+			MatchSource:     m.MatchSource,
+		})
 	}
 
 	c.JSON(http.StatusOK, gin.H{"appearances": appearances})

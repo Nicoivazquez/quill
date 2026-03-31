@@ -445,7 +445,7 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
     for (const speaker of speakers) {
       const detail = mappingDetails.get(speaker);
       const isRawMapping = !detail?.match_tier || detail?.match_tier === 'none';
-      if (!isRawMapping && (detail?.match_source === 'auto' || detail?.match_source === 'retroactive' || detail?.match_source === 'suggestion_promoted') || promotedSpeakers.has(speaker)) {
+      if ((!isRawMapping && (detail?.match_source === 'auto' || detail?.match_source === 'retroactive' || detail?.match_source === 'suggestion_promoted')) || promotedSpeakers.has(speaker)) {
         auto.push(speaker);
       } else if (voiceSuggestions.has(speaker)) {
         suggest.push(speaker);

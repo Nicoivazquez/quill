@@ -4,8 +4,8 @@ import (
 	"net/http"
 
 	"quill/internal/contacts"
-	"quill/internal/database"
-	"quill/internal/models"
+	"quill/internal/repository"
+	"quill/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 )
@@ -85,26 +85,36 @@ func (h *Handler) SpeakerIdentificationDebug(c *gin.Context) {
 		}
 	}
 
-	// --- Speaker mapping aggregate stats ---
-	var allMappings []models.SpeakerMapping
-	if err := database.DB.WithContext(ctx).Find(&allMappings).Error; err == nil {
-		resp.Mappings.Total = len(allMappings)
-
-		jobSet := make(map[string]struct{})
-		for _, m := range allMappings {
-			jobSet[m.TranscriptionJobID] = struct{}{}
-
-			src := m.MatchSource
-			if src == "" {
-				src = "manual"
+	// --- Speaker mapping aggregate stats (scoped to active vault's jobs) ---
+	if vault != nil {
+		jobs, _, listErr := h.jobRepo.ListWithParams(ctx, repository.ListParams{
+			VaultID: &vault.ID,
+			Limit:   10000,
+		})
+		if listErr == nil {
+			jobSet := make(map[string]struct{})
+			for _, j := range jobs {
+				mappings, mErr := h.speakerMappingRepo.ListByJob(ctx, j.ID)
+				if mErr != nil {
+					continue
+				}
+				if len(mappings) > 0 {
+					jobSet[j.ID] = struct{}{}
+				}
+				resp.Mappings.Total += len(mappings)
+				for _, m := range mappings {
+					src := m.MatchSource
+					if src == "" {
+						src = "manual"
+					}
+					resp.Mappings.BySource[src]++
+					if m.ReviewStatus == "pending" {
+						resp.Mappings.PendingReview++
+					}
+				}
 			}
-			resp.Mappings.BySource[src]++
-
-			if m.ReviewStatus == "pending" {
-				resp.Mappings.PendingReview++
-			}
+			resp.Mappings.JobsWithMappings = len(jobSet)
 		}
-		resp.Mappings.JobsWithMappings = len(jobSet)
 	}
 
 	c.JSON(http.StatusOK, resp)
@@ -124,7 +134,8 @@ func (h *Handler) RerunAutoLabel(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	if err := h.AutoLabelSpeakersForJob(ctx, jobID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		logger.Error("rerun auto-label failed", "job_id", jobID, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Auto-label pipeline failed"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true, "job_id": jobID})

@@ -1721,6 +1721,9 @@ func (r *errSpeakerMappingRepo) GetSpeakerAttentionSummary(ctx context.Context, 
 func (r *errSpeakerMappingRepo) ListJobIDsByContactID(ctx context.Context, contactID uint) ([]string, error) {
 	return r.delegate.ListJobIDsByContactID(ctx, contactID)
 }
+func (r *errSpeakerMappingRepo) ListByContactID(ctx context.Context, contactID uint) ([]models.SpeakerMapping, error) {
+	return r.delegate.ListByContactID(ctx, contactID)
+}
 func (r *errSpeakerMappingRepo) SetContactID(ctx context.Context, mappingID uint, contactID *uint) error {
 	return r.delegate.SetContactID(ctx, mappingID, contactID)
 }

@@ -62,7 +62,7 @@ func (h *Handler) WarmModel(c *gin.Context) {
 		return
 	}
 
-	started := h.runtimeWarmup.WarmOnDemandModel(c.Request.Context(), req.Backend, req.Model)
+	started := h.runtimeWarmup.WarmOnDemandModel(context.Background(), req.Backend, req.Model)
 	c.JSON(http.StatusOK, gin.H{
 		"started": started,
 		"status":  h.runtimeWarmup.Snapshot(),

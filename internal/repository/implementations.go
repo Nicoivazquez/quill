@@ -742,6 +742,7 @@ type SpeakerMappingRepository interface {
 	UpsertMapping(ctx context.Context, jobID string, mapping models.SpeakerMapping) (*models.SpeakerMapping, error)
 	DeleteByJobID(ctx context.Context, jobID string) error
 	ListJobIDsByContactID(ctx context.Context, contactID uint) ([]string, error)
+	ListByContactID(ctx context.Context, contactID uint) ([]models.SpeakerMapping, error)
 	SetContactID(ctx context.Context, mappingID uint, contactID *uint) error
 }
 
@@ -913,6 +914,15 @@ func (r *speakerMappingRepository) ListJobIDsByContactID(ctx context.Context, co
 		Distinct("transcription_job_id").
 		Pluck("transcription_job_id", &jobIDs).Error
 	return jobIDs, err
+}
+
+func (r *speakerMappingRepository) ListByContactID(ctx context.Context, contactID uint) ([]models.SpeakerMapping, error) {
+	var mappings []models.SpeakerMapping
+	err := r.db.WithContext(ctx).Where("contact_id = ?", contactID).Find(&mappings).Error
+	if err != nil {
+		return nil, err
+	}
+	return mappings, nil
 }
 
 func (r *speakerMappingRepository) SetContactID(ctx context.Context, mappingID uint, contactID *uint) error {
