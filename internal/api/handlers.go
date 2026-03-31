@@ -946,12 +946,12 @@ func (h *Handler) SubmitJob(c *gin.Context) {
 		getFormValueWithDefault(c, "diarize_model", transcription.DiarizeSortformer),
 	)
 	if !validDiarizeModel {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid diarize_model. Must be 'pyannote', 'nvidia_sortformer', or 'sherpa-onnx'"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid diarize_model. Must be 'nvidia_sortformer' or 'sherpa-onnx'"})
 		_ = h.fileService.RemoveFile(filePath)
 		return
 	}
 	params.DiarizeModel = diarizeModel
-	h.fallbackDiarizationModelIfTokenMissing(&params, "upload", h.config.HFToken)
+	// h.fallbackDiarizationModelIfTokenMissing(&params, "upload", h.config.HFToken) // pyannote disabled
 
 	// Create job
 	job := models.TranscriptionJob{
@@ -1395,11 +1395,11 @@ func (h *Handler) getValidatedTranscriptionParams(c *gin.Context, job *models.Tr
 
 	normalizedDiarizeModel, validDiarizeModel := normalizeDiarizeModel(requestParams.DiarizeModel)
 	if !validDiarizeModel {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid diarize_model. Must be 'pyannote', 'nvidia_sortformer', or 'sherpa-onnx'"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid diarize_model. Must be 'nvidia_sortformer' or 'sherpa-onnx'"})
 		return nil, fmt.Errorf("invalid diarize_model")
 	}
 	requestParams.DiarizeModel = normalizedDiarizeModel
-	h.fallbackDiarizationModelIfTokenMissing(&requestParams, fmt.Sprintf("start_transcription job=%s", jobID), h.config.HFToken)
+	// h.fallbackDiarizationModelIfTokenMissing(&requestParams, fmt.Sprintf("start_transcription job=%s", jobID), h.config.HFToken) // pyannote disabled
 
 	// Validate multi-track compatibility
 	if job.IsMultiTrack && !requestParams.IsMultiTrackEnabled {
@@ -3205,8 +3205,8 @@ func normalizeDiarizeModel(rawModel string) (string, bool) {
 	switch model {
 	case "", transcription.DiarizeSortformer:
 		return transcription.DiarizeSortformer, true
-	case transcription.ModelPyannote, transcription.ModelDiarization31, transcription.ModelDiarizationCommunity1:
-		return transcription.ModelPyannote, true
+	// case transcription.ModelPyannote, transcription.ModelDiarization31, transcription.ModelDiarizationCommunity1:
+	// 	return transcription.ModelPyannote, true
 	case transcription.DiarizeSherpaOnnx:
 		return transcription.DiarizeSherpaOnnx, true
 	default:
@@ -3218,44 +3218,45 @@ func hasHFToken(hfToken *string) bool {
 	return hfToken != nil && strings.TrimSpace(*hfToken) != ""
 }
 
-func (h *Handler) fallbackDiarizationModelIfTokenMissing(params *models.WhisperXParams, ctx string, serverHFToken string) {
-	if !params.Diarize || params.DiarizeModel != transcription.ModelPyannote {
-		return
-	}
-
-	if hasHFToken(params.HfToken) {
-		return
-	}
-
-	resolvedServerToken := strings.TrimSpace(serverHFToken)
-	if resolvedServerToken != "" {
-		params.HfToken = &resolvedServerToken
-		logger.Info(
-			"Using server-managed Hugging Face token for Pyannote diarization",
-			"context", ctx,
-		)
-		return
-	}
-
-	// Check cloud provider store for a saved Hugging Face token
-	if h.cloudProviderRepo != nil {
-		if stored, err := h.cloudProviderRepo.GetByProvider(context.Background(), "huggingface"); err == nil && stored != nil && strings.TrimSpace(stored.APIKey) != "" {
-			token := strings.TrimSpace(stored.APIKey)
-			params.HfToken = &token
-			logger.Info(
-				"Using stored Hugging Face token from cloud providers for Pyannote diarization",
-				"context", ctx,
-			)
-			return
-		}
-	}
-
-	logger.Warn(
-		"Pyannote diarization requested without Hugging Face token; falling back to NVIDIA Sortformer",
-		"context", ctx,
-	)
-	params.DiarizeModel = transcription.DiarizeSortformer
-}
+// fallbackDiarizationModelIfTokenMissing — commented out, pyannote disabled
+// func (h *Handler) fallbackDiarizationModelIfTokenMissing(params *models.WhisperXParams, ctx string, serverHFToken string) {
+// 	if !params.Diarize || params.DiarizeModel != transcription.ModelPyannote {
+// 		return
+// 	}
+//
+// 	if hasHFToken(params.HfToken) {
+// 		return
+// 	}
+//
+// 	resolvedServerToken := strings.TrimSpace(serverHFToken)
+// 	if resolvedServerToken != "" {
+// 		params.HfToken = &resolvedServerToken
+// 		logger.Info(
+// 			"Using server-managed Hugging Face token for Pyannote diarization",
+// 			"context", ctx,
+// 		)
+// 		return
+// 	}
+//
+// 	// Check cloud provider store for a saved Hugging Face token
+// 	if h.cloudProviderRepo != nil {
+// 		if stored, err := h.cloudProviderRepo.GetByProvider(context.Background(), "huggingface"); err == nil && stored != nil && strings.TrimSpace(stored.APIKey) != "" {
+// 			token := strings.TrimSpace(stored.APIKey)
+// 			params.HfToken = &token
+// 			logger.Info(
+// 				"Using stored Hugging Face token from cloud providers for Pyannote diarization",
+// 				"context", ctx,
+// 			)
+// 			return
+// 		}
+// 	}
+//
+// 	logger.Warn(
+// 		"Pyannote diarization requested without Hugging Face token; falling back to NVIDIA Sortformer",
+// 		"context", ctx,
+// 	)
+// 	params.DiarizeModel = transcription.DiarizeSortformer
+// }
 
 func getFormValueWithDefault(c *gin.Context, key, defaultValue string) string {
 	if value := c.PostForm(key); value != "" {
@@ -3597,11 +3598,11 @@ func (h *Handler) SubmitQuickTranscription(c *gin.Context) {
 
 	normalizedDiarizeModel, validDiarizeModel := normalizeDiarizeModel(params.DiarizeModel)
 	if !validDiarizeModel {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid diarize_model. Must be 'pyannote', 'nvidia_sortformer', or 'sherpa-onnx'"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid diarize_model. Must be 'nvidia_sortformer' or 'sherpa-onnx'"})
 		return
 	}
 	params.DiarizeModel = normalizedDiarizeModel
-	h.fallbackDiarizationModelIfTokenMissing(&params, "quick_transcription", h.config.HFToken)
+	// h.fallbackDiarizationModelIfTokenMissing(&params, "quick_transcription", h.config.HFToken) // pyannote disabled
 
 	// Submit quick transcription job
 	job, err := h.quickTranscription.SubmitQuickJob(file, header.Filename, params)

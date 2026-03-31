@@ -20,7 +20,7 @@ import { useContacts, useCreateContact } from "@/features/contacts/hooks/useCont
 import type { Contact } from "@/features/contacts/types";
 import type { SpeakerMapping, SpeakerMappingsUpdateResponse } from "@/features/transcription/hooks/useTranscriptionSpeakers";
 import { usePromoteSpeakerSuggestion, useSpeakerSuggestions, useDismissSpeakerSuggestion } from "@/features/transcription/hooks/useTranscriptionSpeakers";
-import { formatSpeakerLabel } from "@/lib/speaker-utils";
+import { speakerIndexToLabel } from "@/lib/speaker-utils";
 import { sanitizeInputValue } from "@/lib/filename-validation";
 
 interface SpeakerRenameDialogProps {
@@ -90,7 +90,7 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
   const [retranscribeFamily, setRetranscribeFamily] = useState("mlx_whisper");
   const [retranscribeModel, setRetranscribeModel] = useState("large-v3-turbo-q4");
   const [retranscribeNumSpeakers, setRetranscribeNumSpeakers] = useState("");
-  const [retranscribeDiarizeMode, setRetranscribeDiarizeMode] = useState<"local" | "pyannote">("local");
+  const [retranscribeDiarizeMode, setRetranscribeDiarizeMode] = useState<"local" | "pyannote" | "sherpa-onnx">("sherpa-onnx");
   const [isRetranscribing, setIsRetranscribing] = useState(false);
   const promoteMutation = usePromoteSpeakerSuggestion();
   const dismissMutation = useDismissSpeakerSuggestion();
@@ -388,7 +388,9 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
     try {
       const numSpeakers = retranscribeNumSpeakers ? parseInt(retranscribeNumSpeakers, 10) : undefined;
       const isSortformer = retranscribeDiarizeMode === "local";
-      const diarizeModel = isSortformer ? "nvidia_sortformer" : "pyannote";
+      const diarizeModel = isSortformer ? "nvidia_sortformer"
+        : retranscribeDiarizeMode === "sherpa-onnx" ? "sherpa-onnx"
+        : "pyannote";
 
       const params: Record<string, unknown> = {
         model_family: retranscribeFamily,
@@ -398,7 +400,6 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
       };
 
       if (numSpeakers && numSpeakers > 0) {
-        // Sortformer only supports max_speakers; Pyannote supports both
         if (isSortformer) {
           params.max_speakers = numSpeakers;
         } else {
@@ -432,6 +433,16 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
   };
 
   const speakers = Object.keys(speakerMappings).sort();
+
+  // Build order-based labels (A, B, C, …) so they match the transcript view,
+  // regardless of the raw numeric suffix (e.g. speaker_13 after centroid merge).
+  const speakerDisplayLabel = useCallback(
+    (speaker: string) => {
+      const idx = speakers.indexOf(speaker);
+      return idx >= 0 ? speakerIndexToLabel(idx) : speaker;
+    },
+    [speakers],
+  );
 
   // Categorize speakers into three groups
   const { autoAssigned, suggested, unassigned } = useMemo(() => {
@@ -469,7 +480,7 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
       // when details are empty. fetchSpeakerMappings resets it on next open.
       setRetranscribeOpen(false);
       setRetranscribeNumSpeakers("");
-      setRetranscribeDiarizeMode("local");
+      setRetranscribeDiarizeMode("sherpa-onnx");
     }
   }, [open]);
 
@@ -521,7 +532,7 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
                         <div key={speaker} className="space-y-1">
                           <div className="flex items-center gap-2">
                             <Label htmlFor={`speaker-${speaker}`} className="text-xs font-medium text-muted-foreground">
-                              {formatSpeakerLabel(speaker)}
+                              {speakerDisplayLabel(speaker)}
                             </Label>
                             <span className="text-xs px-1.5 py-0.5 rounded bg-green-500/10 text-green-600 dark:text-green-400 inline-flex items-center gap-1" data-testid={`badge-auto-${speaker}`}>
                               <Check className="h-3 w-3" />
@@ -551,7 +562,7 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
                                   onFocus={() => { setActiveSpeaker(speaker); setHighlightedSuggestionIndex(0); }}
                                   onClick={() => { setActiveSpeaker(speaker); setHighlightedSuggestionIndex(0); }}
                                   onKeyDown={(event) => handleSpeakerInputKeyDown(event, speaker)}
-                                  placeholder={`Enter custom name for ${formatSpeakerLabel(speaker)}`}
+                                  placeholder={`Enter custom name for ${speakerDisplayLabel(speaker)}`}
                                   className="transition-all duration-200 focus:ring-2 focus:ring-green-500/20 border-green-500/20"
                                 />
                               </PopoverAnchor>
@@ -640,7 +651,7 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
                       return (
                         <div key={speaker} className="px-3 py-2 rounded-md bg-amber-500/5 border border-amber-500/20" data-testid={`suggestion-${speaker}`}>
                           <div className="flex items-center gap-2 mb-1.5">
-                            <span className="text-xs text-muted-foreground">{formatSpeakerLabel(speaker)}</span>
+                            <span className="text-xs text-muted-foreground">{speakerDisplayLabel(speaker)}</span>
                             <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400">
                               {Math.round((suggestion.confidence_score ?? 0) * 100)}% match
                             </span>
@@ -696,7 +707,7 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
                                     { transcriptionId, mappingId: suggestion.id },
                                     {
                                       onSuccess: () => {
-                                        toast({ title: `Suggestion dismissed for ${formatSpeakerLabel(speaker)}` });
+                                        toast({ title: `Suggestion dismissed for ${speakerDisplayLabel(speaker)}` });
                                       },
                                     },
                                   );
@@ -730,7 +741,7 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
                       return (
                         <div key={speaker} className="space-y-1">
                           <Label htmlFor={`speaker-${speaker}`} className="text-xs font-medium text-muted-foreground">
-                            {formatSpeakerLabel(speaker)}
+                            {speakerDisplayLabel(speaker)}
                           </Label>
                           <Popover
                             open={activeSpeaker === speaker}
@@ -750,7 +761,7 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
                                 onFocus={() => { setActiveSpeaker(speaker); setHighlightedSuggestionIndex(0); }}
                                 onClick={() => { setActiveSpeaker(speaker); setHighlightedSuggestionIndex(0); }}
                                 onKeyDown={(event) => handleSpeakerInputKeyDown(event, speaker)}
-                                placeholder={`Enter custom name for ${formatSpeakerLabel(speaker)}`}
+                                placeholder={`Enter custom name for ${speakerDisplayLabel(speaker)}`}
                                 className="transition-all duration-200 focus:ring-2 focus:ring-primary/20"
                               />
                             </PopoverAnchor>
@@ -883,13 +894,15 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="sherpa-onnx">sherpa-onnx</SelectItem>
                       <SelectItem value="local">NVIDIA Sortformer</SelectItem>
-                      <SelectItem value="pyannote">Pyannote</SelectItem>
+                      {/* <SelectItem value="pyannote">Pyannote</SelectItem> */}
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-[var(--text-tertiary)]">
+                    {retranscribeDiarizeMode === "sherpa-onnx" && "sherpa-onnx runs locally via ONNX Runtime. No Hugging Face token needed. Supports up to 20 speakers."}
                     {retranscribeDiarizeMode === "local" && "NVIDIA Sortformer runs locally without a Hugging Face token (up to 4 speakers)."}
-                    {retranscribeDiarizeMode === "pyannote" && "Pyannote supports up to 20 speakers. Configure your Hugging Face token in Settings \u2192 Transcription."}
+                    {/* {retranscribeDiarizeMode === "pyannote" && "Pyannote supports up to 20 speakers. Configure your Hugging Face token in Settings → Transcription."} */}
                   </p>
                 </div>
 
@@ -909,7 +922,7 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
                   <p className="text-xs text-[var(--text-tertiary)]">
                     {retranscribeDiarizeMode === "local"
                       ? "Sortformer supports up to 4 speakers. Leave blank to auto-detect."
-                      : "Set the exact number of speakers for more accurate diarization (up to 20)."
+                      : "Leave blank to auto-detect, or set the exact number for more accurate diarization (up to 20)."
                     }
                   </p>
                 </div>

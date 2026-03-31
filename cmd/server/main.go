@@ -390,8 +390,8 @@ func registerAdapters(cfg *config.Config) {
 	// Shared environment path for NVIDIA models (NeMo-based)
 	nvidiaEnvPath := filepath.Join(cfg.WhisperXEnv, "parakeet")
 
-	// Dedicated environment path for PyAnnote (to avoid dependency conflicts)
-	pyannoteEnvPath := filepath.Join(cfg.WhisperXEnv, "pyannote")
+	// // Dedicated environment path for PyAnnote — commented out, pyannote disabled
+	// pyannoteEnvPath := filepath.Join(cfg.WhisperXEnv, "pyannote")
 
 	// Dedicated environment path for Voxtral (Mistral AI model)
 	voxtralEnvPath := filepath.Join(cfg.WhisperXEnv, "voxtral")
@@ -417,8 +417,8 @@ func registerAdapters(cfg *config.Config) {
 		adapters.NewOpenAIAdapter(cfg.OpenAIAPIKey))
 
 	// Register diarization adapters
-	registry.RegisterDiarizationAdapter("pyannote",
-		adapters.NewPyAnnoteAdapter(pyannoteEnvPath)) // Dedicated environment
+	// registry.RegisterDiarizationAdapter("pyannote",
+	// 	adapters.NewPyAnnoteAdapter(pyannoteEnvPath)) // Dedicated environment — commented out, pyannote disabled
 	registry.RegisterDiarizationAdapter("sortformer",
 		adapters.NewSortformerAdapter(nvidiaEnvPath)) // Shares with Parakeet
 

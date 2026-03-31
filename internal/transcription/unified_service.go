@@ -78,7 +78,7 @@ func NewUnifiedTranscriptionService(jobRepo repository.JobRepository, tempDir, o
 		envPath:         envPath,
 		defaultModelIDs: map[string]string{
 			"transcription": ModelWhisperX,
-			"diarization":   ModelPyannote,
+			"diarization":   DiarizeSherpaOnnx, // was ModelPyannote
 		},
 		jobRepo:        jobRepo,
 		webhookService: webhook.NewService(),
