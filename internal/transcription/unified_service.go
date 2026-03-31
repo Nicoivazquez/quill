@@ -345,7 +345,11 @@ func (u *UnifiedTranscriptionService) processSingleTrackJob(ctx context.Context,
 			"transcription_model", transcriptionModelID,
 			"diarization_model", diarizationModelID)
 
-		g, gCtx := errgroup.WithContext(ctx)
+		// Use errgroup WITHOUT derived context so that diarization failure
+		// does not cancel transcription. Transcription is the critical path;
+		// diarization is best-effort — a failure just means no speaker labels.
+		var g errgroup.Group
+		var diarizationErr error
 
 		// Transcription goroutine
 		g.Go(func() error {
@@ -353,14 +357,14 @@ func (u *UnifiedTranscriptionService) processSingleTrackJob(ctx context.Context,
 			if tErr != nil {
 				return fmt.Errorf("failed to get transcription adapter: %w", tErr)
 			}
-			if !tAdapter.IsReady(gCtx) {
+			if !tAdapter.IsReady(ctx) {
 				logger.Info("Preparing transcription model environment on demand", "model_id", transcriptionModelID)
-				if pErr := tAdapter.PrepareEnvironment(gCtx); pErr != nil {
+				if pErr := tAdapter.PrepareEnvironment(ctx); pErr != nil {
 					return fmt.Errorf("failed to prepare transcription model %s: %w", transcriptionModelID, pErr)
 				}
 			}
 			params := u.convertParametersForModel(job.Parameters, transcriptionModelID)
-			result, tErr := tAdapter.Transcribe(gCtx, preprocessedInput, params, procCtx)
+			result, tErr := tAdapter.Transcribe(ctx, preprocessedInput, params, procCtx)
 			if tErr != nil {
 				return fmt.Errorf("transcription failed: %w", tErr)
 			}
@@ -379,22 +383,28 @@ func (u *UnifiedTranscriptionService) processSingleTrackJob(ctx context.Context,
 			return nil
 		})
 
-		// Diarization goroutine
+		// Diarization goroutine — best-effort, failure is non-fatal
 		g.Go(func() error {
 			dAdapter, dErr := u.registry.GetDiarizationAdapter(diarizationModelID)
 			if dErr != nil {
-				return fmt.Errorf("failed to get diarization adapter: %w", dErr)
+				diarizationErr = fmt.Errorf("failed to get diarization adapter: %w", dErr)
+				logger.Warn("Diarization skipped: adapter unavailable", "error", diarizationErr)
+				return nil // non-fatal
 			}
-			if !dAdapter.IsReady(gCtx) {
+			if !dAdapter.IsReady(ctx) {
 				logger.Info("Preparing diarization model environment on demand", "model_id", diarizationModelID)
-				if pErr := dAdapter.PrepareEnvironment(gCtx); pErr != nil {
-					return fmt.Errorf("failed to prepare diarization model %s: %w", diarizationModelID, pErr)
+				if pErr := dAdapter.PrepareEnvironment(ctx); pErr != nil {
+					diarizationErr = fmt.Errorf("failed to prepare diarization model %s: %w", diarizationModelID, pErr)
+					logger.Warn("Diarization skipped: environment setup failed", "error", diarizationErr)
+					return nil // non-fatal
 				}
 			}
 			dParams := u.convertParametersForModel(job.Parameters, diarizationModelID)
-			result, dErr := dAdapter.Diarize(gCtx, diarizationInput, dParams, procCtx)
+			result, dErr := dAdapter.Diarize(ctx, diarizationInput, dParams, procCtx)
 			if dErr != nil {
-				return fmt.Errorf("diarization failed: %w", dErr)
+				diarizationErr = fmt.Errorf("diarization failed: %w", dErr)
+				logger.Warn("Diarization failed, transcription will proceed without speaker labels", "error", diarizationErr)
+				return nil // non-fatal
 			}
 			diarizationResult = result
 			return nil
@@ -402,6 +412,10 @@ func (u *UnifiedTranscriptionService) processSingleTrackJob(ctx context.Context,
 
 		if err := g.Wait(); err != nil {
 			return err
+		}
+
+		if diarizationErr != nil {
+			logger.Warn("Proceeding without diarization results", "error", diarizationErr)
 		}
 
 		// Merge diarization results with transcription
@@ -913,14 +927,6 @@ func (u *UnifiedTranscriptionService) convertToPyannoteParams(params models.Whis
 		paramMap["hf_token"] = *params.HfToken
 	}
 
-	// Map VAD thresholds to Pyannote segmentation parameters
-	// These control voice activity detection sensitivity for diarization
-	if params.VadOnset > 0 {
-		paramMap["segmentation_onset"] = params.VadOnset
-	}
-	if params.VadOffset > 0 {
-		paramMap["segmentation_offset"] = params.VadOffset
-	}
 
 	return paramMap
 }
@@ -1205,6 +1211,8 @@ func renderMarkdownTranscript(job *models.TranscriptionJob, payload *markdownTra
 			speaker = strings.TrimSpace(*segment.Speaker)
 			if name, ok := speakerNames[speaker]; ok && name != "" {
 				speaker = name
+			} else {
+				speaker = FormatSpeakerLabel(speaker)
 			}
 		}
 

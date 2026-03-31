@@ -347,8 +347,8 @@ func TestRewriteTranscriptMarkdown_FallsBackToOriginal(t *testing.T) {
 	}
 	md := string(content)
 
-	if !strings.Contains(md, "**speaker_00**") {
-		t.Errorf("expected markdown to fall back to %q; got:\n%s", "**speaker_00**", md)
+	if !strings.Contains(md, "**Speaker A**") {
+		t.Errorf("expected markdown to fall back to %q; got:\n%s", "**Speaker A**", md)
 	}
 }
 

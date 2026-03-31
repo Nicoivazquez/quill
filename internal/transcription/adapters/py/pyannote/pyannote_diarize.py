@@ -33,8 +33,6 @@ def diarize_audio(
     max_speakers: int = None,
     output_format: str = "rttm",
     device: str = "auto",
-    segmentation_onset: float = None,
-    segmentation_offset: float = None,
 ):
     """
     Perform speaker diarization on audio file using PyAnnote.
@@ -62,30 +60,6 @@ def diarize_audio(
             print("PyTorch not available for CUDA, using CPU")
         except Exception as e:
             print(f"Error moving to device: {e}, using CPU")
-
-        # Apply segmentation thresholds if provided
-        if segmentation_onset is not None or segmentation_offset is not None:
-            try:
-                # Get current parameters
-                params = pipeline.parameters(instantiated=True)
-
-                # Update segmentation thresholds
-                if "segmentation" in params:
-                    if segmentation_onset is not None:
-                        params["segmentation"]["threshold"] = segmentation_onset
-                        print(f"Set segmentation onset threshold: {segmentation_onset}")
-                    if segmentation_offset is not None:
-                        # PyAnnote uses min_duration_off for offset behavior
-                        params["segmentation"]["min_duration_off"] = segmentation_offset
-                        print(f"Set segmentation offset (min_duration_off): {segmentation_offset}")
-
-                    # Instantiate pipeline with new parameters
-                    pipeline.instantiate(params)
-                else:
-                    print("Warning: Could not find segmentation parameters in pipeline")
-            except Exception as e:
-                print(f"Warning: Could not set segmentation thresholds: {e}")
-                print("Continuing with default thresholds")
 
         print("Pipeline loaded successfully")
     except Exception as e:
@@ -245,17 +219,6 @@ def main():
         default="auto",
         help="Device to use for computation"
     )
-    parser.add_argument(
-        "--segmentation-onset",
-        type=float,
-        help="Voice activity detection onset threshold (0.0-1.0). Lower values detect quieter speech."
-    )
-    parser.add_argument(
-        "--segmentation-offset",
-        type=float,
-        help="Voice activity detection offset/min_duration_off (0.0-1.0). Lower values are more sensitive to speech endings."
-    )
-
     args = parser.parse_args()
 
     # Validate input file
@@ -291,8 +254,6 @@ def main():
             max_speakers=args.max_speakers,
             output_format=args.output_format,
             device=args.device,
-            segmentation_onset=args.segmentation_onset,
-            segmentation_offset=args.segmentation_offset,
         )
     except Exception as e:
         print(f"Error during diarization: {e}")
