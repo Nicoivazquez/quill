@@ -371,12 +371,69 @@ bundle_macos_ffmpeg_runtime() {
   echo "Bundled macOS ffmpeg runtime libraries into $OUT_DIR/lib"
 }
 
-codesign_macos_ffmpeg_runtime() {
+bundle_macos_sherpa_onnx_runtime() {
+  if [[ "$(uname -s)" != "Darwin" ]]; then
+    return
+  fi
+
+  if ! command -v go >/dev/null 2>&1; then
+    echo "Skipping sherpa-onnx runtime bundling: go not available"
+    return
+  fi
+
+  if ! command -v otool >/dev/null 2>&1 || ! command -v install_name_tool >/dev/null 2>&1; then
+    echo "Skipping sherpa-onnx runtime bundling: otool/install_name_tool not available"
+    return
+  fi
+
+  local mod_dir
+  mod_dir="$(cd "$ROOT_DIR" && go list -m -f '{{.Dir}}' github.com/k2-fsa/sherpa-onnx-go-macos 2>/dev/null || true)"
+
+  if [[ -z "$mod_dir" ]]; then
+    echo "Skipping sherpa-onnx runtime bundling: module not found"
+    return
+  fi
+
+  local arch_dir=""
+  if [[ -d "$mod_dir/lib/aarch64-apple-darwin" ]]; then
+    arch_dir="$mod_dir/lib/aarch64-apple-darwin"
+  elif [[ -d "$mod_dir/lib/x86_64-apple-darwin" ]]; then
+    arch_dir="$mod_dir/lib/x86_64-apple-darwin"
+  else
+    echo "Skipping sherpa-onnx runtime bundling: no Darwin lib directory found in $mod_dir/lib/"
+    return
+  fi
+
+  mkdir -p "$OUT_DIR/lib"
+
+  local dylib
+  for dylib in "$arch_dir"/*.dylib; do
+    [[ -f "$dylib" ]] || continue
+    local base
+    base="$(basename "$dylib")"
+    if [[ -f "$OUT_DIR/lib/$base" ]]; then
+      continue
+    fi
+    cp -L "$dylib" "$OUT_DIR/lib/$base"
+    chmod u+w "$OUT_DIR/lib/$base"
+    echo "Bundled sherpa-onnx dependency $base from $dylib"
+  done
+
+  local lib
+  for lib in "$OUT_DIR"/lib/libsherpa-onnx*.dylib "$OUT_DIR"/lib/libonnxruntime*.dylib; do
+    [[ -f "$lib" ]] || continue
+    patch_install_names "$lib" "library"
+  done
+
+  echo "Bundled macOS sherpa-onnx runtime libraries into $OUT_DIR/lib"
+}
+
+codesign_macos_runtime() {
   if [[ "$(uname -s)" != "Darwin" ]]; then
     return
   fi
   if ! command -v codesign >/dev/null 2>&1; then
-    echo "Skipping ad-hoc signing for ffmpeg runtime: codesign not available"
+    echo "Skipping ad-hoc signing for runtime libraries: codesign not available"
     return
   fi
 
@@ -386,7 +443,7 @@ codesign_macos_ffmpeg_runtime() {
     codesign --force --sign - "$file" >/dev/null
   done
 
-  echo "Applied ad-hoc signatures to bundled ffmpeg runtime artifacts"
+  echo "Applied ad-hoc signatures to bundled runtime artifacts"
 }
 
 uv_source="$(resolve_tool_path "uv" "QUILL_UV_SOURCE")"
@@ -420,6 +477,7 @@ else
 fi
 
 bundle_macos_ffmpeg_runtime
-codesign_macos_ffmpeg_runtime
+bundle_macos_sherpa_onnx_runtime
+codesign_macos_runtime
 
 echo "Desktop tools prepared in $OUT_DIR"
