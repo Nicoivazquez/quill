@@ -994,7 +994,7 @@ export const AudioFilesTable = memo(function AudioFilesTable({
 												})()}
 											</div>
 											<div className="flex items-center gap-1.5 mt-1 text-sm text-gray-500">
-												{formatDate(file.created_at)}
+												{formatDate(file.recorded_at || file.created_at)}
 											</div>
 										</div>
 									</div>

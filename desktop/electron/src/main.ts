@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, session } from "electron";
 import { spawn, type ChildProcessByStdio } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
@@ -720,6 +720,14 @@ async function boot(): Promise<void> {
   if (!mainWindow || mainWindow.isDestroyed()) {
     return;
   }
+
+  // Clear service worker and HTTP cache to ensure fresh assets after rebuilds.
+  // VitePWA's service worker precaches index.html and hashed bundles, so without
+  // this the old SW can serve stale content indefinitely in Electron.
+  const defaultSession = session.defaultSession;
+  await defaultSession.clearStorageData({ storages: ["serviceworkers", "cachestorage"] });
+  await defaultSession.clearCache();
+
   await loadWindowURL(mainWindow, backendUrl);
 }
 

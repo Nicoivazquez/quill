@@ -28,9 +28,12 @@ export function computeWordOffsets(words: { word: string; start: number; end: nu
 
     if (!words) return { fullText: '', offsets: [] };
 
-    words.forEach((w) => {
+    words.forEach((w, i) => {
+        const trimmed = w.word.replace(/^\s+|\s+$/g, '');
+        if (!trimmed) return;
+
         const startChar = textBuilder.length;
-        textBuilder += w.word;
+        textBuilder += trimmed;
         const endChar = textBuilder.length;
 
         computedOffsets.push({
@@ -38,10 +41,12 @@ export function computeWordOffsets(words: { word: string; start: number; end: nu
             endChar,
             startTime: w.start,
             endTime: w.end,
-            word: w.word
+            word: trimmed
         });
 
-        textBuilder += ' ';
+        if (i < words.length - 1) {
+            textBuilder += ' ';
+        }
     });
 
     return { fullText: textBuilder, offsets: computedOffsets };

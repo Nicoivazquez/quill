@@ -21,10 +21,11 @@ type BundleMetadata struct {
 	Diarization      bool      `json:"diarization"`
 	IsMultiTrack     bool      `json:"is_multi_track,omitempty"`
 	Folder           string    `json:"folder,omitempty"`
-	OriginalFilename string    `json:"original_filename,omitempty"`
-	FileHash         string    `json:"file_hash,omitempty"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	OriginalFilename string     `json:"original_filename,omitempty"`
+	FileHash         string     `json:"file_hash,omitempty"`
+	RecordedAt       *time.Time `json:"recorded_at,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
 
 	SpeakerMappings []SpeakerMappingEntry `json:"speaker_mappings,omitempty"`
 	Summaries       []SummaryEntry        `json:"summaries,omitempty"`
@@ -233,6 +234,7 @@ func BuildMetadataFromJob(
 		IsMultiTrack:     job.IsMultiTrack,
 		OriginalFilename: job.OriginalFilename,
 		FileHash:         job.FileHash,
+		RecordedAt:       job.RecordedAt,
 		CreatedAt:        job.CreatedAt,
 		UpdatedAt:        job.UpdatedAt,
 	}

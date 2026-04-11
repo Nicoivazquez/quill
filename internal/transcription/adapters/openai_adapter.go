@@ -317,7 +317,7 @@ func (a *OpenAIAdapter) Transcribe(ctx context.Context, input interfaces.AudioIn
 
 	for i, word := range openAIResponse.Words {
 		result.WordSegments[i] = interfaces.TranscriptWord{
-			Word:  word.Word,
+			Word:  strings.TrimSpace(word.Word),
 			Start: word.Start,
 			End:   word.End,
 		}

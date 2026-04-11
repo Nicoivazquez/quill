@@ -389,11 +389,16 @@ export const AudioDetailView = function AudioDetailView({ audioId: propAudioId }
     }
 
     // Helper to format date "Premium" style
-    const formattedDate = new Date(audioFile.created_at).toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric"
-    }).toUpperCase();
+    const formatDatePremium = (dateStr: string) =>
+        new Date(dateStr).toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+            year: "numeric"
+        }).toUpperCase();
+
+    const primaryDate = audioFile.recorded_at || audioFile.created_at;
+    const formattedDate = formatDatePremium(primaryDate);
+    const showImportDate = audioFile.recorded_at && audioFile.recorded_at !== audioFile.created_at;
 
     return (
         <div className="h-screen flex flex-col bg-[var(--bg-main)] relative selection:bg-[var(--brand-light)] overflow-hidden">
@@ -440,7 +445,23 @@ export const AudioDetailView = function AudioDetailView({ audioId: propAudioId }
 
                                             {/* Badges */}
                                             <div className="flex items-center gap-3 text-xs font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
-                                                <span>{formattedDate}</span>
+                                                <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                        <span className="cursor-help">{formattedDate}</span>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent>{audioFile.recorded_at ? "Recorded" : "Imported"}</TooltipContent>
+                                                </Tooltip>
+                                                {showImportDate && (
+                                                    <>
+                                                        <span className="w-1 h-1 rounded-full bg-[var(--text-tertiary)] opacity-50"></span>
+                                                        <Tooltip>
+                                                            <TooltipTrigger asChild>
+                                                                <span className="normal-case cursor-help">{formatDatePremium(audioFile.created_at)}</span>
+                                                            </TooltipTrigger>
+                                                            <TooltipContent>Imported</TooltipContent>
+                                                        </Tooltip>
+                                                    </>
+                                                )}
                                                 <span className="w-1 h-1 rounded-full bg-[var(--text-tertiary)] opacity-50"></span>
 
                                                 {/* Status Icon */}

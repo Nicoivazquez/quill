@@ -68,10 +68,11 @@ type ListParams struct {
 // allowedSortColumns defines the columns that can be used for sorting.
 // This prevents SQL injection through the sort_by parameter.
 var allowedSortColumns = map[string]bool{
-	"created_at": true,
-	"updated_at": true,
-	"title":      true,
-	"status":     true,
+	"created_at":  true,
+	"updated_at":  true,
+	"recorded_at": true,
+	"title":       true,
+	"status":      true,
 }
 
 // IsSortColumnAllowed checks if a column name is in the sort allowlist.

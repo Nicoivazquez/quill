@@ -8,15 +8,22 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Loader2 } from "lucide-react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
+import { Check, ChevronDown, Loader2 } from "lucide-react";
 import type { WhisperXParams } from "./TranscriptionConfigDialog";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 
@@ -50,6 +57,7 @@ export function TranscribeDDialog({
   const [selectedProfileId, setSelectedProfileId] = useState<string>("");
   const [profilesLoading, setProfilesLoading] = useState(false);
   const [defaultProfile, setDefaultProfile] = useState<TranscriptionProfile | null>(null);
+  const [profilePopoverOpen, setProfilePopoverOpen] = useState(false);
 
   const fetchProfiles = useCallback(async () => {
     try {
@@ -114,24 +122,27 @@ export function TranscribeDDialog({
     setSelectedProfileId(value);
   };
 
-
+  const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId);
+  const selectedProfileLabel = selectedProfile
+    ? `${selectedProfile.name}${defaultProfile && selectedProfile.id === defaultProfile.id ? " (Default)" : ""}`
+    : "";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md glass-card rounded-[var(--radius-card)] p-0 gap-0 overflow-hidden border border-[var(--border-subtle)] shadow-[var(--shadow-float)]">
-        <DialogHeader className="p-6 pb-2">
-          <DialogTitle className="text-xl font-bold tracking-tight text-[var(--text-primary)]">
+      <DialogContent className="max-w-lg min-w-0 overflow-hidden glass-card rounded-[var(--radius-card)] p-0 gap-0 border border-[var(--border-subtle)] shadow-[var(--shadow-float)]">
+        <DialogHeader className="min-w-0 p-6 pb-2">
+          <DialogTitle className="min-w-0 text-xl font-bold tracking-tight text-[var(--text-primary)]">
             {title || "Transcribe with Profile"}
           </DialogTitle>
-          <DialogDescription className="text-[var(--text-secondary)] text-sm mt-1.5">
+          <DialogDescription className="mt-1.5 min-w-0 pr-8 text-sm leading-relaxed text-[var(--text-secondary)]">
             Choose a saved profile to start transcription with your preferred settings.
           </DialogDescription>
         </DialogHeader>
 
 
 
-        <div className="space-y-4 px-6 py-2">
-          <div className="space-y-2">
+        <div className="min-w-0 space-y-4 px-6 py-2">
+          <div className="min-w-0 space-y-2">
             <Label htmlFor="profile" className="text-[var(--text-secondary)] font-medium">
               Select Profile
             </Label>
@@ -146,40 +157,75 @@ export function TranscribeDDialog({
                 <span className="text-sm text-[var(--text-secondary)]">No profiles available</span>
               </div>
             ) : (
-              <Select
-                value={selectedProfileId}
-                onValueChange={handleProfileChange}
-              >
-                <SelectTrigger className="h-11 rounded-[var(--radius-btn)] bg-[var(--bg-main)] border border-[var(--border-subtle)] text-[var(--text-primary)] focus:ring-[var(--brand-light)] focus:border-[var(--brand-solid)] shadow-none">
-                  <SelectValue placeholder="Choose a profile..." />
-                </SelectTrigger>
-                <SelectContent className="glass-card rounded-[var(--radius-btn)] border border-[var(--border-subtle)] shadow-[var(--shadow-float)]">
-                  {/* All profiles */}
-                  {profiles.map((profile) => (
-                    <SelectItem
-                      key={profile.id}
-                      value={profile.id}
-                      className="text-[var(--text-primary)] focus:bg-[var(--brand-light)] focus:text-[var(--brand-solid)] rounded-[8px] my-1 mx-1 cursor-pointer"
-                    >
-                      <div className="flex flex-col space-y-1">
-                        <div className="flex items-center space-x-2">
-                          <span>{profile.name}</span>
-                          {defaultProfile && profile.id === defaultProfile.id && (
-                            <span className="text-xs text-[var(--success-solid)] bg-[var(--success-translucent)] px-1.5 py-0.5 rounded">
-                              Default
-                            </span>
-                          )}
-                        </div>
-                        {profile.description && (
-                          <span className="text-xs text-[var(--text-tertiary)] truncate">
-                            {profile.description}
-                          </span>
-                        )}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Popover open={profilePopoverOpen} onOpenChange={setProfilePopoverOpen} modal={true}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className="h-11 w-full min-w-0 overflow-hidden rounded-[var(--radius-btn)] border border-[var(--border-subtle)] bg-[var(--bg-main)] px-4 text-sm text-[var(--text-primary)] shadow-none outline-none transition-all hover:border-[var(--brand-solid)]/50 focus:ring-2 focus:ring-[var(--brand-solid)]/20 inline-flex items-center justify-between"
+                    aria-label="Choose profile"
+                  >
+                    <span className="block min-w-0 flex-1 truncate text-left">
+                      {selectedProfileLabel || "Choose a profile..."}
+                    </span>
+                    <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  className="w-[min(var(--radix-popover-trigger-width),calc(100vw-4rem))] max-w-[calc(100vw-4rem)] rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--bg-card)] p-1 shadow-[var(--shadow-float)]"
+                  onOpenAutoFocus={(e) => e.preventDefault()}
+                >
+                  <Command className="bg-transparent">
+                    <CommandInput placeholder="Search profiles..." className="h-10 border-none focus:ring-0" />
+                    <CommandList className="max-h-64 overflow-auto p-1">
+                      <CommandEmpty className="py-3 text-center text-xs text-[var(--text-tertiary)]">
+                        No profiles found
+                      </CommandEmpty>
+                      <CommandGroup heading="Profiles" className="text-[var(--text-tertiary)]">
+                        {profiles.map((profile) => {
+                          const isDefaultProfile = defaultProfile?.id === profile.id;
+                          const isSelected = selectedProfileId === profile.id;
+
+                          return (
+                            <CommandItem
+                              key={profile.id}
+                              value={`${profile.name} ${profile.description ?? ""}`}
+                              onSelect={() => {
+                                handleProfileChange(profile.id);
+                                setProfilePopoverOpen(false);
+                              }}
+                              className="cursor-pointer rounded-lg px-3 py-2.5 aria-selected:bg-[var(--brand-light)] aria-selected:text-[var(--brand-solid)]"
+                            >
+                              <div className="flex min-w-0 flex-1 flex-col">
+                                <div className="flex min-w-0 items-center gap-2">
+                                  <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                                    {profile.name}
+                                  </span>
+                                  {isDefaultProfile && (
+                                    <span className="shrink-0 rounded bg-[var(--success-translucent)] px-1.5 py-0.5 text-xs text-[var(--success-solid)]">
+                                      Default
+                                    </span>
+                                  )}
+                                </div>
+                                {profile.description && (
+                                  <span className="truncate text-xs text-[var(--text-tertiary)]">
+                                    {profile.description}
+                                  </span>
+                                )}
+                              </div>
+                              <Check
+                                className={cn(
+                                  "ml-2 h-4 w-4 shrink-0",
+                                  isSelected ? "opacity-100" : "opacity-0"
+                                )}
+                              />
+                            </CommandItem>
+                          );
+                        })}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             )}
           </div>
 

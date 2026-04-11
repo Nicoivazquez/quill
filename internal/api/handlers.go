@@ -452,6 +452,7 @@ func (h *Handler) UploadAudio(c *gin.Context) {
 		Status:           models.StatusUploaded,
 		OriginalFilename: header.Filename,
 		FileHash:         uploadResult.FileHash,
+		RecordedAt:       transcription.ExtractRecordingDate(filePath, header.Filename),
 	}
 
 	if title := c.PostForm(paramTitle); title != "" {
@@ -581,6 +582,7 @@ func (h *Handler) UploadVideo(c *gin.Context) {
 		Status:           models.StatusUploaded,
 		OriginalFilename: header.Filename,
 		FileHash:         uploadResult.FileHash,
+		RecordedAt:       transcription.ExtractRecordingDate(videoPath, header.Filename),
 	}
 
 	if title := c.PostForm(paramTitle); title != "" {

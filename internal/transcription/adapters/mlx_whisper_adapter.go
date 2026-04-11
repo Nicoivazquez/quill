@@ -397,7 +397,7 @@ func (m *MLXWhisperAdapter) parseResult(outputFile string) (*interfaces.Transcri
 		result.WordSegments[i] = interfaces.TranscriptWord{
 			Start: w.Start,
 			End:   w.End,
-			Word:  w.Word,
+			Word:  strings.TrimSpace(w.Word),
 			Score: w.Score,
 		}
 	}

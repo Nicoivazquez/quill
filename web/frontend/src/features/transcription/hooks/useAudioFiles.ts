@@ -24,6 +24,7 @@ export interface AudioFile {
     title?: string;
     status: "uploaded" | "pending" | "processing" | "completed" | "failed";
     created_at: string;
+    recorded_at?: string;
     audio_path: string;
     diarization?: boolean;
     is_multi_track?: boolean;

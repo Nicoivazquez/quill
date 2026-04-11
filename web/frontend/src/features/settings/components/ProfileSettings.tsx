@@ -585,13 +585,13 @@ export function ProfileSettings() {
 								The profile to use by default when starting new transcriptions.
 							</p>
 						</div>
-						<div className="w-full sm:w-64">
+						<div className="w-full sm:w-64 min-w-0">
 							<Select
 								value={defaultProfile?.id || ""}
 								onValueChange={handleDefaultProfileChange}
 								disabled={isLoadingProfiles || profiles.length === 0}
 							>
-								<SelectTrigger className="bg-[var(--bg-main)] border-[var(--border-subtle)] text-[var(--text-primary)]">
+								<SelectTrigger className="w-full bg-[var(--bg-main)] border-[var(--border-subtle)] text-[var(--text-primary)]">
 									<SelectValue
 										placeholder={
 											isLoadingProfiles
@@ -602,10 +602,10 @@ export function ProfileSettings() {
 										}
 									/>
 								</SelectTrigger>
-								<SelectContent className="bg-[var(--bg-card)] border-[var(--border-subtle)] text-[var(--text-primary)]">
+								<SelectContent className="bg-[var(--bg-card)] border-[var(--border-subtle)] text-[var(--text-primary)] max-w-[var(--radix-select-trigger-width)]">
 									{profiles.map((profile) => (
 										<SelectItem key={profile.id} value={profile.id} className="focus:bg-[var(--bg-secondary)] focus:text-[var(--text-primary)]">
-											{profile.name}
+											<span className="truncate">{profile.name}</span>
 										</SelectItem>
 									))}
 								</SelectContent>

@@ -293,7 +293,7 @@ export const TranscriptView = forwardRef<HTMLDivElement, TranscriptViewProps>(({
     // Render plain text with word-level highlighting (no speaker info)
     const renderPlainView = () => {
         if (!transcript.word_segments || transcript.word_segments.length === 0) {
-            return <p className="text-lg leading-relaxed text-carbon-700 dark:text-carbon-300 whitespace-pre-wrap">{transcript.text}</p>;
+            return <p className="text-lg leading-relaxed text-carbon-700 dark:text-carbon-300 whitespace-pre-wrap break-words">{transcript.text}</p>;
         }
 
         return (
@@ -362,7 +362,7 @@ export const TranscriptView = forwardRef<HTMLDivElement, TranscriptViewProps>(({
                             ref={(el) => { segmentRefs.current[i] = el; }}
                             onClick={isDesktop ? (e) => handleExpandedClick(e, i) : undefined}
                             className={cn(
-                                "flex-grow text-base text-primary leading-relaxed whitespace-pre-wrap font-reading transition-colors duration-200 select-text",
+                                "flex-grow min-w-0 text-base text-primary leading-relaxed whitespace-pre-wrap break-words font-reading transition-colors duration-200 select-text",
                                 isDesktop && isModifierPressed ? 'cursor-pointer hover:text-carbon-900 dark:hover:text-carbon-100' : 'cursor-text'
                             )}
                             style={{

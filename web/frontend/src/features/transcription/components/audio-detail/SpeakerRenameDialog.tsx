@@ -234,10 +234,6 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
       .sort((a, b) => a.score - b.score || a.contact.name.localeCompare(b.contact.name))
       .map((item) => item.contact);
 
-    if (rankedMatches.length === 0) {
-      return topContacts;
-    }
-
     return rankedMatches.slice(0, MAX_CONTACT_SUGGESTIONS);
   }, [contacts, topContacts]);
 
@@ -306,11 +302,12 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
     if (event.key === "Enter") {
       if (activeSpeaker !== originalSpeaker) return;
       event.preventDefault();
-      // If the highlighted index is past all suggestions, it's the "Create" option
-      if (showCreate && highlightedSuggestionIndex === suggestions.length) {
+      // Create is rendered at index 0; contacts are offset by 1 when Create is shown
+      if (showCreate && highlightedSuggestionIndex === 0) {
         handleCreateContact(originalSpeaker, query);
       } else {
-        const selected = suggestions[highlightedSuggestionIndex] ?? suggestions[0];
+        const contactIndex = showCreate ? highlightedSuggestionIndex - 1 : highlightedSuggestionIndex;
+        const selected = suggestions[contactIndex] ?? suggestions[0];
         if (selected) {
           applyContactSuggestion(originalSpeaker, selected);
         }
@@ -486,7 +483,7 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="max-w-md overflow-y-hidden">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Users className="h-5 w-5" />
@@ -577,37 +574,19 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
                                     <div className="px-3 py-2 text-xs text-[var(--text-tertiary)]">Loading contacts...</div>
                                   ) : (
                                     <>
-                                      {getContactSuggestions(speakerMappings[speaker] ?? "", speaker).map((contact, index) => (
-                                        <button
-                                          type="button"
-                                          role="option"
-                                          aria-selected={index === highlightedSuggestionIndex}
-                                          key={contact.id}
-                                          onMouseEnter={() => setHighlightedSuggestionIndex(index)}
-                                          onMouseDown={(event) => { event.preventDefault(); applyContactSuggestion(speaker, contact); }}
-                                          className={`w-full px-3 py-2 text-left transition-colors ${index === highlightedSuggestionIndex ? "bg-[var(--bg-muted-pane)]" : "hover:bg-[var(--bg-muted-pane)]/70"}`}
-                                        >
-                                          <div className="text-sm font-medium text-[var(--text-primary)]">{contact.name}</div>
-                                          {(contact.email || contact.phone) && (
-                                            <div className="text-xs text-[var(--text-secondary)]">{contact.email || contact.phone}</div>
-                                          )}
-                                        </button>
-                                      ))}
                                       {isNewContactCandidate(speakerMappings[speaker] ?? "", speaker) && (() => {
                                         const autoSuggestions = getContactSuggestions(speakerMappings[speaker] ?? "", speaker);
-                                        const createIndex = autoSuggestions.length;
                                         const trimmedName = (speakerMappings[speaker] ?? "").trim();
                                         return (
                                           <>
-                                            {autoSuggestions.length > 0 && <div className="border-t border-[var(--border-subtle)] my-1" />}
                                             <button
                                               type="button"
                                               role="option"
-                                              aria-selected={createIndex === highlightedSuggestionIndex}
-                                              onMouseEnter={() => setHighlightedSuggestionIndex(createIndex)}
+                                              aria-selected={0 === highlightedSuggestionIndex}
+                                              onMouseEnter={() => setHighlightedSuggestionIndex(0)}
                                               onMouseDown={(event) => { event.preventDefault(); handleCreateContact(speaker, trimmedName); }}
                                               disabled={createContactMutation.isPending}
-                                              className={`w-full px-3 py-2 text-left transition-colors flex items-center gap-2 ${createIndex === highlightedSuggestionIndex ? "bg-[var(--bg-muted-pane)]" : "hover:bg-[var(--bg-muted-pane)]/70"}`}
+                                              className={`w-full px-3 py-2 text-left transition-colors flex items-center gap-2 ${0 === highlightedSuggestionIndex ? "bg-[var(--bg-muted-pane)]" : "hover:bg-[var(--bg-muted-pane)]/70"}`}
                                             >
                                               {createContactMutation.isPending ? (
                                                 <Loader2 className="h-4 w-4 animate-spin text-[var(--brand-solid)] shrink-0" />
@@ -618,8 +597,28 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
                                                 Create "<span className="font-medium">{trimmedName}</span>"
                                               </span>
                                             </button>
+                                            {autoSuggestions.length > 0 && <div className="border-t border-[var(--border-subtle)] my-1" />}
                                           </>
                                         );
+                                      })()}
+                                      {(() => {
+                                        const offset = isNewContactCandidate(speakerMappings[speaker] ?? "", speaker) ? 1 : 0;
+                                        return getContactSuggestions(speakerMappings[speaker] ?? "", speaker).map((contact, index) => (
+                                          <button
+                                            type="button"
+                                            role="option"
+                                            aria-selected={(index + offset) === highlightedSuggestionIndex}
+                                            key={contact.id}
+                                            onMouseEnter={() => setHighlightedSuggestionIndex(index + offset)}
+                                            onMouseDown={(event) => { event.preventDefault(); applyContactSuggestion(speaker, contact); }}
+                                            className={`w-full px-3 py-2 text-left transition-colors ${(index + offset) === highlightedSuggestionIndex ? "bg-[var(--bg-muted-pane)]" : "hover:bg-[var(--bg-muted-pane)]/70"}`}
+                                          >
+                                            <div className="text-sm font-medium text-[var(--text-primary)]">{contact.name}</div>
+                                            {(contact.email || contact.phone) && (
+                                              <div className="text-xs text-[var(--text-secondary)]">{contact.email || contact.phone}</div>
+                                            )}
+                                          </button>
+                                        ));
                                       })()}
                                     </>
                                   )}
@@ -776,36 +775,18 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
                                   <div className="px-3 py-2 text-xs text-[var(--text-tertiary)]">Loading contacts...</div>
                                 ) : (
                                   <>
-                                    {suggestions.map((contact, index) => (
-                                      <button
-                                        type="button"
-                                        role="option"
-                                        aria-selected={index === highlightedSuggestionIndex}
-                                        key={contact.id}
-                                        onMouseEnter={() => setHighlightedSuggestionIndex(index)}
-                                        onMouseDown={(event) => { event.preventDefault(); applyContactSuggestion(speaker, contact); }}
-                                        className={`w-full px-3 py-2 text-left transition-colors ${index === highlightedSuggestionIndex ? "bg-[var(--bg-muted-pane)]" : "hover:bg-[var(--bg-muted-pane)]/70"}`}
-                                      >
-                                        <div className="text-sm font-medium text-[var(--text-primary)]">{contact.name}</div>
-                                        {(contact.email || contact.phone) && (
-                                          <div className="text-xs text-[var(--text-secondary)]">{contact.email || contact.phone}</div>
-                                        )}
-                                      </button>
-                                    ))}
                                     {isNewContactCandidate(speakerMappings[speaker] ?? "", speaker) && (() => {
-                                      const createIndex = suggestions.length;
                                       const trimmedName = (speakerMappings[speaker] ?? "").trim();
                                       return (
                                         <>
-                                          {suggestions.length > 0 && <div className="border-t border-[var(--border-subtle)] my-1" />}
                                           <button
                                             type="button"
                                             role="option"
-                                            aria-selected={createIndex === highlightedSuggestionIndex}
-                                            onMouseEnter={() => setHighlightedSuggestionIndex(createIndex)}
+                                            aria-selected={0 === highlightedSuggestionIndex}
+                                            onMouseEnter={() => setHighlightedSuggestionIndex(0)}
                                             onMouseDown={(event) => { event.preventDefault(); handleCreateContact(speaker, trimmedName); }}
                                             disabled={createContactMutation.isPending}
-                                            className={`w-full px-3 py-2 text-left transition-colors flex items-center gap-2 ${createIndex === highlightedSuggestionIndex ? "bg-[var(--bg-muted-pane)]" : "hover:bg-[var(--bg-muted-pane)]/70"}`}
+                                            className={`w-full px-3 py-2 text-left transition-colors flex items-center gap-2 ${0 === highlightedSuggestionIndex ? "bg-[var(--bg-muted-pane)]" : "hover:bg-[var(--bg-muted-pane)]/70"}`}
                                           >
                                             {createContactMutation.isPending ? (
                                               <Loader2 className="h-4 w-4 animate-spin text-[var(--brand-solid)] shrink-0" />
@@ -816,8 +797,28 @@ const SpeakerRenameDialog: React.FC<SpeakerRenameDialogProps> = ({
                                               Create "<span className="font-medium">{trimmedName}</span>"
                                             </span>
                                           </button>
+                                          {suggestions.length > 0 && <div className="border-t border-[var(--border-subtle)] my-1" />}
                                         </>
                                       );
+                                    })()}
+                                    {(() => {
+                                      const offset = isNewContactCandidate(speakerMappings[speaker] ?? "", speaker) ? 1 : 0;
+                                      return suggestions.map((contact, index) => (
+                                        <button
+                                          type="button"
+                                          role="option"
+                                          aria-selected={(index + offset) === highlightedSuggestionIndex}
+                                          key={contact.id}
+                                          onMouseEnter={() => setHighlightedSuggestionIndex(index + offset)}
+                                          onMouseDown={(event) => { event.preventDefault(); applyContactSuggestion(speaker, contact); }}
+                                          className={`w-full px-3 py-2 text-left transition-colors ${(index + offset) === highlightedSuggestionIndex ? "bg-[var(--bg-muted-pane)]" : "hover:bg-[var(--bg-muted-pane)]/70"}`}
+                                        >
+                                          <div className="text-sm font-medium text-[var(--text-primary)]">{contact.name}</div>
+                                          {(contact.email || contact.phone) && (
+                                            <div className="text-xs text-[var(--text-secondary)]">{contact.email || contact.phone}</div>
+                                          )}
+                                        </button>
+                                      ));
                                     })()}
                                     {suggestions.length === 0 && !isNewContactCandidate(speakerMappings[speaker] ?? "", speaker) && contacts.length === 0 && (
                                       <div className="px-3 py-2 text-xs text-[var(--text-tertiary)]">No contacts yet. Type a name to create one.</div>

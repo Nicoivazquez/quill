@@ -256,16 +256,16 @@ export function QuickTranscriptionDialog({ isOpen, onClose }: QuickTranscription
                 Transcription Profile
               </label>
               <Select value={selectedProfile} onValueChange={setSelectedProfile}>
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select a profile or use default settings" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="max-w-[var(--radix-select-trigger-width)]">
                   {profiles.map((profile) => (
                     <SelectItem key={profile.id} value={profile.name}>
-                      <div className="flex items-center gap-2">
-                        <span>{profile.name}</span>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="flex-1 truncate">{profile.name}</span>
                         {profile.is_default && (
-                          <span className="text-xs bg-[var(--warning-translucent)] text-[var(--warning-solid)] px-2 py-0.5 rounded">
+                          <span className="shrink-0 rounded bg-[var(--warning-translucent)] px-2 py-0.5 text-xs text-[var(--warning-solid)]">
                             Default
                           </span>
                         )}

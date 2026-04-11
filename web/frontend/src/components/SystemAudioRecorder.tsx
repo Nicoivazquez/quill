@@ -481,7 +481,7 @@ export function SystemAudioRecorder({
 					onClose();
 				}
 			}}>
-				<DialogContent className="sm:max-w-[600px]">
+				<DialogContent className="max-w-[600px]">
 					<DialogHeader>
 						<DialogTitle className="flex items-center gap-2">
 							<MonitorSpeaker className="h-5 w-5 text-[var(--brand-solid)]" />
@@ -526,7 +526,7 @@ export function SystemAudioRecorder({
 	if (permissionDenied && !isRecording) {
 		return (
 			<Dialog open={isOpen} onOpenChange={handleClose}>
-				<DialogContent className="sm:max-w-[600px]">
+				<DialogContent className="max-w-[600px]">
 					<DialogHeader>
 						<DialogTitle className="flex items-center gap-2">
 							<MonitorSpeaker className="h-5 w-5 text-[var(--brand-solid)]" />
@@ -573,7 +573,7 @@ export function SystemAudioRecorder({
 	if (recordedBlob && !isRecording) {
 		return (
 			<Dialog open={isOpen} onOpenChange={handleClose}>
-				<DialogContent className="sm:max-w-[600px]">
+				<DialogContent className="max-w-[600px]">
 					<DialogHeader>
 						<DialogTitle className="flex items-center gap-2">
 							<MonitorSpeaker className="h-5 w-5 text-[var(--brand-solid)]" />
@@ -635,7 +635,7 @@ export function SystemAudioRecorder({
 	if (isRecording) {
 		return (
 			<Dialog open={isOpen} onOpenChange={handleClose}>
-				<DialogContent className="sm:max-w-[700px]">
+				<DialogContent className="max-w-[700px]">
 					<DialogHeader>
 						<DialogTitle className="flex items-center gap-2">
 							<MonitorSpeaker className="h-5 w-5 text-[var(--brand-solid)]" />
@@ -732,7 +732,7 @@ export function SystemAudioRecorder({
 	// Render initial instructions state
 	return (
 		<Dialog open={isOpen} onOpenChange={handleClose}>
-			<DialogContent className="sm:max-w-[700px]">
+			<DialogContent className="max-w-[700px]">
 				<DialogHeader>
 					<DialogTitle className="flex items-center gap-2">
 						<MonitorSpeaker className="h-5 w-5 text-[var(--brand-solid)]" />

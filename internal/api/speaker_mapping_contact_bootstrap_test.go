@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"quill/internal/contacts"
 	"quill/internal/database"
 	"quill/internal/models"
 	"quill/internal/repository"
@@ -1046,5 +1047,270 @@ func TestIsRegularFile_MissingPath_ReturnsFalse(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "no-such-file.wav")
 	if isRegularFile(path) {
 		t.Error("expected false for non-existent path")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// invalidateOrphanedVoiceSignatures — voice snippet cleanup on re-assignment
+// ---------------------------------------------------------------------------
+
+// seedContactWithExtractedSignature creates a contact with a voice snippet and
+// extracted signature metadata pointing to the given jobID.
+func seedContactWithExtractedSignature(t *testing.T, bh bootstrapHarness, name, jobID string) *models.Contact {
+	t.Helper()
+
+	contact := &models.Contact{
+		VaultID:         bh.vault.ID,
+		ContactUID:      uuid.NewString(),
+		Slug:            slug.Sanitize(name, "contact"),
+		Name:            name,
+		SignatureStatus: "processing",
+	}
+	if err := bh.h.contactRepo.Create(t.Context(), contact); err != nil {
+		t.Fatalf("create contact %q: %v", name, err)
+	}
+	if err := bh.h.persistContactFile(t.Context(), contact); err != nil {
+		t.Fatalf("persist contact file %q: %v", name, err)
+	}
+
+	// Write a fake voice snippet file.
+	folderRel := filepath.Dir(contact.NotePath)
+	snippetRel := filepath.ToSlash(filepath.Join(folderRel, "voice-snippet.wav"))
+	fileService := contacts.NewFileService(bh.vault.Path)
+	snippetAbs, ok := fileService.ResolveAndValidate(snippetRel)
+	if !ok {
+		t.Fatalf("resolve snippet path for %q", name)
+	}
+	if err := os.MkdirAll(filepath.Dir(snippetAbs), 0o755); err != nil {
+		t.Fatalf("mkdir for snippet: %v", err)
+	}
+	if err := os.WriteFile(snippetAbs, []byte("RIFF-fake"), 0o644); err != nil {
+		t.Fatalf("write snippet: %v", err)
+	}
+
+	// Write a fake embedding file.
+	embeddingRel := filepath.ToSlash(filepath.Join(folderRel, "embedding.json"))
+	embeddingAbs, ok := fileService.ResolveAndValidate(embeddingRel)
+	if !ok {
+		t.Fatalf("resolve embedding path for %q", name)
+	}
+	if err := os.WriteFile(embeddingAbs, []byte(`{"dims":192}`), 0o644); err != nil {
+		t.Fatalf("write embedding: %v", err)
+	}
+
+	contact.VoiceSnippetPath = &snippetRel
+	contact.SignatureEmbeddingPath = &embeddingRel
+	contact.SignatureStatus = "ready"
+	setSignatureMetadata(contact, contacts.SignatureSourceExtracted, "")
+	setSignatureSourceJobID(contact, jobID)
+
+	if err := bh.h.persistContactFile(t.Context(), contact); err != nil {
+		t.Fatalf("persist updated contact %q: %v", name, err)
+	}
+	return contact
+}
+
+func TestInvalidateOrphaned_SpeakerRenamed_OldContactSignatureCleared(t *testing.T) {
+	bh := setupBootstrapHarness(t)
+	defer bh.cleanup()
+
+	jobID := uuid.NewString()
+	alice := seedContactWithExtractedSignature(t, bh, "Alice", jobID)
+
+	// Old mapping: speaker_0 → Alice (contact_id = alice.ID)
+	aliceID := alice.ID
+	oldMappings := []models.SpeakerMapping{
+		{OriginalSpeaker: "speaker_0", CustomName: "Alice", ContactID: &aliceID},
+	}
+	// New mapping: speaker_0 → Bob (no contact_id yet, will be created by bootstrap)
+	newMappings := []models.SpeakerMapping{
+		{OriginalSpeaker: "speaker_0", CustomName: "Bob"},
+	}
+
+	bh.h.invalidateOrphanedVoiceSignatures(t.Context(), jobID, oldMappings, newMappings)
+
+	// Reload Alice from DB.
+	refreshed, err := bh.h.contactRepo.GetByID(t.Context(), alice.ID)
+	if err != nil {
+		t.Fatalf("reload alice: %v", err)
+	}
+	if refreshed.SignatureStatus != "none" {
+		t.Errorf("SignatureStatus: got %q, want %q", refreshed.SignatureStatus, "none")
+	}
+	if refreshed.VoiceSnippetPath != nil {
+		t.Errorf("VoiceSnippetPath: got %q, want nil", *refreshed.VoiceSnippetPath)
+	}
+	if refreshed.SignatureEmbeddingPath != nil {
+		t.Errorf("SignatureEmbeddingPath: got %q, want nil", *refreshed.SignatureEmbeddingPath)
+	}
+
+	// Verify files were deleted.
+	fileService := contacts.NewFileService(bh.vault.Path)
+	if existingVaultFile(fileService, alice.VoiceSnippetPath) {
+		t.Error("voice snippet file should have been deleted")
+	}
+	if existingVaultFile(fileService, alice.SignatureEmbeddingPath) {
+		t.Error("embedding file should have been deleted")
+	}
+}
+
+func TestInvalidateOrphaned_ManualSignature_NotCleared(t *testing.T) {
+	bh := setupBootstrapHarness(t)
+	defer bh.cleanup()
+
+	jobID := uuid.NewString()
+	alice := seedContactWithExtractedSignature(t, bh, "Alice", jobID)
+	// Override: mark as manual signature.
+	setSignatureMetadata(alice, contacts.SignatureSourceManual, "")
+	if err := bh.h.persistContactFile(t.Context(), alice); err != nil {
+		t.Fatalf("persist: %v", err)
+	}
+
+	aliceID := alice.ID
+	oldMappings := []models.SpeakerMapping{
+		{OriginalSpeaker: "speaker_0", CustomName: "Alice", ContactID: &aliceID},
+	}
+	newMappings := []models.SpeakerMapping{
+		{OriginalSpeaker: "speaker_0", CustomName: "Bob"},
+	}
+
+	bh.h.invalidateOrphanedVoiceSignatures(t.Context(), jobID, oldMappings, newMappings)
+
+	refreshed, err := bh.h.contactRepo.GetByID(t.Context(), alice.ID)
+	if err != nil {
+		t.Fatalf("reload alice: %v", err)
+	}
+	// Manual signature should be preserved.
+	if refreshed.SignatureStatus == "none" {
+		t.Error("manual signature should not be invalidated")
+	}
+}
+
+func TestInvalidateOrphaned_DifferentJobID_NotCleared(t *testing.T) {
+	bh := setupBootstrapHarness(t)
+	defer bh.cleanup()
+
+	// Alice's signature was extracted from a DIFFERENT job.
+	otherJobID := uuid.NewString()
+	currentJobID := uuid.NewString()
+	alice := seedContactWithExtractedSignature(t, bh, "Alice", otherJobID)
+
+	aliceID := alice.ID
+	oldMappings := []models.SpeakerMapping{
+		{OriginalSpeaker: "speaker_0", CustomName: "Alice", ContactID: &aliceID},
+	}
+	newMappings := []models.SpeakerMapping{
+		{OriginalSpeaker: "speaker_0", CustomName: "Bob"},
+	}
+
+	bh.h.invalidateOrphanedVoiceSignatures(t.Context(), currentJobID, oldMappings, newMappings)
+
+	refreshed, err := bh.h.contactRepo.GetByID(t.Context(), alice.ID)
+	if err != nil {
+		t.Fatalf("reload alice: %v", err)
+	}
+	// Should not be invalidated — different job.
+	if refreshed.SignatureStatus == "none" {
+		t.Error("signature from different job should not be invalidated")
+	}
+}
+
+func TestInvalidateOrphaned_ContactStillLinkedByAnotherSpeaker_NotCleared(t *testing.T) {
+	bh := setupBootstrapHarness(t)
+	defer bh.cleanup()
+
+	jobID := uuid.NewString()
+	alice := seedContactWithExtractedSignature(t, bh, "Alice", jobID)
+
+	aliceID := alice.ID
+	// speaker_0 and speaker_1 both mapped to Alice. Only speaker_0 changes.
+	oldMappings := []models.SpeakerMapping{
+		{OriginalSpeaker: "speaker_0", CustomName: "Alice", ContactID: &aliceID},
+		{OriginalSpeaker: "speaker_1", CustomName: "Alice", ContactID: &aliceID},
+	}
+	newMappings := []models.SpeakerMapping{
+		{OriginalSpeaker: "speaker_0", CustomName: "Bob"},
+		{OriginalSpeaker: "speaker_1", CustomName: "Alice", ContactID: &aliceID},
+	}
+
+	bh.h.invalidateOrphanedVoiceSignatures(t.Context(), jobID, oldMappings, newMappings)
+
+	refreshed, err := bh.h.contactRepo.GetByID(t.Context(), alice.ID)
+	if err != nil {
+		t.Fatalf("reload alice: %v", err)
+	}
+	// Alice still linked by speaker_1 — should NOT be invalidated.
+	if refreshed.SignatureStatus == "none" {
+		t.Error("contact still linked by another speaker should not be invalidated")
+	}
+}
+
+func TestInvalidateOrphaned_NoChanges_Noop(t *testing.T) {
+	bh := setupBootstrapHarness(t)
+	defer bh.cleanup()
+
+	jobID := uuid.NewString()
+	alice := seedContactWithExtractedSignature(t, bh, "Alice", jobID)
+
+	aliceID := alice.ID
+	// Same mapping in old and new — no orphans.
+	mappings := []models.SpeakerMapping{
+		{OriginalSpeaker: "speaker_0", CustomName: "Alice", ContactID: &aliceID},
+	}
+
+	bh.h.invalidateOrphanedVoiceSignatures(t.Context(), jobID, mappings, mappings)
+
+	refreshed, err := bh.h.contactRepo.GetByID(t.Context(), alice.ID)
+	if err != nil {
+		t.Fatalf("reload alice: %v", err)
+	}
+	if refreshed.SignatureStatus == "none" {
+		t.Error("unchanged mapping should not trigger invalidation")
+	}
+}
+
+func TestInvalidateOrphaned_NilContactID_Ignored(t *testing.T) {
+	bh := setupBootstrapHarness(t)
+	defer bh.cleanup()
+
+	jobID := uuid.NewString()
+
+	// Old mapping had no contact_id (legacy data).
+	oldMappings := []models.SpeakerMapping{
+		{OriginalSpeaker: "speaker_0", CustomName: "Alice", ContactID: nil},
+	}
+	newMappings := []models.SpeakerMapping{
+		{OriginalSpeaker: "speaker_0", CustomName: "Bob"},
+	}
+
+	// Should not panic or error.
+	bh.h.invalidateOrphanedVoiceSignatures(t.Context(), jobID, oldMappings, newMappings)
+}
+
+func TestSetSignatureSourceJobID_StoresJobID(t *testing.T) {
+	contact := &models.Contact{SignatureStatus: "processing"}
+	setSignatureMetadata(contact, contacts.SignatureSourceExtracted, "")
+	setSignatureSourceJobID(contact, "job-123")
+
+	metadata := contacts.ParseSignatureMetadata(contact.SignatureData)
+	if metadata.SourceJobID != "job-123" {
+		t.Errorf("SourceJobID: got %q, want %q", metadata.SourceJobID, "job-123")
+	}
+	if metadata.Source != contacts.SignatureSourceExtracted {
+		t.Errorf("Source: got %q, want %q", metadata.Source, contacts.SignatureSourceExtracted)
+	}
+}
+
+func TestSetSignatureSourceJobID_PreservesExistingMetadata(t *testing.T) {
+	contact := &models.Contact{SignatureStatus: "processing"}
+	setSignatureMetadata(contact, contacts.SignatureSourceExtracted, "titanet-large")
+	setSignatureSourceJobID(contact, "job-456")
+
+	metadata := contacts.ParseSignatureMetadata(contact.SignatureData)
+	if metadata.SourceJobID != "job-456" {
+		t.Errorf("SourceJobID: got %q, want %q", metadata.SourceJobID, "job-456")
+	}
+	if metadata.Model != "titanet-large" {
+		t.Errorf("Model: got %q, want %q", metadata.Model, "titanet-large")
 	}
 }

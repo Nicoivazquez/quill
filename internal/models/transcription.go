@@ -31,6 +31,7 @@ type TranscriptionJob struct {
 	IndividualTranscripts  *string        `json:"individual_transcripts,omitempty" gorm:"type:text"` // JSON-serialized map[string]*string
 	OriginalFilename       string         `json:"original_filename,omitempty" gorm:"type:text"`
 	FileHash               string         `json:"file_hash,omitempty" gorm:"type:varchar(64);index"`
+	RecordedAt             *time.Time     `json:"recorded_at,omitempty" gorm:"type:datetime"`
 	ObsidianSyncedAt       *time.Time     `json:"obsidian_synced_at,omitempty" gorm:"type:datetime"`
 	CreatedAt              time.Time      `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt              time.Time      `json:"updated_at" gorm:"autoUpdateTime"`

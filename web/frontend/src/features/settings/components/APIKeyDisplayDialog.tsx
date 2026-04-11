@@ -72,7 +72,7 @@ export function APIKeyDisplayDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={handleOpenChange}>
-			<DialogContent className="sm:max-w-lg bg-white dark:bg-carbon-800 border border-carbon-200 dark:border-carbon-700">
+			<DialogContent className="max-w-lg bg-white dark:bg-carbon-800 border border-carbon-200 dark:border-carbon-700">
 				<DialogHeader>
 					<DialogTitle className="flex items-center gap-2">
 						<Check className="h-5 w-5 text-green-600" />

@@ -139,6 +139,9 @@ func Initialize(dbPath string) error {
 		fmt.Printf("Warning: Failed to backfill speaker mapping match_source: %v\n", err)
 	}
 
+	// Backfill recorded_at for existing jobs (runs async to avoid slowing startup).
+	go backfillRecordedAt(DB)
+
 	return nil
 }
 

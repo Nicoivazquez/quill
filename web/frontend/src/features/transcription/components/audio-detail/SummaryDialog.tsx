@@ -356,7 +356,9 @@ export function SummaryDialog({ audioId, isOpen, onClose, llmReady }: SummaryDia
                                         disabled={!llmReady}
                                         type="button"
                                     >
-                                        <span className="truncate text-left">{selectedTemplate ? selectedTemplate.name : (templatesLoading ? 'Loading...' : 'Select a template')}</span>
+                                        <span className="min-w-0 flex-1 truncate text-left">
+                                            {selectedTemplate ? selectedTemplate.name : (templatesLoading ? 'Loading...' : 'Select a template')}
+                                        </span>
                                         <span className="flex items-center text-xs text-[var(--text-tertiary)] ml-2 shrink-0">
                                             {selectedTemplate?.model ? `(${selectedTemplate.model})` : ''}
                                             <ChevronDown className="ml-2 h-4 w-4 opacity-50" />
@@ -379,8 +381,8 @@ export function SummaryDialog({ audioId, isOpen, onClose, llmReady }: SummaryDia
                                                         onSelect={() => { setSelectedTemplateId(t.id); setTplPopoverOpen(false); }}
                                                         className="rounded-lg py-2.5 px-3 aria-selected:bg-[var(--brand-solid)] aria-selected:text-white cursor-pointer transition-colors"
                                                     >
-                                                        <div className="flex flex-col w-full">
-                                                            <span className="text-sm font-medium">{t.name}</span>
+                                                        <div className="flex w-full min-w-0 flex-col">
+                                                            <span className="truncate text-sm font-medium">{t.name}</span>
                                                             <span className="text-xs opacity-70">Model: {t.model || '—'}</span>
                                                         </div>
                                                     </CommandItem>

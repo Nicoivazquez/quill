@@ -28,6 +28,7 @@ var signatureRetryBackoff = []time.Duration{
 type SignatureMetadata struct {
 	Source        string `json:"source"`
 	Model         string `json:"model,omitempty"`
+	SourceJobID   string `json:"source_job_id,omitempty"`
 	UpdatedAt     string `json:"updated_at,omitempty"`
 	RetryCount    int    `json:"retry_count,omitempty"`
 	LastAttemptAt string `json:"last_attempt_at,omitempty"`
@@ -47,6 +48,7 @@ func ParseSignatureMetadata(raw *string) SignatureMetadata {
 
 	metadata.Source = strings.ToLower(strings.TrimSpace(metadata.Source))
 	metadata.Model = strings.TrimSpace(metadata.Model)
+	metadata.SourceJobID = strings.TrimSpace(metadata.SourceJobID)
 	metadata.UpdatedAt = strings.TrimSpace(metadata.UpdatedAt)
 	metadata.LastAttemptAt = strings.TrimSpace(metadata.LastAttemptAt)
 	metadata.NextRetryAt = strings.TrimSpace(metadata.NextRetryAt)
@@ -60,6 +62,7 @@ func ParseSignatureMetadata(raw *string) SignatureMetadata {
 func SerializeSignatureMetadata(metadata SignatureMetadata) *string {
 	metadata.Source = strings.ToLower(strings.TrimSpace(metadata.Source))
 	metadata.Model = strings.TrimSpace(metadata.Model)
+	metadata.SourceJobID = strings.TrimSpace(metadata.SourceJobID)
 	metadata.UpdatedAt = strings.TrimSpace(metadata.UpdatedAt)
 	metadata.LastAttemptAt = strings.TrimSpace(metadata.LastAttemptAt)
 	metadata.NextRetryAt = strings.TrimSpace(metadata.NextRetryAt)

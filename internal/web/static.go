@@ -34,6 +34,7 @@ func GetIndexHTML() ([]byte, error) {
 func SetupStaticRoutes(router *gin.Engine, authService *auth.AuthService) {
 
 	// Serve static assets (CSS, JS, images) directly from embedded filesystem
+	// Vite-built assets have content hashes in filenames, so they can be cached long-term
 	router.GET("/assets/*filepath", func(c *gin.Context) {
 		// Extract the file path
 		filepath := c.Param("filepath")
@@ -49,6 +50,9 @@ func SetupStaticRoutes(router *gin.Engine, authService *auth.AuthService) {
 			c.Status(http.StatusNotFound)
 			return
 		}
+
+		// Hashed assets can be cached immutably
+		c.Header("Cache-Control", "public, max-age=31536000, immutable")
 
 		// Set appropriate content type based on file extension
 		if strings.Contains(fullPath, ".css") {
@@ -110,6 +114,11 @@ func SetupStaticRoutes(router *gin.Engine, authService *auth.AuthService) {
 		// Try to read the file from embedded filesystem
 		fileContent, err := staticFiles.ReadFile("dist/" + path)
 		if err == nil {
+			// Service worker must never be cached — stale SW causes update issues
+			if strings.HasSuffix(path, "sw.js") || strings.HasSuffix(path, "workbox-") {
+				c.Header("Cache-Control", "no-store")
+			}
+
 			// File exists, serve it
 			contentType := "application/octet-stream"
 			if strings.HasSuffix(path, ".css") {
@@ -140,6 +149,8 @@ func SetupStaticRoutes(router *gin.Engine, authService *auth.AuthService) {
 			return
 		}
 
+		// index.html must always be revalidated so new builds are picked up
+		c.Header("Cache-Control", "no-cache")
 		c.Data(http.StatusOK, "text/html; charset=utf-8", indexHTML)
 	})
 }

@@ -902,7 +902,7 @@ func (w *WhisperXAdapter) parseResult(outputDir string, input interfaces.AudioIn
 		result.WordSegments[i] = interfaces.TranscriptWord{
 			Start:   word.Start,
 			End:     word.End,
-			Word:    word.Word,
+			Word:    strings.TrimSpace(word.Word),
 			Score:   word.Score,
 			Speaker: word.Speaker,
 		}

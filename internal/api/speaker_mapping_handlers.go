@@ -176,6 +176,11 @@ func (h *Handler) UpdateSpeakerMappings(c *gin.Context) {
 		mappings = append(mappings, m)
 	}
 
+	// Invalidate voice signatures on contacts that were linked in the old
+	// mappings but are no longer referenced in the new set (speaker re-named
+	// away from a contact).
+	h.invalidateOrphanedVoiceSignatures(c.Request.Context(), jobID, existingMappings, mappings)
+
 	// Update mappings using repository
 	if err := h.speakerMappingRepo.UpdateMappings(c.Request.Context(), jobID, mappings); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update speaker mappings"})

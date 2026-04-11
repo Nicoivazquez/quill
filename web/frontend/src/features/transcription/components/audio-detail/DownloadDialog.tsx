@@ -53,7 +53,7 @@ export function DownloadDialog({ audioId, isOpen, onClose, initialFormat = 'txt'
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
-            <DialogContent className="sm:max-w-md bg-white dark:bg-carbon-800 border-carbon-200 dark:border-carbon-700">
+            <DialogContent className="max-w-md bg-white dark:bg-carbon-800 border-carbon-200 dark:border-carbon-700">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2 text-xl">
                         <Sparkles className="h-5 w-5 text-primary" />

@@ -101,7 +101,7 @@ export function APIKeyCreateDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={handleOpenChange}>
-			<DialogContent className="sm:max-w-md bg-[var(--bg-card)] border-[var(--border-subtle)] text-[var(--text-primary)]">
+			<DialogContent className="max-w-md bg-[var(--bg-card)] border-[var(--border-subtle)] text-[var(--text-primary)]">
 				<DialogHeader>
 					<DialogTitle>Create New API Key</DialogTitle>
 					<DialogDescription>

@@ -365,6 +365,7 @@
     font-size: 1.125rem;
     /* 18px */
     line-height: 1.5;
+    overflow-wrap: break-word;
   }
 
   /* Applied to TranscriptView for Lora support */
@@ -373,6 +374,7 @@
     font-size: 1.125rem;
     /* 18px */
     line-height: 1.5;
+    overflow-wrap: break-word;
   }
 }
 

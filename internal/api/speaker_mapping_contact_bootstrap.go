@@ -202,6 +202,7 @@ func (h *Handler) extractSpeakerSnippetForContact(ctx context.Context, job *mode
 	contact.SignatureStatus = "processing"
 	contact.SignatureEmbeddingPath = nil
 	setSignatureMetadata(contact, contacts.SignatureSourceExtracted, "")
+	setSignatureSourceJobID(contact, job.ID)
 
 	if err := h.persistContactFile(ctx, contact); err != nil {
 		return err
@@ -433,6 +434,100 @@ func isWithinBoundary(absPath string, allowedRoots []string) bool {
 		}
 	}
 	return false
+}
+
+// setSignatureSourceJobID stores the transcription job ID that produced the
+// contact's extracted voice signature. This enables cleanup when the speaker
+// mapping is later re-assigned to a different contact.
+func setSignatureSourceJobID(contact *models.Contact, jobID string) {
+	metadata := contacts.ParseSignatureMetadata(contact.SignatureData)
+	metadata.SourceJobID = strings.TrimSpace(jobID)
+	contact.SignatureData = contacts.SerializeSignatureMetadata(metadata)
+}
+
+// invalidateOrphanedVoiceSignatures removes extracted voice signatures from
+// contacts that were previously linked to speakers in this job but are no
+// longer linked after a rename. Only clears signatures whose SourceJobID
+// matches the current job; manual signatures and signatures from other jobs
+// are never touched.
+func (h *Handler) invalidateOrphanedVoiceSignatures(ctx context.Context, jobID string, oldMappings, newMappings []models.SpeakerMapping) {
+	if h.contactRepo == nil || jobID == "" {
+		return
+	}
+
+	// Collect contact IDs still linked in new mappings.
+	newContactIDs := make(map[uint]bool)
+	for _, m := range newMappings {
+		if m.ContactID != nil {
+			newContactIDs[*m.ContactID] = true
+		}
+	}
+
+	// Find contacts that were linked in old mappings but not in new.
+	orphanedIDs := make(map[uint]bool)
+	for _, m := range oldMappings {
+		if m.ContactID == nil {
+			continue
+		}
+		if !newContactIDs[*m.ContactID] {
+			orphanedIDs[*m.ContactID] = true
+		}
+	}
+
+	if len(orphanedIDs) == 0 {
+		return
+	}
+
+	for cid := range orphanedIDs {
+		contact, err := h.contactRepo.GetByID(ctx, cid)
+		if err != nil {
+			continue
+		}
+
+		// Never touch manual signatures.
+		if contacts.HasManualSignature(contact) {
+			continue
+		}
+
+		metadata := contacts.ParseSignatureMetadata(contact.SignatureData)
+		if metadata.Source != contacts.SignatureSourceExtracted {
+			continue
+		}
+		if metadata.SourceJobID != jobID {
+			continue
+		}
+
+		// Resolve vault for file cleanup.
+		var vault models.Vault
+		if err := database.DB.WithContext(ctx).First(&vault, contact.VaultID).Error; err != nil {
+			logger.Warn("invalidate orphaned: vault lookup failed", "contact_id", cid, "error", err)
+			continue
+		}
+		fileService := contacts.NewFileService(vault.Path)
+
+		// Remove files from disk.
+		if contact.VoiceSnippetPath != nil {
+			if abs, ok := fileService.ResolveAndValidate(*contact.VoiceSnippetPath); ok {
+				_ = os.Remove(abs)
+			}
+		}
+		if contact.SignatureEmbeddingPath != nil {
+			if abs, ok := fileService.ResolveAndValidate(*contact.SignatureEmbeddingPath); ok {
+				_ = os.Remove(abs)
+			}
+		}
+
+		// Reset contact signature fields.
+		contact.VoiceSnippetPath = nil
+		contact.SignatureEmbeddingPath = nil
+		contact.SignatureStatus = "none"
+		contact.SyncError = nil
+		setSignatureMetadata(contact, "", "")
+
+		if err := h.persistContactFile(ctx, contact); err != nil {
+			logger.Warn("invalidate orphaned: persist failed", "contact_id", cid, "error", err)
+		}
+	}
 }
 
 // normalizeNameKey lowercases and trims. Non-UTF8 bytes are replaced with U+FFFD.
