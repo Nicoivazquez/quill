@@ -2,8 +2,7 @@
 
 Quill is an open-source audio transcription app that runs entirely on your machine. It ships as a **native desktop app** built on a local-first vault architecture — your recordings, transcripts, and contacts live as plain files in folders you own, much like Obsidian. The database is just a cache; delete it and Quill rebuilds it from your files.
 
-
-easy download:https://github.com/Nicoivazquez/quill/releases
+[Download the latest release](https://github.com/Nicoivazquez/quill/releases)
 
 ### Features
 
@@ -16,6 +15,42 @@ easy download:https://github.com/Nicoivazquez/quill/releases
 - **Built-in audio recorder & notes** — capture thoughts on the fly and annotate transcripts as you listen
 - **AI agent ready** — ships with a [SKILL.md](skills/quill-api/SKILL.md) so AI agents (Claude Code, OpenClaw, Codex, etc.) can operate Quill via natural language — "transcribe this meeting," "find everything with Alice," "move last week's recordings to Archive"
 - **PWA + native desktop app** — install as a Progressive Web App on any device, or use the native macOS app
+
+## How to Use
+
+### 1. Install and Launch
+
+Download the DMG from the [releases page](https://github.com/Nicoivazquez/quill/releases), mount it, and drag Quill to Applications. On first launch, Quill will set up a Python environment and download ML models — this requires an internet connection. Subsequent launches are fast and fully offline.
+
+### 2. Set Up Ollama (for AI chat and summaries)
+
+1. Install [Ollama](https://ollama.com): `brew install ollama` or download from [ollama.com](https://ollama.com)
+2. Pull a model: `ollama pull qwen2.5:7b`
+3. In Quill, go to **Settings > LLMs > Ollama** and set the base URL to `http://localhost:11434`
+
+**Recommended models by Mac:**
+
+| Mac | RAM | Recommended Model |
+|:---|:---|:---|
+| M1/M2 (base) | 8 GB | `llama3.2:3b` or `qwen2.5:1.5b` |
+| M1/M2 Pro | 16 GB | `qwen2.5:7b` or `llama3.1:8b` |
+| M1/M2 Max | 32–64 GB | `qwen2.5:14b` or `llama3.3:70b` (64 GB) |
+| M3/M4 (base) | 16 GB | `qwen2.5:7b` |
+| M3/M4 Pro | 24–48 GB | `qwen2.5:14b` or `phi4:14b` |
+| M3/M4/M5 Max | 36–128 GB | `llama3.3:70b` |
+
+### 3. Create a Transcription Profile
+
+Go to **Settings > Transcription** and create a profile with your preferred settings (model, language, diarization, etc.).
+
+**Speaker diarization options:**
+
+- **Sortformer** (recommended) — supports up to 4 speakers. More accurate at detecting the correct number of speakers in a conversation.
+- **ONNX** — supports more than 4 speakers, but currently less reliable at determining the correct speaker count. Improving this is active work.
+
+### 4. Transcribe
+
+Upload an audio file or record directly in the app. Select your profile and start transcription. Progress is shown in real-time.
 
 ## Philosophy
 
@@ -47,7 +82,7 @@ Quill is a Go backend with an embedded React frontend. The backend manages audio
 
 **File-first contacts:** Contacts are stored as vault-scoped Markdown files. The database is a cache. A filesystem watcher detects changes in real-time, so you can edit contact files directly and Quill picks up the changes.
 
-## Getting Started
+## Getting Started (Development)
 
 ### Prerequisites
 
@@ -55,7 +90,7 @@ Quill is a Go backend with an embedded React frontend. The backend manages audio
 - Node.js 20+
 - Python 3.10+ (for ML models)
 
-### Build the Desktop App for development
+### Build the Desktop App
 
 ```bash
 # Clone the repo
@@ -67,8 +102,6 @@ make desktop-dist-mac
 ```
 
 The DMG is written to `desktop/electron/release/`. Mount it, drag Quill to Applications, and launch.
-
-On first launch, Quill will initialize a Python environment and download ML models (WhisperX, PyAnnote, NVIDIA NeMo). This requires an internet connection. Subsequent launches are fast and fully offline.
 
 <details>
 <summary>Development mode</summary>
@@ -100,44 +133,8 @@ Quill works out of the box with sensible defaults. Customize with environment va
 | `SECURE_COOKIES` | `true` in production | Set `false` for HTTP-only deployments |
 | `AUTH_MODE` | `local` | Authentication mode (`local` for single-user) |
 | `OPENAI_API_KEY` | `""` | OpenAI API key for LLM features |
-| `HF_TOKEN` | `""` | HuggingFace token for model downloads |
 | `TRANSCRIPTION_BACKEND` | `whisperx` | Transcription backend (`whisperx`, `mlx_whisper`, `whisper_cpp`). Auto-detected as `mlx_whisper` on Apple Silicon. |
 | `WHISPER_MODEL` | `small` | Whisper model to pre-download during warmup (e.g. `small`, `large-v3-turbo`) |
-
-## Setting Up Ollama (Local LLMs)
-
-Quill can use local LLMs through [Ollama](https://ollama.com) for chat, summaries, and Q&A over your transcripts.
-
-1. Install Ollama: `brew install ollama` or download from [ollama.com](https://ollama.com)
-2. Pull a model: `ollama pull qwen2.5:7b`
-3. In Quill, go to **Settings > LLMs > Ollama** and set the base URL to `http://localhost:11434`
-
-### Recommended Models by Mac
-
-| Mac | RAM | Recommended Model |
-|:---|:---|:---|
-| M1/M2 (base) | 8 GB | `llama3.2:3b` or `qwen2.5:1.5b` |
-| M1/M2 Pro | 16 GB | `qwen2.5:7b` or `llama3.1:8b` |
-| M1/M2 Max | 32–64 GB | `qwen2.5:14b` or `llama3.3:70b` (64 GB) |
-| M3/M4 (base) | 16 GB | `qwen2.5:7b` |
-| M3/M4 Pro | 24–48 GB | `qwen2.5:14b` or `phi4:14b` |
-| M3/M4/M5 Max | 36–128 GB | `llama3.3:70b` |
-
-## HuggingFace Token (Speaker Diarization)
-
-Speaker diarization uses PyAnnote models that require a free HuggingFace token.
-
-1. Sign up at [huggingface.co](https://huggingface.co)
-2. Create a read token at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
-3. Accept the model licenses:
-   - [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1)
-   - [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0)
-
-Provide the token in **Settings > Transcription** (desktop) or via the `HF_TOKEN` environment variable.
-
-**Alternative:** NVIDIA NeMo Sortformer diarization does not require a HuggingFace token.
-
-</details>
 
 ## License
 
